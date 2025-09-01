@@ -1,0 +1,2689 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🧫 Growth Curve Plotter</title>
+    <script src="https://cdn.plot.ly/plotly-2.29.1.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            font-weight: 300;
+        }
+
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+
+        .controls {
+            padding: 30px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        .control-group {
+            margin-bottom: 25px;
+        }
+
+        .control-group label {
+            display: block;
+            font-weight: 600;
+            color: #495057;
+            margin-bottom: 8px;
+            font-size: 1.1em;
+        }
+
+        select {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #ced4da;
+            border-radius: 8px;
+            font-size: 16px;
+            background: white;
+            transition: all 0.3s ease;
+        }
+
+        select:focus {
+            outline: none;
+            border-color: #4facfe;
+            box-shadow: 0 0 0 3px rgba(79, 172, 254, 0.1);
+        }
+
+        .wells-container {
+            background: white;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 10px;
+        }
+
+        .wells-select {
+            width: 100%;
+            min-height: 120px;
+            padding: 12px 16px;
+            border: 2px solid #ced4da;
+            border-radius: 8px;
+            font-size: 16px;
+            background: white;
+            transition: all 0.3s ease;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        .wells-select:focus {
+            outline: none;
+            border-color: #4facfe;
+            box-shadow: 0 0 0 3px rgba(79, 172, 254, 0.1);
+        }
+
+        .wells-select option {
+            padding: 8px;
+            font-size: 14px;
+        }
+
+        .wells-select option:hover {
+            background-color: #f8f9fa;
+        }
+
+        .wells-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+            align-items: center;
+        }
+
+        .wells-info {
+            color: #6c757d;
+            font-size: 14px;
+            margin-left: auto;
+        }
+
+        .content {
+            padding: 30px;
+        }
+
+        .plot-container {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+            width: 100% !important;
+            height: 700px !important;
+            overflow: hidden;
+        }
+
+        #plot {
+            width: 100% !important;
+            height: 700px !important;
+        }
+
+        .stats-container {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 25px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+
+        .stats-title {
+            font-size: 1.5em;
+            font-weight: 600;
+            color: #495057;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        th, td {
+            padding: 15px;
+            text-align: left;
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        th {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.9em;
+            letter-spacing: 0.5px;
+        }
+
+        tr:hover {
+            background: rgba(79, 172, 254, 0.05);
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #6c757d;
+            font-size: 1.1em;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #4facfe;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border: 1px solid #f5c6cb;
+        }
+
+        .info {
+            background: #d1ecf1;
+            color: #0c5460;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border: 1px solid #bee5eb;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            margin: 10px 5px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        /* Fullscreen styles */
+        .fullscreen-plot {
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            z-index: 9999 !important;
+            background: white !important;
+            margin: 0 !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+        }
+
+        .fullscreen-plot #plot-growth,
+        .fullscreen-plot #plot-fitting {
+            height: calc(100vh - 80px) !important;
+            width: 100% !important;
+        }
+
+        .fullscreen-plot .plotly {
+            height: 100% !important;
+            width: 100% !important;
+        }
+
+        .fullscreen-plot .plot-controls {
+            position: sticky !important;
+            top: 0 !important;
+            z-index: 10000 !important;
+        }
+
+        .plot-buttons {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .plot-buttons .btn {
+            margin: 0;
+            font-size: 14px;
+            padding: 8px 16px;
+        }
+
+        /* Accordion styles for experiments */
+        .experiments-accordion {
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            margin-top: 15px;
+            background: white;
+        }
+
+        .experiment-item {
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .experiment-item:last-child {
+            border-bottom: none;
+        }
+
+        .experiment-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 20px;
+            background: #f8f9fa;
+            cursor: pointer;
+            user-select: none;
+            border-bottom: 1px solid #e9ecef;
+            transition: background-color 0.2s ease;
+        }
+
+        .experiment-header:hover {
+            background: #e9ecef;
+        }
+
+        .experiment-header.active {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+        }
+
+        .experiment-title {
+            font-weight: 600;
+            font-size: 16px;
+        }
+
+        .experiment-info {
+            font-size: 14px;
+            color: #6c757d;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .experiment-header.active .experiment-info {
+            color: rgba(255, 255, 255, 0.9);
+        }
+
+        .accordion-icon {
+            font-size: 14px;
+            transition: transform 0.2s ease;
+        }
+
+        .experiment-header.active .accordion-icon {
+            transform: rotate(180deg);
+        }
+
+        .experiment-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+        }
+
+        .experiment-content.active {
+            max-height: 600px;
+        }
+
+        .wells-grid-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            padding: 20px;
+        }
+
+        .wells-column {
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        .wells-column-header {
+            padding: 10px 15px;
+            font-weight: 600;
+            font-size: 14px;
+            color: white;
+            text-align: center;
+        }
+
+        .selected-wells-header {
+            background: linear-gradient(135deg, #51cf66 0%, #40c057 100%);
+        }
+
+        .available-wells-header {
+            background: linear-gradient(135deg, #868e96 0%, #6c757d 100%);
+        }
+
+        .wells-list {
+            max-height: 300px;
+            overflow-y: auto;
+            background: white;
+        }
+
+        .well-item {
+            padding: 8px 12px;
+            border-bottom: 1px solid #f1f3f4;
+            cursor: pointer;
+            font-size: 13px;
+            line-height: 1.4;
+            transition: background-color 0.2s ease;
+        }
+
+        .well-item:hover {
+            background: #f8f9fa;
+        }
+
+        .well-item:last-child {
+            border-bottom: none;
+        }
+
+        .well-item.selected {
+            background: rgba(81, 207, 102, 0.1);
+            border-left: 3px solid #40c057;
+        }
+
+        .well-name {
+            font-weight: 600;
+            color: #495057;
+        }
+
+        .well-condition {
+            color: #6c757d;
+            font-size: 12px;
+            margin-top: 2px;
+        }
+
+        /* Experiment checkbox styles */
+        .experiment-toggle-container {
+            background: white;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 10px;
+        }
+
+        .experiment-checkboxes {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .experiment-checkbox-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 15px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: white;
+            user-select: none;
+        }
+
+        .experiment-checkbox-item:hover {
+            border-color: #4facfe;
+            background: rgba(79, 172, 254, 0.05);
+        }
+
+        .experiment-checkbox-item.selected {
+            border-color: #4facfe;
+            background: linear-gradient(135deg, rgba(79, 172, 254, 0.1) 0%, rgba(0, 242, 254, 0.1) 100%);
+        }
+
+        .experiment-checkbox {
+            margin-right: 12px;
+            width: 18px;
+            height: 18px;
+            border: 2px solid #ced4da;
+            border-radius: 4px;
+            position: relative;
+            flex-shrink: 0;
+            transition: all 0.2s ease;
+        }
+
+        .experiment-checkbox-item.selected .experiment-checkbox {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            border-color: #4facfe;
+        }
+
+        .experiment-checkbox::after {
+            content: '✓';
+            position: absolute;
+            top: -1px;
+            left: 2px;
+            color: white;
+            font-size: 14px;
+            font-weight: 600;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+
+        .experiment-checkbox-item.selected .experiment-checkbox::after {
+            opacity: 1;
+        }
+
+        .experiment-name {
+            font-weight: 600;
+            font-size: 15px;
+            color: #495057;
+        }
+
+        .experiment-checkbox-item.selected .experiment-name {
+            color: #4facfe;
+        }
+
+        /* Collapsible experiment section styles */
+        .experiment-section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 20px;
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            cursor: pointer;
+            user-select: none;
+            transition: all 0.3s ease;
+            margin-bottom: 0;
+        }
+
+        .experiment-section-header:hover {
+            background: linear-gradient(135deg, #e9ecef 0%, #dee2e6 100%);
+            border-color: #4facfe;
+        }
+
+        .experiment-section-header.active {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            border-color: #4facfe;
+            border-radius: 8px 8px 0 0;
+        }
+
+        .experiment-section-header label {
+            font-weight: 600;
+            font-size: 16px;
+            margin: 0;
+            cursor: pointer;
+        }
+
+        .experiment-section-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            font-size: 14px;
+        }
+
+        .experiment-section-header.active .experiment-section-info {
+            color: rgba(255, 255, 255, 0.9);
+        }
+
+        .experiment-section-icon {
+            font-size: 14px;
+            transition: transform 0.3s ease;
+        }
+
+        .experiment-section-header.active .experiment-section-icon {
+            transform: rotate(180deg);
+        }
+
+        .experiment-toggle-container {
+            border: 2px solid #e9ecef;
+            border-top: none;
+            border-radius: 0 0 8px 8px;
+            margin-top: 0;
+            transition: all 0.3s ease;
+        }
+
+        .experiment-section-header.active + .experiment-toggle-container {
+            border-color: #4facfe;
+        }
+
+        /* Global search styles */
+        .global-search-container {
+            background: linear-gradient(135deg, #f1f3f4 0%, #e8eaf6 100%);
+            border: 1px solid #e1e5e9;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 25px;
+        }
+
+        .search-header {
+            font-weight: 600;
+            font-size: 16px;
+            color: #495057;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+
+        .search-inputs {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .global-search-input {
+            padding: 12px 15px;
+            border: 2px solid #ced4da;
+            border-radius: 6px;
+            font-size: 14px;
+            background: white;
+            transition: all 0.3s ease;
+        }
+
+        .global-search-input:focus {
+            outline: none;
+            border-color: #4facfe;
+            box-shadow: 0 0 0 3px rgba(79, 172, 254, 0.1);
+        }
+
+        .search-results {
+            max-height: 200px;
+            overflow-y: auto;
+            background: white;
+            border-radius: 6px;
+            border: 1px solid #dee2e6;
+        }
+
+        .search-result-item {
+            padding: 12px 15px;
+            border-bottom: 1px solid #f1f3f4;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .search-result-item:hover {
+            background: #f8f9fa;
+        }
+
+        .search-result-item:last-child {
+            border-bottom: none;
+        }
+
+        .search-result-experiment {
+            font-weight: 600;
+            color: #495057;
+        }
+
+        .search-result-matches {
+            font-size: 12px;
+            color: #6c757d;
+            background: #e9ecef;
+            padding: 4px 8px;
+            border-radius: 12px;
+        }
+
+        .search-result-item.selected-experiment {
+            background: rgba(79, 172, 254, 0.1);
+            border-left: 3px solid #4facfe;
+        }
+
+        .no-search-results {
+            padding: 20px;
+            text-align: center;
+            color: #6c757d;
+            font-style: italic;
+        }
+
+        /* Search filtering styles */
+        .search-filtered-out {
+            opacity: 0.3;
+            filter: grayscale(80%);
+            pointer-events: none;
+            transition: all 0.3s ease;
+        }
+
+        .search-match {
+            border: 2px solid #4facfe !important;
+            box-shadow: 0 0 10px rgba(79, 172, 254, 0.3);
+            background: rgba(79, 172, 254, 0.05) !important;
+            transition: all 0.3s ease;
+        }
+
+        .search-status {
+            padding: 10px;
+            background: rgba(79, 172, 254, 0.1);
+            border: 1px solid #4facfe;
+            border-radius: 6px;
+            color: #0056b3;
+            font-size: 14px;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+
+        /* Curve fitting styles */
+        .fitting-container {
+            background: white;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 10px;
+        }
+
+        .fitting-description {
+            color: #6c757d;
+            font-style: italic;
+            margin-bottom: 15px;
+            font-size: 14px;
+        }
+
+        .fitting-controls {
+            display: flex;
+            gap: 15px;
+            align-items: flex-end;
+            flex-wrap: wrap;
+        }
+
+        .fitting-selectors {
+            display: flex;
+            gap: 10px;
+            flex: 1;
+        }
+
+        .fitting-select {
+            flex: 1;
+            padding: 12px 16px;
+            border: 2px solid #ced4da;
+            border-radius: 8px;
+            font-size: 16px;
+            background: white;
+            transition: all 0.3s ease;
+        }
+
+        .fitting-select:focus {
+            outline: none;
+            border-color: #4facfe;
+            box-shadow: 0 0 0 3px rgba(79, 172, 254, 0.1);
+        }
+
+        .fitting-select:disabled {
+            background: #f8f9fa;
+            color: #6c757d;
+            cursor: not-allowed;
+        }
+
+        .fit-btn {
+            background: linear-gradient(135deg, #ff6b6b, #ee5a52);
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            white-space: nowrap;
+        }
+
+        .fit-btn:hover:not(:disabled) {
+            background: linear-gradient(135deg, #ee5a52, #dc3545);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(238, 90, 82, 0.3);
+        }
+
+        .fit-btn:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .fitting-results {
+            margin-top: 20px;
+            padding: 15px;
+            background: rgba(40, 167, 69, 0.1);
+            border: 1px solid #28a745;
+            border-radius: 6px;
+        }
+
+        .fitting-results h4 {
+            margin: 0 0 10px 0;
+            color: #155724;
+        }
+
+        .parameter-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 0;
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        .parameter-row:last-child {
+            border-bottom: none;
+        }
+
+        .parameter-name {
+            font-weight: 600;
+            color: #495057;
+        }
+
+        .parameter-value {
+            font-family: 'Courier New', monospace;
+            color: #28a745;
+        }
+
+        /* Tab navigation styles */
+        .tab-navigation {
+            display: flex;
+            background: #f8f9fa;
+            border-bottom: 1px solid #dee2e6;
+            padding: 0;
+        }
+
+        .tab-button {
+            flex: 1;
+            padding: 15px 25px;
+            background: transparent;
+            border: none;
+            border-bottom: 3px solid transparent;
+            font-size: 16px;
+            font-weight: 600;
+            color: #6c757d;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .tab-button:hover {
+            background: rgba(79, 172, 254, 0.1);
+            color: #4facfe;
+        }
+
+        .tab-button.active {
+            color: #4facfe;
+            border-bottom-color: #4facfe;
+            background: rgba(79, 172, 254, 0.05);
+        }
+
+        /* Tab content styles */
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Data cleaning styles */
+        .cleaning-container {
+            background: white;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 10px;
+        }
+
+        .cleaning-description {
+            color: #6c757d;
+            font-style: italic;
+            margin-bottom: 15px;
+            font-size: 14px;
+        }
+
+        .cleaning-controls {
+            display: flex;
+            gap: 15px;
+            align-items: flex-end;
+            flex-wrap: wrap;
+        }
+
+        .cleaning-selectors {
+            display: flex;
+            gap: 10px;
+            flex: 1;
+        }
+
+        .cleaning-select,
+        .cleaning-input {
+            flex: 1;
+            padding: 12px 16px;
+            border: 2px solid #ced4da;
+            border-radius: 8px;
+            font-size: 16px;
+            background: white;
+            transition: all 0.3s ease;
+        }
+
+        .cleaning-select:focus,
+        .cleaning-input:focus {
+            outline: none;
+            border-color: #4facfe;
+            box-shadow: 0 0 0 3px rgba(79, 172, 254, 0.1);
+        }
+
+        .cleaning-select:disabled,
+        .cleaning-input:disabled {
+            background: #f8f9fa;
+            color: #6c757d;
+            cursor: not-allowed;
+        }
+
+        .clean-btn {
+            background: linear-gradient(135deg, #28a745, #20c997);
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            white-space: nowrap;
+        }
+
+        .clean-btn:hover:not(:disabled) {
+            background: linear-gradient(135deg, #218838, #1e7e34);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(40, 167, 69, 0.3);
+        }
+
+        .clean-btn:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .cleaning-progress {
+            margin-top: 20px;
+            padding: 15px;
+            background: rgba(0, 123, 255, 0.1);
+            border: 1px solid #007bff;
+            border-radius: 6px;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: #e9ecef;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #007bff, #0056b3);
+            width: 0%;
+            transition: width 0.3s ease;
+            border-radius: 10px;
+        }
+
+        .progress-text {
+            text-align: center;
+            font-weight: 600;
+            color: #0056b3;
+        }
+
+        .cleaning-results {
+            margin-top: 20px;
+            padding: 15px;
+            background: rgba(40, 167, 69, 0.1);
+            border: 1px solid #28a745;
+            border-radius: 6px;
+        }
+
+        .cleaning-results h4 {
+            margin: 0 0 10px 0;
+            color: #155724;
+        }
+
+        .log-entry {
+            padding: 5px 0;
+            border-bottom: 1px solid #dee2e6;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+        }
+
+        .log-entry:last-child {
+            border-bottom: none;
+        }
+
+        .log-success {
+            color: #28a745;
+        }
+
+        .log-error {
+            color: #dc3545;
+        }
+
+        .log-info {
+            color: #17a2b8;
+        }
+
+        @media (max-width: 768px) {
+            .wells-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .header h1 {
+                font-size: 2em;
+            }
+
+            .plot-buttons {
+                flex-direction: column;
+                gap: 5px;
+            }
+
+            .plot-buttons .btn {
+                font-size: 12px;
+                padding: 6px 12px;
+            }
+
+            .wells-grid-container {
+                grid-template-columns: 1fr;
+                gap: 15px;
+                padding: 15px;
+            }
+
+            .experiment-header {
+                padding: 12px 15px;
+            }
+
+            .experiment-title {
+                font-size: 14px;
+            }
+
+            .experiment-info {
+                font-size: 12px;
+                gap: 10px;
+            }
+
+            .experiment-checkboxes {
+                grid-template-columns: 1fr;
+                gap: 10px;
+            }
+
+            .experiment-checkbox-item {
+                padding: 10px 12px;
+            }
+
+            .experiment-name {
+                font-size: 14px;
+            }
+
+            .experiment-section-header {
+                padding: 12px 15px;
+            }
+
+            .experiment-section-header label {
+                font-size: 14px;
+            }
+
+            .experiment-section-info {
+                font-size: 12px;
+                gap: 10px;
+            }
+
+            .search-inputs {
+                grid-template-columns: 1fr;
+                gap: 10px;
+            }
+
+            .global-search-container {
+                padding: 15px;
+                margin-bottom: 20px;
+            }
+
+            .search-header {
+                font-size: 14px;
+            }
+
+            .global-search-input {
+                font-size: 16px; /* Prevents zoom on iOS */
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🧫 Growth Curve Plotter</h1>
+            <p>Interactive bacterial growth analysis tool</p>
+        </div>
+
+        <!-- Tab Navigation -->
+        <div class="tab-navigation">
+            <button class="tab-button active" onclick="switchTab('clean-data')">🧹 Clean Data</button>
+            <button class="tab-button" onclick="switchTab('plot-growth')">📊 Plot Growth</button>
+            <button class="tab-button" onclick="switchTab('fit-curve')">🧮 Fit Curve</button>
+        </div>
+
+        <div class="controls">
+            <!-- Clean Data Tab Content -->
+            <div id="clean-data-content" class="tab-content active">
+                <div class="control-group">
+                    <label>🧹 Data Cleaning</label>
+                    <div class="cleaning-container">
+                        <p class="cleaning-description">Clean raw Synergy microplate reader data files. Select an experiment from the raw_data folder to process.</p>
+                        
+                        <div class="cleaning-controls">
+                            <div class="cleaning-selectors">
+                                <select id="raw-experiment" class="cleaning-select">
+                                    <option value="">Select Raw Experiment</option>
+                                </select>
+                                <input type="number" id="well-count" class="cleaning-input" value="48" min="6" max="96" 
+                                       placeholder="Number of wells (6, 48, or 96)">
+                            </div>
+                            <button class="btn clean-btn" onclick="cleanExperimentData()" id="clean-button" disabled>🧹 Clean Data</button>
+                        </div>
+                        
+                        <div id="cleaning-progress" class="cleaning-progress" style="display: none;">
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="progress-fill"></div>
+                            </div>
+                            <div class="progress-text" id="progress-text">Processing...</div>
+                        </div>
+                        
+                        <div id="cleaning-results" class="cleaning-results" style="display: none;">
+                            <h4>Cleaning Results:</h4>
+                            <div id="cleaning-log"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Plot Growth Tab Content -->
+            <div id="plot-growth-content" class="tab-content">
+                <div class="control-group">
+                    <div class="experiment-section-header" onclick="toggleExperimentSection()">
+                        <label>📊 Select Experiments</label>
+                        <div class="experiment-section-info">
+                            <span id="experiment-count" class="wells-info">0 experiments selected</span>
+                            <span class="experiment-section-icon">▼</span>
+                        </div>
+                    </div>
+                    <div class="experiment-toggle-container" id="experiment-section" style="display: none;">
+                        <div class="global-search-container">
+                            <div class="search-header">🔍 Find Experiments</div>
+                            <div class="search-inputs">
+                                <input type="text" id="global-condition-search" 
+                                       placeholder="Search by condition (e.g., glucose, M9...)" 
+                                       oninput="debouncedGlobalSearch()"
+                                       class="global-search-input" />
+                                <input type="text" id="global-antibiotic-search" 
+                                       placeholder="Search by antibiotic (e.g., rifampicin...)" 
+                                       oninput="debouncedGlobalSearch()"
+                                       class="global-search-input" />
+                                <button class="btn" onclick="globalSearchExperiments()">🔍 Search</button>
+                            </div>
+                            <div id="global-search-results" class="search-results"></div>
+                        </div>
+                        <div id="experiment-list" class="experiment-checkboxes">
+                            <!-- Experiment checkboxes will be populated here -->
+                        </div>
+                        <div class="wells-buttons">
+                            <button class="btn" onclick="selectAllExperiments()">Select All Experiments</button>
+                            <button class="btn" onclick="clearAllExperiments()">Clear All</button>
+                            <button class="btn" onclick="clearGlobalSearch()">Clear Search</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="control-group" id="wells-group" style="display: none;">
+                <label for="wells-accordion">📍 Select Wells to Plot:</label>
+                <div class="wells-container">
+                    <div class="wells-buttons" style="margin-bottom: 15px;">
+                        <input type="text" id="condition-filter" placeholder="Filter by condition (e.g., glucose, control...)" 
+                               style="padding: 8px 12px; border: 2px solid #ced4da; border-radius: 6px; font-size: 14px; margin-right: 10px; width: 200px;"
+                               onkeyup="filterWellsAccordion()" />
+                        <input type="text" id="antibiotic-filter" placeholder="Filter by antibiotic (e.g., ampicillin...)" 
+                               style="padding: 8px 12px; border: 2px solid #ced4da; border-radius: 6px; font-size: 14px; margin-right: 10px; width: 200px;"
+                               onkeyup="filterWellsAccordion()" />
+                        <button class="btn" onclick="selectAllFilteredWells()">Select All Filtered</button>
+                        <button class="btn" onclick="clearAllSelectedWells()">Clear All</button>
+                        <span id="selected-count" class="wells-info"></span>
+                    </div>
+                    <div id="wells-accordion" class="experiments-accordion">
+                        <!-- Accordion will be populated here -->
+                    </div>
+                    <div id="filter-info" style="margin-top: 10px; color: #6c757d; font-size: 14px;"></div>
+                </div>
+            </div>
+            </div>
+
+            <!-- Fit Curve Tab Content -->
+            <div id="fit-curve-content" class="tab-content">
+                <div class="control-group" id="curve-fitting-group">
+                    <label>🧮 Curve Fitting (aHPM Model)</label>
+                    <div class="fitting-container">
+                        <p class="fitting-description">Select ONE experiment and ONE well to fit a growth curve using the aHPM model.</p>
+                        
+                        <div class="fitting-controls">
+                            <div class="fitting-selectors">
+                                <select id="fitting-experiment" class="fitting-select">
+                                    <option value="">Select Experiment</option>
+                                </select>
+                                <select id="fitting-well" class="fitting-select" disabled>
+                                    <option value="">Select Well</option>
+                                </select>
+                            </div>
+                            <button class="btn fit-btn" onclick="fitGrowthCurve()" id="fit-button" disabled>📊 Fit Curve</button>
+                        </div>
+                        
+                        <div id="fitting-results" class="fitting-results" style="display: none;">
+                            <h4>Fitting Results:</h4>
+                            <div id="fitting-parameters"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="content">
+            <!-- Plot Growth Tab Plot Container -->
+            <div class="plot-container" id="plot-growth-container" style="display: none;">
+                <div class="plot-controls" style="padding: 15px; background: #f8f9fa; border-bottom: 1px solid #dee2e6; display: flex; justify-content: space-between; align-items: center;">
+                    <h3 style="margin: 0; color: #495057;">📈 Growth Curves</h3>
+                    <div class="plot-buttons">
+                        <button class="btn" onclick="toggleFullscreen('plot-growth')" id="fullscreen-growth-btn">🔍 Fullscreen</button>
+                        <button class="btn" onclick="exportPlot('plot-growth')">💾 Export PNG</button>
+                        <button class="btn" onclick="exportPlotSVG('plot-growth')">📊 Export SVG</button>
+                    </div>
+                </div>
+                <div id="plot-growth" style="width: 100%; height: 700px;"></div>
+            </div>
+
+            <!-- Fit Curve Tab Plot Container -->
+            <div class="plot-container" id="plot-fitting-container" style="display: none;">
+                <div class="plot-controls" style="padding: 15px; background: #f8f9fa; border-bottom: 1px solid #dee2e6; display: flex; justify-content: space-between; align-items: center;">
+                    <h3 style="margin: 0; color: #495057;">🧮 Curve Fitting</h3>
+                    <div class="plot-buttons">
+                        <button class="btn" onclick="toggleFullscreen('plot-fitting')" id="fullscreen-fitting-btn">🔍 Fullscreen</button>
+                        <button class="btn" onclick="exportPlot('plot-fitting')">💾 Export PNG</button>
+                        <button class="btn" onclick="exportPlotSVG('plot-fitting')">📊 Export SVG</button>
+                    </div>
+                </div>
+                <div id="plot-fitting" style="width: 100%; height: 700px;"></div>
+            </div>
+
+            <div class="stats-container" id="stats-container" style="display: none;">
+                <div class="stats-title">📈 Well Statistics</div>
+                <div id="stats-table"></div>
+            </div>
+
+            <div id="loading" class="loading" style="display: none;">
+                <div class="spinner"></div>
+                Loading data...
+            </div>
+
+            <div id="info" class="info">
+                👋 Welcome! Select an experiment from the dropdown above to get started.
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '';
+        let selectedExperiments = new Set();
+        let experimentInfo = null;
+        let selectedWellIds = new Set();
+        let allWells = [];
+        let allExperiments = [];
+        let experimentSearchData = {};
+
+        // Initialize the app
+        async function init() {
+            await loadExperiments();
+            loadFittingExperiments();
+            loadRawExperiments();
+        }
+
+        // Tab switching functionality
+        function switchTab(tabName) {
+            // Hide all tab contents
+            const tabContents = document.querySelectorAll('.tab-content');
+            tabContents.forEach(content => content.classList.remove('active'));
+            
+            // Remove active class from all tab buttons
+            const tabButtons = document.querySelectorAll('.tab-button');
+            tabButtons.forEach(button => button.classList.remove('active'));
+            
+            // Show selected tab content
+            const selectedContent = document.getElementById(`${tabName}-content`);
+            if (selectedContent) {
+                selectedContent.classList.add('active');
+            }
+            
+            // Activate selected tab button
+            const selectedButton = document.querySelector(`[onclick="switchTab('${tabName}')"]`);
+            if (selectedButton) {
+                selectedButton.classList.add('active');
+            }
+            
+            // Show/hide appropriate plot containers based on tab
+            const growthContainer = document.getElementById('plot-growth-container');
+            const fittingContainer = document.getElementById('plot-fitting-container');
+            const statsContainer = document.getElementById('stats-container');
+            
+            if (tabName === 'plot-growth') {
+                // Show growth plot if it has been created (check if plot div has data)
+                const growthPlotDiv = document.getElementById('plot-growth');
+                if (growthPlotDiv && growthPlotDiv.hasChildNodes() && growthPlotDiv.children.length > 0) {
+                    growthContainer.style.display = 'block';
+                } else {
+                    growthContainer.style.display = 'none';
+                }
+                fittingContainer.style.display = 'none';
+                
+                // Show stats if they exist for growth plot
+                if (statsContainer.querySelector('#stats-table') && statsContainer.querySelector('#stats-table').innerHTML.trim()) {
+                    statsContainer.style.display = 'block';
+                } else {
+                    statsContainer.style.display = 'none';
+                }
+                
+                document.getElementById('fitting-results').style.display = 'none';
+            } else if (tabName === 'fit-curve') {
+                // Show fitting plot if it has been created (check if plot div has data)
+                const fittingPlotDiv = document.getElementById('plot-fitting');
+                if (fittingPlotDiv && fittingPlotDiv.hasChildNodes() && fittingPlotDiv.children.length > 0) {
+                    fittingContainer.style.display = 'block';
+                } else {
+                    fittingContainer.style.display = 'none';
+                }
+                growthContainer.style.display = 'none';
+                
+                // Hide stats for fitting (not relevant)
+                statsContainer.style.display = 'none';
+                
+                // Show fitting results if they exist
+                const fittingResults = document.getElementById('fitting-results');
+                if (fittingResults && fittingResults.style.display === 'block') {
+                    fittingResults.style.display = 'block';
+                }
+            }
+        }
+
+        // Load available experiments
+        async function loadExperiments() {
+            try {
+                const response = await fetch(`${API_BASE}/api/experiments`);
+                const experiments = await response.json();
+                
+                // Store experiments globally for fitting interface
+                experimentInfo = experiments;
+                
+                const experimentList = document.getElementById('experiment-list');
+                experimentList.innerHTML = '';
+                
+                experiments.forEach(exp => {
+                    const checkboxItem = document.createElement('div');
+                    checkboxItem.className = 'experiment-checkbox-item';
+                    checkboxItem.dataset.experiment = exp;
+                    checkboxItem.onclick = () => toggleExperimentSelection(exp);
+                    checkboxItem.innerHTML = `
+                        <div class="experiment-checkbox"></div>
+                        <div class="experiment-name">${exp}</div>
+                    `;
+                    experimentList.appendChild(checkboxItem);
+                });
+                
+            } catch (error) {
+                console.error('Error loading experiments:', error);
+                document.getElementById('info').innerHTML = '❌ Error loading experiments. Make sure the server is running.';
+                document.getElementById('info').className = 'error';
+            }
+        }
+
+        // Toggle individual experiment selection
+        function toggleExperimentSelection(experiment) {
+            const checkboxItem = document.querySelector(`[data-experiment="${experiment}"]`);
+            
+            if (!checkboxItem) {
+                console.error(`Could not find checkbox item for experiment: ${experiment}`);
+                return;
+            }
+            
+            if (selectedExperiments.has(experiment)) {
+                // Deselect experiment
+                selectedExperiments.delete(experiment);
+                checkboxItem.classList.remove('selected');
+                
+                // Remove wells from this experiment
+                const wellsToRemove = Array.from(selectedWellIds).filter(wellId => 
+                    wellId.startsWith(experiment + '_')
+                );
+                wellsToRemove.forEach(wellId => selectedWellIds.delete(wellId));
+            } else {
+                // Select experiment
+                selectedExperiments.add(experiment);
+                checkboxItem.classList.add('selected');
+            }
+            
+            updateExperimentCount();
+            
+            if (selectedExperiments.size === 0) {
+                hideWellsAndPlot();
+                return;
+            }
+            
+            // Load experiment data
+            loadExperimentData();
+        }
+
+        // Load experiment data for selected experiments
+        async function loadExperimentData() {
+            if (selectedExperiments.size === 0) return;
+            
+            showLoading();
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/multi-experiment-info`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        experiments: Array.from(selectedExperiments)
+                    })
+                });
+                
+                experimentInfo = await response.json();
+                allWells = experimentInfo.wells;
+                
+                displayWells(allWells);
+                hideLoading();
+                
+            } catch (error) {
+                console.error('Error loading experiment info:', error);
+                hideLoading();
+                showError('Error loading experiment data');
+            }
+        }
+
+        // Update experiment count display
+        function updateExperimentCount() {
+            document.getElementById('experiment-count').textContent = 
+                `${selectedExperiments.size} experiments selected`;
+        }
+
+        // Select all experiments
+        function selectAllExperiments() {
+            const checkboxItems = document.querySelectorAll('.experiment-checkbox-item');
+            checkboxItems.forEach(item => {
+                const experimentName = item.querySelector('.experiment-name').textContent;
+                if (!selectedExperiments.has(experimentName)) {
+                    selectedExperiments.add(experimentName);
+                    item.classList.add('selected');
+                }
+            });
+            updateExperimentCount();
+            loadExperimentData();
+        }
+
+        // Clear all experiments
+        function clearAllExperiments() {
+            selectedExperiments.clear();
+            selectedWellIds.clear();
+            const checkboxItems = document.querySelectorAll('.experiment-checkbox-item');
+            checkboxItems.forEach(item => {
+                item.classList.remove('selected');
+            });
+            updateExperimentCount();
+            hideWellsAndPlot();
+        }
+
+        // Display wells for selection using accordion
+        function displayWells(wells) {
+            console.log('displayWells called with', wells.length, 'wells');
+            console.log('Current selectedWellIds:', Array.from(selectedWellIds));
+            
+            const wellsAccordion = document.getElementById('wells-accordion');
+            const wellsGroup = document.getElementById('wells-group');
+            
+            // Store which experiments are currently expanded
+            const expandedExperiments = new Set();
+            document.querySelectorAll('.experiment-header.active').forEach(header => {
+                const experimentTitle = header.querySelector('.experiment-title').textContent;
+                expandedExperiments.add(experimentTitle);
+            });
+            
+            // Group wells by experiment
+            const experimentWells = {};
+            wells.forEach(wellInfo => {
+                if (!experimentWells[wellInfo.experiment]) {
+                    experimentWells[wellInfo.experiment] = [];
+                }
+                experimentWells[wellInfo.experiment].push(wellInfo);
+            });
+            
+            // Clear existing accordion
+            wellsAccordion.innerHTML = '';
+            
+            // Create accordion for each experiment
+            Object.keys(experimentWells).forEach((experiment, index) => {
+                const expWells = experimentWells[experiment];
+                const selectedWells = expWells.filter(w => selectedWellIds.has(w.well_id));
+                const unselectedWells = expWells.filter(w => !selectedWellIds.has(w.well_id));
+                
+                console.log(`Experiment ${experiment}: ${selectedWells.length} selected, ${unselectedWells.length} unselected`);
+                
+                const experimentItem = document.createElement('div');
+                experimentItem.className = 'experiment-item';
+                experimentItem.innerHTML = `
+                    <div class="experiment-header" onclick="toggleExperiment('${experiment}')">
+                        <div>
+                            <div class="experiment-title">${experiment}</div>
+                            <div class="experiment-info">
+                                <span>${expWells.length} wells total</span>
+                                <span>${selectedWells.length} selected</span>
+                            </div>
+                        </div>
+                        <span class="accordion-icon">▼</span>
+                    </div>
+                    <div class="experiment-content" id="content-${experiment}">
+                        <div class="wells-grid-container">
+                            <div class="wells-column">
+                                <div class="wells-column-header selected-wells-header">
+                                    Selected Wells (${selectedWells.length})
+                                </div>
+                                <div class="wells-list" id="selected-${experiment}">
+                                    ${selectedWells.map(well => createWellItem(well, true)).join('')}
+                                </div>
+                            </div>
+                            <div class="wells-column">
+                                <div class="wells-column-header available-wells-header">
+                                    Available Wells (${unselectedWells.length})
+                                </div>
+                                <div class="wells-list" id="available-${experiment}">
+                                    ${unselectedWells.map(well => createWellItem(well, false)).join('')}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                wellsAccordion.appendChild(experimentItem);
+                
+                // Restore expansion state or open first experiment by default
+                if (expandedExperiments.has(experiment) || (index === 0 && expandedExperiments.size === 0)) {
+                    setTimeout(() => toggleExperiment(experiment), 100);
+                }
+            });
+            
+            wellsGroup.style.display = 'block';
+            updateSelectedCount();
+            
+            // Reapply any existing filters
+            setTimeout(() => {
+                filterWellsAccordion();
+            }, 150);
+            
+            const experimentNames = Array.from(selectedExperiments).join(', ');
+            document.getElementById('info').innerHTML = `📊 Experiments loaded: <strong>${experimentNames}</strong><br>Found ${wells.length} wells total. Click on experiment headers to expand/collapse. Click wells to select/deselect them.`;
+            document.getElementById('info').className = 'info';
+        }
+        
+        function createWellItem(wellInfo, isSelected) {
+            return `
+                <div class="well-item ${isSelected ? 'selected' : ''}" 
+                     onclick="toggleWell('${wellInfo.well_id}')"
+                     data-well-id="${wellInfo.well_id}"
+                     data-experiment="${wellInfo.experiment}"
+                     data-condition="${wellInfo.condition.toLowerCase()}"
+                     data-antibiotic="${wellInfo.antibiotic.toLowerCase()}">
+                    <div class="well-name">${wellInfo.experiment}: ${wellInfo.well}</div>
+                    <div class="well-condition">${wellInfo.condition} | ${wellInfo.antibiotic}</div>
+                </div>
+            `;
+        }
+
+        // Toggle accordion experiment
+        function toggleExperiment(experiment) {
+            const header = document.querySelector(`[onclick="toggleExperiment('${experiment}')"]`);
+            const content = document.getElementById(`content-${experiment}`);
+            const icon = header.querySelector('.accordion-icon');
+            
+            if (content.classList.contains('active')) {
+                content.classList.remove('active');
+                header.classList.remove('active');
+                icon.textContent = '▼';
+            } else {
+                content.classList.add('active');
+                header.classList.add('active');
+                icon.textContent = '▲';
+            }
+        }
+        
+        // Toggle individual well selection
+        function toggleWell(wellId) {
+            const wellItem = document.querySelector(`[data-well-id="${wellId}"]`);
+            const experiment = wellItem.dataset.experiment;
+            
+            if (selectedWellIds.has(wellId)) {
+                // Deselect well
+                selectedWellIds.delete(wellId);
+                wellItem.classList.remove('selected');
+                
+                // Move to available column
+                const availableColumn = document.getElementById(`available-${experiment}`);
+                availableColumn.appendChild(wellItem);
+            } else {
+                // Select well
+                selectedWellIds.add(wellId);
+                wellItem.classList.add('selected');
+                
+                // Move to selected column
+                const selectedColumn = document.getElementById(`selected-${experiment}`);
+                selectedColumn.appendChild(wellItem);
+            }
+            
+            // Update headers and counts
+            updateExperimentHeaders();
+            updateSelectedCount();
+            
+            // Update plot
+            if (selectedWellIds.size > 0) {
+                plotGrowthCurves();
+            } else {
+                hidePlotAndStats();
+            }
+        }
+        
+        // Update experiment headers with current counts
+        function updateExperimentHeaders() {
+            Object.keys(experimentInfo.wells.reduce((acc, well) => {
+                acc[well.experiment] = true;
+                return acc;
+            }, {})).forEach(experiment => {
+                const expWells = experimentInfo.wells.filter(w => w.experiment === experiment);
+                const selectedWells = expWells.filter(w => selectedWellIds.has(w.well_id));
+                
+                const header = document.querySelector(`[onclick="toggleExperiment('${experiment}')"]`);
+                const infoDiv = header.querySelector('.experiment-info');
+                infoDiv.innerHTML = `
+                    <span>${expWells.length} wells total</span>
+                    <span>${selectedWells.length} selected</span>
+                `;
+                
+                // Update column headers
+                const selectedHeader = document.querySelector(`#selected-${experiment}`).previousElementSibling;
+                const availableHeader = document.querySelector(`#available-${experiment}`).previousElementSibling;
+                selectedHeader.textContent = `Selected Wells (${selectedWells.length})`;
+                availableHeader.textContent = `Available Wells (${expWells.length - selectedWells.length})`;
+            });
+        }
+
+        // Update selected wells count
+        function updateSelectedCount() {
+            document.getElementById('selected-count').textContent = 
+                `${selectedWellIds.size} wells selected`;
+        }
+
+        // Select all filtered wells
+        function selectAllFilteredWells() {
+            const visibleWells = document.querySelectorAll('.well-item:not([style*="display: none"])');
+            visibleWells.forEach(wellItem => {
+                const wellId = wellItem.dataset.wellId;
+                if (!selectedWellIds.has(wellId)) {
+                    toggleWell(wellId);
+                }
+            });
+        }
+
+        // Clear all selected wells
+        function clearAllSelectedWells() {
+            // Get a copy of all currently selected well IDs
+            const selectedWells = Array.from(selectedWellIds);
+            
+            // Clear the selected wells set first
+            selectedWellIds.clear();
+            
+            // Move all wells back to available columns and remove selected styling
+            selectedWells.forEach(wellId => {
+                const wellItem = document.querySelector(`[data-well-id="${wellId}"]`);
+                if (wellItem) {
+                    const experiment = wellItem.dataset.experiment;
+                    wellItem.classList.remove('selected');
+                    
+                    // Move to available column
+                    const availableColumn = document.getElementById(`available-${experiment}`);
+                    if (availableColumn) {
+                        availableColumn.appendChild(wellItem);
+                    }
+                }
+            });
+            
+            // Update the selected count
+            updateSelectedCount();
+            
+            // Update the plot (clear it)
+            updatePlotWithSelectedWells();
+        }
+
+        // Filter wells in accordion based on condition and antibiotic text
+        function filterWellsAccordion() {
+            const conditionFilter = document.getElementById('condition-filter').value.toLowerCase().trim();
+            const antibioticFilter = document.getElementById('antibiotic-filter').value.toLowerCase().trim();
+            const filterInfo = document.getElementById('filter-info');
+            
+            let visibleCount = 0;
+            let matchingCount = 0;
+            
+            // Show/hide wells based on filters
+            const allWells = document.querySelectorAll('.well-item');
+            allWells.forEach(wellItem => {
+                const conditionText = wellItem.dataset.condition;
+                const antibioticText = wellItem.dataset.antibiotic;
+                
+                const conditionMatch = conditionFilter === '' || conditionText.includes(conditionFilter);
+                const antibioticMatch = antibioticFilter === '' || antibioticText.includes(antibioticFilter);
+                
+                if (conditionMatch && antibioticMatch) {
+                    wellItem.style.display = 'block';
+                    visibleCount++;
+                    if (conditionFilter !== '' || antibioticFilter !== '') matchingCount++;
+                } else {
+                    wellItem.style.display = 'none';
+                }
+            });
+            
+            // Update filter info
+            const activeFilters = [];
+            if (conditionFilter !== '') activeFilters.push(`condition: "${conditionFilter}"`);
+            if (antibioticFilter !== '') activeFilters.push(`antibiotic: "${antibioticFilter}"`);
+            
+            if (activeFilters.length === 0) {
+                filterInfo.textContent = `Showing all ${visibleCount} wells`;
+            } else {
+                filterInfo.textContent = `Filter ${activeFilters.join(' & ')}: ${matchingCount} wells match`;
+            }
+        }
+
+        // Helper function to resize plot
+        function resizePlot() {
+            // Resize both plots if they exist
+            const growthPlot = document.getElementById('plot-growth');
+            const fittingPlot = document.getElementById('plot-fitting');
+            
+            if (growthPlot && typeof Plotly !== 'undefined' && document.getElementById('plot-growth-container').style.display === 'block') {
+                setTimeout(() => {
+                    Plotly.Plots.resize(growthPlot);
+                }, 100);
+            }
+            
+            if (fittingPlot && typeof Plotly !== 'undefined' && document.getElementById('plot-fitting-container').style.display === 'block') {
+                setTimeout(() => {
+                    Plotly.Plots.resize(fittingPlot);
+                }, 100);
+            }
+        }
+
+        // Plot growth curves
+        async function plotGrowthCurves() {
+            if (selectedWellIds.size === 0) return;
+
+            showLoading();
+            
+            try {
+                // Create well selections array
+                const wellSelections = Array.from(selectedWellIds).map(wellId => {
+                    const wellInfo = allWells.find(w => w.well_id === wellId);
+                    return {
+                        experiment: wellInfo.experiment,
+                        well: wellInfo.well
+                    };
+                });
+                
+                const response = await fetch(`${API_BASE}/api/plot-data`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        well_selections: wellSelections
+                    })
+                });
+                
+                const data = await response.json();
+                
+                // Prepare Plotly traces with experiment info
+                const traces = data.traces.map((trace, index) => ({
+                    x: trace.x,
+                    y: trace.y,
+                    mode: 'lines+markers',
+                    name: `${trace.experiment}: ${trace.well.split('_')[1]} (${trace.condition})`,
+                    line: { width: 2 },
+                    marker: { size: 4 }
+                }));
+
+                // Plot configuration
+                const experimentNames = Array.from(selectedExperiments).join(', ');
+                const layout = {
+                    title: {
+                        text: `Growth Curves - ${experimentNames} (${selectedWellIds.size} wells)`,
+                        font: { size: 20, color: '#495057' }
+                    },
+                    xaxis: {
+                        title: 'Time (hours)',
+                        gridcolor: '#e9ecef'
+                    },
+                    yaxis: {
+                        title: 'Optical Density (OD)',
+                        gridcolor: '#e9ecef'
+                    },
+                    hovermode: 'x unified',
+                    template: 'plotly_white',
+                    legend: {
+                        x: 1.02,
+                        y: 1
+                    },
+                    margin: { l: 60, r: 120, t: 80, b: 60 },
+                    autosize: true
+                };
+
+                const config = {
+                    responsive: true,
+                    displayModeBar: true,
+                    modeBarButtonsToRemove: ['lasso2d', 'select2d']
+                };
+
+                // Show containers and create plot
+                document.getElementById('plot-growth-container').style.display = 'block';
+                document.getElementById('stats-container').style.display = 'block';
+                
+                // Clear any existing plot and create new one
+                const plotDiv = document.getElementById('plot-growth');
+                Plotly.purge(plotDiv);
+                await Plotly.newPlot(plotDiv, traces, layout, config);
+                
+                // Display statistics
+                displayStats(data.stats);
+                
+                hideLoading();
+                
+            } catch (error) {
+                console.error('Error plotting data:', error);
+                hideLoading();
+                showError('Error loading plot data');
+            }
+        }
+
+        // Display statistics table
+        function displayStats(stats) {
+            const statsTable = document.getElementById('stats-table');
+            
+            if (stats.length === 0) {
+                statsTable.innerHTML = '<p>No data available</p>';
+                return;
+            }
+            
+            let tableHTML = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Well</th>
+                            <th>Condition</th>
+                            <th>Antibiotic</th>
+                            <th>Max OD</th>
+                            <th>Final OD</th>
+                            <th>AUC</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            
+            stats.forEach(stat => {
+                tableHTML += `
+                    <tr>
+                        <td><strong>${stat.well}</strong></td>
+                        <td>${stat.condition}</td>
+                        <td>${stat.antibiotic || 'Unknown'}</td>
+                        <td>${stat.max_od}</td>
+                        <td>${stat.final_od}</td>
+                        <td>${stat.auc}</td>
+                    </tr>
+                `;
+            });
+            
+            tableHTML += '</tbody></table>';
+            statsTable.innerHTML = tableHTML;
+        }
+
+        // Utility functions
+        function showLoading() {
+            document.getElementById('loading').style.display = 'block';
+        }
+
+        function hideLoading() {
+            document.getElementById('loading').style.display = 'none';
+        }
+
+        function showError(message) {
+            document.getElementById('info').innerHTML = `❌ ${message}`;
+            document.getElementById('info').className = 'error';
+        }
+
+        function hideWellsAndPlot() {
+            document.getElementById('wells-group').style.display = 'none';
+            hidePlotAndStats();
+            document.getElementById('info').innerHTML = '👋 Select an experiment to get started.';
+            document.getElementById('info').className = 'info';
+        }
+
+        function hidePlotAndStats() {
+            document.getElementById('plot-growth-container').style.display = 'none';
+            document.getElementById('plot-fitting-container').style.display = 'none';
+            document.getElementById('stats-container').style.display = 'none';
+        }
+
+        // Toggle experiment section
+        function toggleExperimentSection() {
+            const header = document.querySelector('.experiment-section-header');
+            const section = document.getElementById('experiment-section');
+            const icon = document.querySelector('.experiment-section-icon');
+            
+            if (section.style.display === 'none') {
+                // Show section
+                section.style.display = 'block';
+                header.classList.add('active');
+                icon.textContent = '▲';
+            } else {
+                // Hide section
+                section.style.display = 'none';
+                header.classList.remove('active');
+                icon.textContent = '▼';
+            }
+        }
+
+        // Initialize the app when page loads
+        window.addEventListener('load', init);
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            if (isFullscreen) {
+                // In fullscreen mode, find the currently active plot and resize it
+                const growthContainer = document.getElementById('plot-growth-container');
+                const fittingContainer = document.getElementById('plot-fitting-container');
+                
+                let activePlotDiv = null;
+                if (growthContainer && growthContainer.classList.contains('fullscreen-plot')) {
+                    activePlotDiv = document.getElementById('plot-growth');
+                } else if (fittingContainer && fittingContainer.classList.contains('fullscreen-plot')) {
+                    activePlotDiv = document.getElementById('plot-fitting');
+                }
+                
+                if (activePlotDiv && typeof Plotly !== 'undefined') {
+                    const newWidth = window.innerWidth;
+                    const newHeight = window.innerHeight - 80;
+                    
+                    Plotly.relayout(activePlotDiv, {
+                        width: newWidth,
+                        height: newHeight
+                    });
+                }
+            } else {
+                resizePlot();
+            }
+        });
+
+        // Fullscreen functionality
+        let isFullscreen = false;
+        
+        function toggleFullscreen(plotType = 'plot-growth') {
+            const containerId = plotType === 'plot-growth' ? 'plot-growth-container' : 'plot-fitting-container';
+            const buttonId = plotType === 'plot-growth' ? 'fullscreen-growth-btn' : 'fullscreen-fitting-btn';
+            
+            const plotContainer = document.getElementById(containerId);
+            const plotDiv = document.getElementById(plotType);
+            const fullscreenBtn = document.getElementById(buttonId);
+            
+            if (!isFullscreen) {
+                // Enter fullscreen
+                plotContainer.classList.add('fullscreen-plot');
+                fullscreenBtn.innerHTML = '🔙 Exit Fullscreen';
+                isFullscreen = true;
+                
+                // Add escape key listener
+                document.addEventListener('keydown', handleEscapeKey);
+                
+                // Force resize plot after DOM update with multiple attempts
+                setTimeout(() => {
+                    const newWidth = window.innerWidth;
+                    const newHeight = window.innerHeight - 80; // Account for control bar
+                    
+                    // Use Plotly's relayout to properly resize
+                    if (plotDiv && typeof Plotly !== 'undefined') {
+                        Plotly.relayout(plotDiv, {
+                            width: newWidth,
+                            height: newHeight,
+                            autosize: true
+                        }).then(() => {
+                            // Additional resize call for good measure
+                            Plotly.Plots.resize(plotDiv);
+                        });
+                    }
+                }, 150);
+                
+                // Additional resize after a longer delay
+                setTimeout(() => {
+                    if (plotDiv && typeof Plotly !== 'undefined') {
+                        Plotly.Plots.resize(plotDiv);
+                    }
+                }, 300);
+            } else {
+                // Exit fullscreen
+                plotContainer.classList.remove('fullscreen-plot');
+                fullscreenBtn.innerHTML = '🔍 Fullscreen';
+                isFullscreen = false;
+                
+                // Remove escape key listener
+                document.removeEventListener('keydown', handleEscapeKey);
+                
+                // Resize plot back to normal size
+                setTimeout(() => {
+                    if (plotDiv && typeof Plotly !== 'undefined') {
+                        Plotly.relayout(plotDiv, {
+                            width: null,
+                            height: 700,
+                            autosize: true
+                        }).then(() => {
+                            Plotly.Plots.resize(plotDiv);
+                        });
+                    }
+                }, 150);
+                
+                // Additional resize after a longer delay
+                setTimeout(() => {
+                    if (plotDiv && typeof Plotly !== 'undefined') {
+                        Plotly.Plots.resize(plotDiv);
+                    }
+                }, 300);
+            }
+        }
+        
+        function handleEscapeKey(event) {
+            if (event.key === 'Escape' && isFullscreen) {
+                toggleFullscreen();
+            }
+        }
+
+        // Export functionality
+        function exportPlot(plotType = 'plot-growth') {
+            const plotDiv = document.getElementById(plotType);
+            if (plotDiv && typeof Plotly !== 'undefined') {
+                const filename = generateFilename('png');
+                
+                Plotly.downloadImage(plotDiv, {
+                    format: 'png',
+                    width: 1200,
+                    height: 800,
+                    filename: filename
+                }).then(() => {
+                    showExportMessage('PNG exported successfully!');
+                }).catch((error) => {
+                    console.error('Export failed:', error);
+                    showExportMessage('Export failed. Please try again.', true);
+                });
+            }
+        }
+
+        function exportPlotSVG(plotType = 'plot-growth') {
+            const plotDiv = document.getElementById(plotType);
+            if (plotDiv && typeof Plotly !== 'undefined') {
+                const filename = generateFilename('svg');
+                
+                Plotly.downloadImage(plotDiv, {
+                    format: 'svg',
+                    width: 1200,
+                    height: 800,
+                    filename: filename
+                }).then(() => {
+                    showExportMessage('SVG exported successfully!');
+                }).catch((error) => {
+                    console.error('Export failed:', error);
+                    showExportMessage('Export failed. Please try again.', true);
+                });
+            }
+        }
+
+        function generateFilename(extension) {
+            const experimentNames = Array.from(selectedExperiments).join('-');
+            const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+            return `growth-curves-${experimentNames}-${selectedWellIds.size}wells-${timestamp}.${extension}`;
+        }
+
+        function showExportMessage(message, isError = false) {
+            // Create temporary message element
+            const messageDiv = document.createElement('div');
+            messageDiv.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                padding: 15px 20px;
+                border-radius: 8px;
+                color: white;
+                font-weight: 600;
+                z-index: 10001;
+                animation: slideIn 0.3s ease-out;
+                ${isError ? 
+                    'background: linear-gradient(135deg, #ff6b6b 0%, #ee5a52 100%);' : 
+                    'background: linear-gradient(135deg, #51cf66 0%, #40c057 100%);'
+                }
+            `;
+            messageDiv.textContent = message;
+            
+            // Add animation keyframes
+            if (!document.getElementById('export-animations')) {
+                const style = document.createElement('style');
+                style.id = 'export-animations';
+                style.textContent = `
+                    @keyframes slideIn {
+                        from { transform: translateX(100%); opacity: 0; }
+                        to { transform: translateX(0); opacity: 1; }
+                    }
+                    @keyframes slideOut {
+                        from { transform: translateX(0); opacity: 1; }
+                        to { transform: translateX(100%); opacity: 0; }
+                    }
+                `;
+                document.head.appendChild(style);
+            }
+            
+            document.body.appendChild(messageDiv);
+            
+            // Remove message after 3 seconds
+            setTimeout(() => {
+                messageDiv.style.animation = 'slideOut 0.3s ease-in';
+                setTimeout(() => {
+                    document.body.removeChild(messageDiv);
+                }, 300);
+            }, 3000);
+        }
+
+        // Debounced search functionality
+        let searchTimeout = null;
+        
+        function debouncedGlobalSearch() {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(globalSearchExperiments, 500); // Wait 500ms after user stops typing
+        }
+
+        // Global search functionality
+        async function globalSearchExperiments() {
+            const conditionQuery = document.getElementById('global-condition-search').value.trim();
+            const antibioticQuery = document.getElementById('global-antibiotic-search').value.trim();
+            
+            if (!conditionQuery && !antibioticQuery) {
+                // Clear results and filters if both fields are empty
+                const resultsDiv = document.getElementById('global-search-results');
+                if (resultsDiv) {
+                    resultsDiv.style.display = 'none';
+                }
+                
+                // Remove all search filtering classes
+                const experimentItems = document.querySelectorAll('.experiment-checkbox-item');
+                experimentItems.forEach(item => {
+                    item.classList.remove('search-filtered-out', 'search-match');
+                });
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/global-search', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        condition: conditionQuery,
+                        antibiotic: antibioticQuery
+                    }),
+                });
+                
+                console.log('Response status:', response.status);
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('Server error:', errorText);
+                    throw new Error(`Server returned ${response.status}: ${errorText}`);
+                }
+                
+                const searchResults = await response.json();
+                console.log('Search results:', searchResults);
+                displayGlobalSearchResults(searchResults);
+                
+            } catch (error) {
+                console.error('Error performing global search:', error);
+                alert(`Error performing search: ${error.message}. Check console for details.`);
+            }
+        }
+        
+        function displayGlobalSearchResults(results) {
+            try {
+                const resultsDiv = document.getElementById('global-search-results');
+                
+                if (!Array.isArray(results)) {
+                    console.error('Results is not an array:', results);
+                    return;
+                }
+                
+                // Create a set of matching experiment names for easy lookup
+                const matchingExperiments = new Set(results.map(result => result.experiment));
+                
+                // Get all experiment checkboxes and apply visual filtering
+                const experimentItems = document.querySelectorAll('.experiment-checkbox-item');
+                let matchCount = 0;
+                
+                experimentItems.forEach(item => {
+                    const experimentName = item.dataset.experiment;
+                    if (matchingExperiments.has(experimentName)) {
+                        // Highlight matching experiments
+                        item.classList.remove('search-filtered-out');
+                        item.classList.add('search-match');
+                        matchCount++;
+                    } else {
+                        // Gray out non-matching experiments
+                        item.classList.remove('search-match');
+                        item.classList.add('search-filtered-out');
+                    }
+                });
+                
+                // Show search status
+                if (results.length === 0) {
+                    resultsDiv.innerHTML = '<div class="search-status">No experiments match your search criteria.</div>';
+                    // Gray out all experiments
+                    experimentItems.forEach(item => {
+                        item.classList.remove('search-match');
+                        item.classList.add('search-filtered-out');
+                    });
+                } else {
+                    const totalWells = results.reduce((sum, result) => sum + result.matching_wells.length, 0);
+                    resultsDiv.innerHTML = `<div class="search-status">Found ${results.length} experiment(s) with ${totalWells} matching well(s)</div>`;
+                }
+                
+                resultsDiv.style.display = 'block';
+                
+            } catch (error) {
+                console.error('Error displaying search results:', error);
+                throw error;
+            }
+        }
+        
+        function selectFromSearch(experimentName) {
+            // Add the experiment to selected experiments if not already selected
+            if (!selectedExperiments.has(experimentName)) {
+                selectedExperiments.add(experimentName);
+                updateExperimentCheckboxes();
+                onExperimentChange();
+            }
+            
+            // Clear search results
+            clearGlobalSearch();
+            
+            // Scroll to experiment section
+            document.querySelector('.experiment-section-header').scrollIntoView({ behavior: 'smooth' });
+        }
+        
+        function clearGlobalSearch() {
+            document.getElementById('global-condition-search').value = '';
+            document.getElementById('global-antibiotic-search').value = '';
+            document.getElementById('global-search-results').style.display = 'none';
+            
+            // Remove all search filtering classes
+            const experimentItems = document.querySelectorAll('.experiment-checkbox-item');
+            experimentItems.forEach(item => {
+                item.classList.remove('search-filtered-out', 'search-match');
+            });
+        }
+
+        // Data cleaning functionality
+        async function loadRawExperiments() {
+            const rawExperimentSelect = document.getElementById('raw-experiment');
+            const cleanButton = document.getElementById('clean-button');
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/raw-experiments`);
+                const rawExperiments = await response.json();
+                
+                // Clear previous options
+                rawExperimentSelect.innerHTML = '<option value="">Select Raw Experiment</option>';
+                
+                if (rawExperiments.length === 0) {
+                    rawExperimentSelect.innerHTML = '<option value="">No raw experiments found</option>';
+                    return;
+                }
+                
+                rawExperiments.forEach(exp => {
+                    const option = document.createElement('option');
+                    option.value = exp;
+                    option.textContent = exp;
+                    rawExperimentSelect.appendChild(option);
+                });
+                
+                // Add event listener
+                rawExperimentSelect.addEventListener('change', () => {
+                    cleanButton.disabled = !rawExperimentSelect.value;
+                });
+                
+            } catch (error) {
+                console.error('Error loading raw experiments:', error);
+                rawExperimentSelect.innerHTML = '<option value="">Error loading experiments</option>';
+            }
+        }
+
+        async function cleanExperimentData() {
+            const rawExperimentSelect = document.getElementById('raw-experiment');
+            const wellCountInput = document.getElementById('well-count');
+            const cleanButton = document.getElementById('clean-button');
+            const progressDiv = document.getElementById('cleaning-progress');
+            const resultsDiv = document.getElementById('cleaning-results');
+            const progressFill = document.getElementById('progress-fill');
+            const progressText = document.getElementById('progress-text');
+            const cleaningLog = document.getElementById('cleaning-log');
+            
+            const experiment = rawExperimentSelect.value;
+            const wellCount = parseInt(wellCountInput.value);
+            
+            if (!experiment) {
+                alert('Please select a raw experiment');
+                return;
+            }
+            
+            if (![6, 48, 96].includes(wellCount)) {
+                alert('Well count must be 6, 48, or 96');
+                return;
+            }
+            
+            // Show progress and disable button
+            cleanButton.disabled = true;
+            cleanButton.textContent = '🔄 Cleaning...';
+            progressDiv.style.display = 'block';
+            resultsDiv.style.display = 'none';
+            
+            // Animate progress bar
+            let progress = 0;
+            const progressInterval = setInterval(() => {
+                progress += 2;
+                progressFill.style.width = Math.min(progress, 90) + '%';
+                
+                if (progress < 30) {
+                    progressText.textContent = 'Reading raw data files...';
+                } else if (progress < 60) {
+                    progressText.textContent = 'Processing annotation data...';
+                } else if (progress < 90) {
+                    progressText.textContent = 'Cleaning time series data...';
+                }
+            }, 100);
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/clean-data`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        experiment: experiment,
+                        well_count: wellCount
+                    })
+                });
+                
+                clearInterval(progressInterval);
+                progressFill.style.width = '100%';
+                progressText.textContent = 'Complete!';
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Cleaning failed');
+                }
+                
+                const cleaningData = await response.json();
+                
+                // Show results
+                setTimeout(() => {
+                    progressDiv.style.display = 'none';
+                    resultsDiv.style.display = 'block';
+                    
+                    let logHtml = `
+                        <div class="log-entry log-success">✅ ${cleaningData.message}</div>
+                        <div class="log-entry log-info">📂 Output folder: ${cleaningData.output_path}</div>
+                        <div class="log-entry log-info">🧪 Wells processed: ${cleaningData.well_count}</div>
+                        <div class="log-entry log-info">📄 Files created: ${cleaningData.created_files.length}</div>
+                    `;
+                    
+                    cleaningData.created_files.forEach(file => {
+                        logHtml += `<div class="log-entry log-success">   └── ${file}</div>`;
+                    });
+                    
+                    cleaningLog.innerHTML = logHtml;
+                    
+                    // Refresh the cleaned experiments list for other tabs
+                    loadExperiments();
+                    
+                }, 1000);
+                
+            } catch (error) {
+                clearInterval(progressInterval);
+                console.error('Error cleaning data:', error);
+                
+                progressDiv.style.display = 'none';
+                resultsDiv.style.display = 'block';
+                cleaningLog.innerHTML = `<div class="log-entry log-error">❌ Error: ${error.message}</div>`;
+                
+            } finally {
+                cleanButton.disabled = false;
+                cleanButton.textContent = '🧹 Clean Data';
+            }
+        }
+
+        // Curve fitting functionality
+        function loadFittingExperiments() {
+            const experimentSelect = document.getElementById('fitting-experiment');
+            
+            // Clear previous options
+            experimentSelect.innerHTML = '<option value="">Select Experiment</option>';
+            
+            // Load experiments from existing data
+            if (experimentInfo && experimentInfo.length > 0) {
+                experimentInfo.forEach(exp => {
+                    const option = document.createElement('option');
+                    option.value = exp;
+                    option.textContent = exp;
+                    experimentSelect.appendChild(option);
+                });
+            }
+            
+            // Add event listener
+            experimentSelect.addEventListener('change', onFittingExperimentChange);
+        }
+
+        async function onFittingExperimentChange() {
+            const experimentSelect = document.getElementById('fitting-experiment');
+            const wellSelect = document.getElementById('fitting-well');
+            const fitButton = document.getElementById('fit-button');
+            
+            const selectedExperiment = experimentSelect.value;
+            
+            if (!selectedExperiment) {
+                wellSelect.innerHTML = '<option value="">Select Well</option>';
+                wellSelect.disabled = true;
+                fitButton.disabled = true;
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/experiment/${selectedExperiment}/info`);
+                const expInfo = await response.json();
+                
+                wellSelect.innerHTML = '<option value="">Select Well</option>';
+                
+                if (expInfo.wells) {
+                    expInfo.wells.forEach(wellInfo => {
+                        const option = document.createElement('option');
+                        option.value = wellInfo.well;
+                        option.textContent = `${wellInfo.well} (${wellInfo.condition} | ${wellInfo.antibiotic})`;
+                        wellSelect.appendChild(option);
+                    });
+                }
+                
+                wellSelect.disabled = false;
+                wellSelect.addEventListener('change', onFittingWellChange);
+                
+            } catch (error) {
+                console.error('Error loading wells for fitting:', error);
+                wellSelect.disabled = true;
+                fitButton.disabled = true;
+            }
+        }
+
+        function onFittingWellChange() {
+            const wellSelect = document.getElementById('fitting-well');
+            const fitButton = document.getElementById('fit-button');
+            
+            fitButton.disabled = !wellSelect.value;
+        }
+
+        async function fitGrowthCurve() {
+            const experimentSelect = document.getElementById('fitting-experiment');
+            const wellSelect = document.getElementById('fitting-well');
+            const fitButton = document.getElementById('fit-button');
+            const resultsDiv = document.getElementById('fitting-results');
+            
+            const experiment = experimentSelect.value;
+            const well = wellSelect.value;
+            
+            if (!experiment || !well) {
+                alert('Please select both experiment and well');
+                return;
+            }
+            
+            fitButton.disabled = true;
+            fitButton.textContent = '⏳ Fitting...';
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/fit-curve`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        experiment: experiment,
+                        well: well
+                    })
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Fitting failed');
+                }
+                
+                const fitData = await response.json();
+                
+                // Display fitting results
+                displayFittingResults(fitData);
+                
+                // Plot the data with fitted curve
+                plotFittedCurve(fitData);
+                
+            } catch (error) {
+                console.error('Error fitting curve:', error);
+                alert(`Error fitting curve: ${error.message}`);
+            } finally {
+                fitButton.disabled = false;
+                fitButton.textContent = '📊 Fit Curve';
+            }
+        }
+
+        function displayFittingResults(fitData) {
+            const resultsDiv = document.getElementById('fitting-results');
+            const parametersDiv = document.getElementById('fitting-parameters');
+            
+            // Debug logging
+            console.log('Fit data received:', fitData);
+            console.log('Parameters:', fitData.parameters);
+            console.log('Parameters types:', fitData.parameters?.map(p => typeof p));
+            
+            // Show aHPM parameter names
+            const parameterNames = ['Growth Rate (μ)', 'Carrying Capacity (K)', 'Lag Time (λ)', 'Shape Parameter (α)'];
+            
+            let html = `
+                <div class="parameter-row">
+                    <span class="parameter-name">Experiment:</span>
+                    <span class="parameter-value">${fitData.experiment}</span>
+                </div>
+                <div class="parameter-row">
+                    <span class="parameter-name">Well:</span>
+                    <span class="parameter-value">${fitData.well}</span>
+                </div>
+                <div class="parameter-row">
+                    <span class="parameter-name">Model:</span>
+                    <span class="parameter-value">${fitData.model}</span>
+                </div>
+                <div class="parameter-row">
+                    <span class="parameter-name">Blank Value:</span>
+                    <span class="parameter-value">${typeof fitData.blank_value === 'number' && isFinite(fitData.blank_value) ? fitData.blank_value.toFixed(4) : String(fitData.blank_value)}</span>
+                </div>
+                <div class="parameter-row">
+                    <span class="parameter-name">Stationary Phase Start:</span>
+                    <span class="parameter-value">${typeof fitData.stationary_phase_start === 'number' && isFinite(fitData.stationary_phase_start) ? fitData.stationary_phase_start.toFixed(2) : String(fitData.stationary_phase_start)}</span>
+                </div>
+            `;
+            
+            // Add fitted parameters - only show the first 4 aHPM parameters
+            console.log('Full parameters array:', fitData.parameters);
+            console.log('Parameters length:', fitData.parameters?.length);
+            
+            if (fitData.parameters && Array.isArray(fitData.parameters)) {
+                // Find the actual numerical parameters (skip any text/metadata entries)
+                const numericalParams = [];
+                for (let i = 0; i < fitData.parameters.length; i++) {
+                    const param = fitData.parameters[i];
+                    if (typeof param === 'number' && !isNaN(param) && isFinite(param)) {
+                        numericalParams.push(param);
+                    }
+                    console.log(`Parameter ${i}:`, param, `(type: ${typeof param})`);
+                }
+                
+                console.log('Numerical parameters found:', numericalParams);
+                
+                // Display only the first 4 numerical parameters (aHPM model parameters)
+                for (let i = 0; i < Math.min(4, numericalParams.length); i++) {
+                    html += `
+                        <div class="parameter-row">
+                            <span class="parameter-name">${parameterNames[i]}:</span>
+                            <span class="parameter-value">${numericalParams[i].toFixed(6)}</span>
+                        </div>
+                    `;
+                }
+                
+                if (numericalParams.length < 4) {
+                    html += `
+                        <div class="parameter-row">
+                            <span class="parameter-name">Warning:</span>
+                            <span class="parameter-value" style="color: orange;">Only ${numericalParams.length} numerical parameters found</span>
+                        </div>
+                    `;
+                }
+            } else {
+                html += `
+                    <div class="parameter-row">
+                        <span class="parameter-name">Error:</span>
+                        <span class="parameter-value" style="color: red;">No valid parameters found</span>
+                    </div>
+                `;
+            }
+            
+            parametersDiv.innerHTML = html;
+            resultsDiv.style.display = 'block';
+        }
+
+        function plotFittedCurve(fitData) {
+            const plotDiv = document.getElementById('plot-fitting');
+            
+            // Create experimental data trace
+            const experimentalTrace = {
+                x: fitData.experimental_time,
+                y: fitData.experimental_od,
+                mode: 'markers',
+                type: 'scatter',
+                name: `${fitData.experiment}: ${fitData.well} (Data)`,
+                marker: {
+                    color: 'black',
+                    size: 6
+                }
+            };
+            
+            // Create fitted curve trace
+            const fittedTrace = {
+                x: fitData.fit_time,
+                y: fitData.fit_od,
+                mode: 'lines',
+                type: 'scatter',
+                name: `aHPM Fit`,
+                line: {
+                    color: 'red',
+                    width: 3
+                }
+            };
+            
+            // Add stationary phase marker
+            const stationaryLine = {
+                x: [fitData.stationary_phase_start, fitData.stationary_phase_start],
+                y: [Math.min(...fitData.experimental_od), Math.max(...fitData.experimental_od)],
+                mode: 'lines',
+                type: 'scatter',
+                name: 'Stationary Phase Start',
+                line: {
+                    color: 'gray',
+                    width: 2,
+                    dash: 'dash'
+                }
+            };
+            
+            const data = [experimentalTrace, fittedTrace, stationaryLine];
+            
+            const layout = {
+                title: `Growth Curve Fitting: ${fitData.experiment} - ${fitData.well}`,
+                xaxis: { title: 'Time (hours)' },
+                yaxis: { title: 'OD (Arb. Units)' },
+                showlegend: true,
+                hovermode: 'closest',
+                autosize: true
+            };
+            
+            const config = {
+                responsive: true,
+                displayModeBar: true,
+                displaylogo: false
+            };
+            
+            // Show plot container first
+            document.getElementById('plot-fitting-container').style.display = 'block';
+            
+            // Create the plot
+            Plotly.newPlot(plotDiv, data, layout, config).then(() => {
+                // Force a resize to ensure proper width
+                setTimeout(() => {
+                    Plotly.Plots.resize(plotDiv);
+                }, 100);
+            });
+            
+            // Clear stats since this is curve fitting, not multi-well analysis
+            document.getElementById('stats-container').style.display = 'none';
+        }
+    </script>
+</body>
+</html>

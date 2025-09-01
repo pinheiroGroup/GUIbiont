@@ -1,0 +1,21 @@
+# Julia files
+Manifest.toml
+*.jl.cov
+*.jl.*.cov
+*.jl.mem
+
+# Data directories (user-specific)
+Clean_data/
+raw_data/
+
+# Calibration curve (optional)
+cal_curve_avg.csv
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*~
