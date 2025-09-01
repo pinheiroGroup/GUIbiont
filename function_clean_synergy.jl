@@ -2,13 +2,37 @@
 
 
 
-
+function detect_csv_separator(file_path::String)
+    # Read first few lines to detect separator
+    lines = String[]
+    open(file_path, "r") do file
+        for i in 1:min(5, countlines(file))
+            seekstart(file)
+            for j in 1:i
+                line = readline(file)
+                if j == i
+                    push!(lines, line)
+                    break
+                end
+            end
+        end
+    end
+    
+    # Count occurrences of potential separators
+    comma_count = sum(count(',', line) for line in lines)
+    semicolon_count = sum(count(';', line) for line in lines)
+    
+    # Return the separator with higher count
+    return semicolon_count > comma_count ? ';' : ','
+end
 
 function cleaning_data_synergy(path_to_data::String,
     path_to_save::String)
 
     mkpath(path_to_save)
-    df_GC = CSV.File(path_to_data; normalizenames=true)
+    # Detect separator first
+    separator = detect_csv_separator(path_to_data)
+    df_GC = CSV.File(path_to_data; delim=separator, normalizenames=true)
     col_names = propertynames(df_GC)
     #searching the channels of data
     temp_data = DataFrame(df_GC)
@@ -91,7 +115,9 @@ function read_labguru_annotation(path_to_annotation::String,
    if number_of_wells == 6
     println("TO DO")
    end
-   raw_annotation = CSV.read(path_to_annotation, normalizenames=true,delim = ",", DataFrame)
+   # Detect separator for annotation file
+   annotation_separator = detect_csv_separator(path_to_annotation)
+   raw_annotation = CSV.read(path_to_annotation, normalizenames=true, delim=annotation_separator, DataFrame)
 
    raw_annotation =  raw_annotation[1:end,4:end]
    names_of_columns = unique(raw_annotation[1:end,4])[2:end]
