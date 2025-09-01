@@ -11,11 +11,12 @@ function cleaning_data_synergy(path_to_data::String,
     df_GC = CSV.File(path_to_data; normalizenames=true)
     col_names = propertynames(df_GC)
     #searching the channels of data
-    position_boolean = [string.( df_GC[ col_names[2]] .== "Time")]
-    position_boolean = string.(position_boolean[1])
-    position_start_times = findall( position_boolean .=="true")
-    #searching NA
     temp_data = DataFrame(df_GC)
+    # Handle missing values when searching for "Time"
+    col2_values = temp_data[:, col_names[2]]
+    time_positions = findall(x -> !ismissing(x) && x == "Time", col2_values)
+    position_start_times = time_positions
+    #searching NA
     count_of_channels = 0
     
     for i in 1:length(position_start_times)
@@ -115,8 +116,26 @@ function read_labguru_annotation(path_to_annotation::String,
    
    colums_raw_annotation  =  [string(raw_annotation[2,i])  for i in 1:length(raw_annotation[2,:])]
    
-    concentration_column = findall(colums_raw_annotation .== "Concentration")	
-    well_annotation_column =    findall(colums_raw_annotation .== "Well Annotation")
+    # Find concentration and well annotation columns by searching row 2 content
+    concentration_column = Int[]
+    well_annotation_column = Int[]
+    
+    for i in 1:length(colums_raw_annotation)
+        if colums_raw_annotation[i] == "Concentration"
+            push!(concentration_column, i)
+        elseif colums_raw_annotation[i] == "Well Annotation"
+            push!(well_annotation_column, i)
+        end
+    end
+    
+    # If not found, use default positions for LabGuru format (after skipping first 3 columns)
+    if isempty(concentration_column)
+        concentration_column = [9]  # Concentration column position after column selection
+    end
+    
+    if isempty(well_annotation_column)
+        well_annotation_column = [10]  # Well Annotation column position after column selection  
+    end
    
    for kk in 1:(length(names_of_wells)   ) # searching over all wells names
    
