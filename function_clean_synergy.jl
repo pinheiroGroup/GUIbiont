@@ -182,7 +182,14 @@ function read_labguru_annotation(path_to_annotation::String,
                     
    
               if size(temp_metadata)[1]>= 1 
-                splitted_inf = unique( split.(temp_metadata,"&"))
+                # Filter out missing values before splitting
+                non_missing_metadata = filter(!ismissing, temp_metadata)
+                if !isempty(non_missing_metadata)
+                    splitted_inf = unique( split.(non_missing_metadata,"&"))
+                else
+                    # If all values are missing, use empty string
+                    splitted_inf = [["X"]]
+                end
                 
    
                    if splitted_inf[1][1] != "b" && splitted_inf[1][1] != "X"
@@ -198,7 +205,14 @@ function read_labguru_annotation(path_to_annotation::String,
    
                        end
                    else
-                       splitted_inf = unique( split.(temp_metadata,"&"))
+                       # Filter out missing values before splitting
+                       non_missing_metadata = filter(!ismissing, temp_metadata)
+                       if !isempty(non_missing_metadata)
+                           splitted_inf = unique( split.(non_missing_metadata,"&"))
+                       else
+                           # If all values are missing, use empty string
+                           splitted_inf = [["X"]]
+                       end
    
                
                        full_annotation[ findall(full_annotation[:,1].== names_of_wells[kk]) ,2] .= splitted_inf[1][1]
