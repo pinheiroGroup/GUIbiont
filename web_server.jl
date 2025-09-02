@@ -596,7 +596,40 @@ function router(req)
                 
                 # Read data files
                 growth_data = CSV.read(data_file, DataFrame, header=1, silencewarnings=true)
-                annotations = CSV.read(annotation_file, DataFrame, header=false, silencewarnings=true, stringtype=String)
+                
+                # Read annotation file with error handling for missing values
+                annotations = try
+                    CSV.read(annotation_file, DataFrame, header=false, silencewarnings=true, stringtype=String)
+                catch e
+                    # If CSV reading fails due to missing values, preprocess the file
+                    println("Warning: Issues reading annotation file. Preprocessing...")
+                    raw_annotations = CSV.File(annotation_file, header=false) |> DataFrame
+                    
+                    # Handle missing values and inconsistent columns
+                    for i in 1:nrow(raw_annotations)
+                        # Handle empty second column specifically
+                        if ncol(raw_annotations) >= 2 && (ismissing(raw_annotations[i, 2]) || raw_annotations[i, 2] == "")
+                            raw_annotations[i, 2] = "X"  # Mark as excluded well
+                        end
+                        
+                        # Replace all missing values with empty strings
+                        for j in 1:ncol(raw_annotations)
+                            if ismissing(raw_annotations[i, j])
+                                raw_annotations[i, j] = ""
+                            end
+                        end
+                    end
+                    
+                    # Convert to strings and return
+                    DataFrame([string.(col) for col in eachcol(raw_annotations)], :auto)
+                end
+                
+                # Additional check for missing values in second column
+                for i in 1:nrow(annotations)
+                    if ncol(annotations) >= 2 && (ismissing(annotations[i, 2]) || annotations[i, 2] == "" || annotations[i, 2] == "missing")
+                        annotations[i, 2] = "X"  # Mark as excluded well
+                    end
+                end
                 
                 # Process annotation file to find blanks
                 list_of_blank = []

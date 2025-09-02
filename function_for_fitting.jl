@@ -59,7 +59,65 @@ function  analysis_file(
     ] 
 
    
-    names_of_annotated_df, properties_of_annotation, list_of_blank, list_of_discarded = reading_annotation(path_to_annotation)
+    # Preprocess annotation file to handle missing values
+    # First, check if the annotation file needs cleaning before calling reading_annotation
+    annotation_needs_cleaning = false
+    try
+        # Quick check for missing values in second column
+        annotation_test_df = CSV.File(path_to_annotation, header=false, limit=50) |> DataFrame
+        for i in 1:nrow(annotation_test_df)
+            if ncol(annotation_test_df) >= 2 && (ismissing(annotation_test_df[i, 2]) || annotation_test_df[i, 2] == "")
+                annotation_needs_cleaning = true
+                break
+            end
+        end
+    catch
+        # If we can't read the file for testing, assume it needs cleaning
+        annotation_needs_cleaning = true
+    end
+    
+    if annotation_needs_cleaning
+        println("Warning: Annotation file contains empty values in second column. Pre-cleaning...")
+        
+        # Read the annotation file manually and clean it
+        annotation_df = CSV.File(path_to_annotation, header=false) |> DataFrame
+        
+        # Clean each row
+        for i in 1:nrow(annotation_df)
+            # Handle empty second column specifically
+            if ncol(annotation_df) >= 2 && (ismissing(annotation_df[i, 2]) || annotation_df[i, 2] == "")
+                annotation_df[i, 2] = "X"  # Mark as excluded well
+            end
+            
+            # Ensure consistent number of columns and replace missing with empty strings
+            for j in 1:ncol(annotation_df)
+                if ismissing(annotation_df[i, j])
+                    annotation_df[i, j] = ""
+                end
+            end
+        end
+        
+        # Remove completely empty rows
+        annotation_df = annotation_df[.!all(x -> ismissing(x) || x == "", eachrow(annotation_df)), :]
+        
+        # Write cleaned annotation file temporarily
+        temp_annotation_path = replace(path_to_annotation, ".csv" => "_temp_cleaned.csv")
+        CSV.write(temp_annotation_path, annotation_df, header=false)
+        
+        # Use the cleaned file
+        try
+            names_of_annotated_df, properties_of_annotation, list_of_blank, list_of_discarded = reading_annotation(temp_annotation_path)
+            rm(temp_annotation_path) # Clean up temp file
+            println("Successfully processed annotation file after cleaning.")
+        catch e
+            rm(temp_annotation_path) # Clean up temp file
+            println("Error: Could not process annotation file even after cleaning: ", e)
+            rethrow(e)
+        end
+    else
+        # File looks clean, use it directly
+        names_of_annotated_df, properties_of_annotation, list_of_blank, list_of_discarded = reading_annotation(path_to_annotation)
+    end
 
 
     # reading files
