@@ -7,6 +7,17 @@ const CLEAN_DATA_PATH = haskey(ENV, "CLEAN_DATA_PATH") ? ENV["CLEAN_DATA_PATH"] 
 const RAW_DATA_PATH = haskey(ENV, "RAW_DATA_PATH") ? ENV["RAW_DATA_PATH"] : "./raw_data/"
 const PORT = haskey(ENV, "PORT") ? parse(Int, ENV["PORT"]) : 8080
 
+# Helper function to determine blank wells from annotation data
+function get_blank_wells(annotations::DataFrame)
+    blank_wells = Set{String}()
+    for i in 1:nrow(annotations)
+        if length(annotations[i, :]) >= 2 && (annotations[i, 2] == "b" || annotations[i, 2] == "X" || annotations[i, 2] == "x")
+            push!(blank_wells, string(annotations[i, 1]))
+        end
+    end
+    return blank_wells
+end
+
 # CORS headers for allowing frontend requests
 function cors_headers()
     return [
@@ -243,8 +254,9 @@ function router(req)
                         time_col = names(growth_data)[1]
                         all_well_columns = names(growth_data)[2:end]
                         
-                        # Filter out wells containing 'b' or 'X' (case insensitive)
-                        well_columns = filter(well -> !occursin(r"[bBxX]", well), all_well_columns)
+                        # Filter out blank wells based on annotation file (more precise than regex)
+                        blank_wells = get_blank_wells(annotations)
+                        well_columns = filter(well -> !(string(well) in blank_wells), all_well_columns)
                         println("Debug - All wells: $all_well_columns")
                         println("Debug - Filtered wells: $well_columns")
                         println("Debug - Filtered out: $(length(all_well_columns) - length(well_columns)) wells")
@@ -355,7 +367,8 @@ function router(req)
                         
                         # Filter wells
                         all_well_columns = names(growth_data)[2:end]
-                        well_columns = filter(well -> !occursin(r"[bBxX]", well), all_well_columns)
+                        blank_wells = get_blank_wells(annotations)
+                        well_columns = filter(well -> !(string(well) in blank_wells), all_well_columns)
                         
                         # Add wells with experiment prefix
                         for well in well_columns
@@ -439,7 +452,8 @@ function router(req)
                         
                         # Filter valid wells
                         all_well_columns = names(growth_data)[2:end]
-                        well_columns = filter(well -> !occursin(r"[bBxX]", well), all_well_columns)
+                        blank_wells = get_blank_wells(annotations)
+                        well_columns = filter(well -> !(string(well) in blank_wells), all_well_columns)
                         
                         matching_wells = []
                         found_conditions = Set{String}()
@@ -657,7 +671,8 @@ function router(req)
                 
                 # Filter wells (exclude blanks like in the regular API)
                 all_well_columns = names(growth_data)[2:end]
-                well_columns = filter(well_name -> !occursin(r"[bBxX]", string(well_name)), all_well_columns)
+                blank_wells = get_blank_wells(annotations)
+                well_columns = filter(well_name -> !(string(well_name) in blank_wells), all_well_columns)
                 
                 # Get well data
                 println("Debug - Requested well: '$well'")
@@ -829,7 +844,8 @@ function router(req)
                             end
                             rename!(annotations, new_names)
                             
-                            if well in names(growth_data) && !occursin(r"[bBxX]", well)
+                            blank_wells = get_blank_wells(annotations)
+                            if well in names(growth_data) && !(well in blank_wells)
                                 # Process this well
                                 time_col = names(growth_data)[1]
                                 time_data = growth_data[!, time_col]
@@ -976,9 +992,10 @@ function router(req)
                     traces = []
                     stats = []
                     
+                    blank_wells = get_blank_wells(annotations)
                     for well in wells
-                        # Only process wells that don't contain 'b' or 'X' and exist in the data
-                        if well in names(growth_data) && !occursin(r"[bBxX]", well)
+                        # Only process wells that aren't blank wells and exist in the data
+                        if well in names(growth_data) && !(well in blank_wells)
                             well_data = growth_data[!, well]
                             
                             # Convert to numeric
