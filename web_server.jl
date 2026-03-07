@@ -201,7 +201,17 @@ function router(req)
     ]
     
     try
-        if path == "/api/experiments"
+        if path == "/api/config"
+            # GET /api/config - Return server configuration
+            config_path = joinpath(@__DIR__, "config.json")
+            if isfile(config_path)
+                config = JSON3.read(read(config_path, String))
+                return HTTP.Response(200, headers, JSON3.write(config))
+            else
+                return HTTP.Response(200, headers, JSON3.write(Dict("enable_clean_data_tab" => true)))
+            end
+
+        elseif path == "/api/experiments"
             # GET /api/experiments - List all experiments
             experiments = get_experiments()
             return HTTP.Response(200, headers, JSON3.write(experiments))
