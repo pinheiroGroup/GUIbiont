@@ -1266,9 +1266,29 @@
 
         // Initialize the app
         async function init() {
+            await applyConfig();
             await loadExperiments();
             loadFittingExperiments();
             loadRawExperiments();
+        }
+
+        async function applyConfig() {
+            try {
+                const response = await fetch(`${API_BASE}/api/config`);
+                if (!response.ok) return;
+                const config = await response.json();
+                if (config.enable_clean_data_tab === false) {
+                    const tabButton = document.querySelector('[onclick="switchTab(\'clean-data\')"]');
+                    const tabContent = document.getElementById('clean-data-content');
+                    if (tabButton) tabButton.style.display = 'none';
+                    if (tabContent) tabContent.remove();
+                    // Activate first visible tab
+                    const firstButton = document.querySelector('.tab-button:not([style*="display: none"])');
+                    if (firstButton) firstButton.click();
+                }
+            } catch (e) {
+                // Config fetch failed; keep defaults
+            }
         }
 
         // Tab switching functionality
