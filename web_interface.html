@@ -1320,7 +1320,14 @@
                             </div>
                             <button class="btn fit-btn" onclick="fitGrowthCurve()" id="fit-button" disabled>📊 Fit Curve</button>
                         </div>
-                        
+
+                        <div id="fit-show-individual-container" style="display: none;">
+                            <label class="replicate-toggle-label">
+                                <input type="checkbox" id="fit-show-individual-wells" onchange="onFitShowIndividualChange()">
+                                Also show individual wells
+                            </label>
+                        </div>
+
                         <div id="fitting-results" class="fitting-results" style="display: none;">
                             <h4>Fitting Results:</h4>
                             <div id="fitting-parameters"></div>
@@ -1385,6 +1392,8 @@
         let currentFitMode = 'well';
         let selectedReplicateKeys = new Set();
         let allReplicates = {};
+        let lastFitData = null;
+        let lastReplicateTraces = [];
 
         // Initialize the app
         async function init() {
@@ -2296,6 +2305,7 @@
             const replicateSelect = document.getElementById('fitting-replicate');
             document.getElementById('fit-mode-btn-well').classList.toggle('active', mode === 'well');
             document.getElementById('fit-mode-btn-replicate').classList.toggle('active', mode === 'replicate');
+            document.getElementById('fit-show-individual-container').style.display = mode === 'replicate' ? 'block' : 'none';
             if (mode === 'well') {
                 wellSelect.style.display = '';
                 replicateSelect.style.display = 'none';
@@ -2332,6 +2342,15 @@
                 const replicateWells = JSON.parse(selectedOption.dataset.wells);
                 const label = selectedOption.textContent;
 
+                // Fetch individual well traces for optional overlay
+                const plotResponse = await fetch(`${API_BASE}/api/plot-data`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ well_selections: replicateWells })
+                });
+                const plotData = await plotResponse.json();
+                lastReplicateTraces = plotData.traces || [];
+
                 const fitResponse = await fetch(`${API_BASE}/api/fit-replicate`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -2348,8 +2367,9 @@
                 }
 
                 const fitData = await fitResponse.json();
+                lastFitData = fitData;
                 displayFittingResults(fitData);
-                plotFittedCurve(fitData);
+                updateFitPlot(fitData);
 
             } catch (error) {
                 console.error('Error fitting replicate:', error);
@@ -3065,6 +3085,28 @@
             
             parametersDiv.innerHTML = html;
             resultsDiv.style.display = 'block';
+        }
+
+        function onFitShowIndividualChange() {
+            if (lastFitData) updateFitPlot(lastFitData);
+        }
+
+        function updateFitPlot(fitData) {
+            plotFittedCurve(fitData);
+
+            const showIndividual = document.getElementById('fit-show-individual-wells').checked;
+            if (currentFitMode === 'replicate' && showIndividual && lastReplicateTraces.length > 0) {
+                const individualTraces = lastReplicateTraces.map(trace => ({
+                    x: trace.x,
+                    y: trace.y,
+                    mode: 'lines',
+                    type: 'scatter',
+                    name: trace.well,
+                    line: { width: 1, color: '#4facfe', dash: 'dot' },
+                    opacity: 0.5
+                }));
+                Plotly.addTraces(document.getElementById('plot-fitting'), individualTraces);
+            }
         }
 
         function plotFittedCurve(fitData) {
