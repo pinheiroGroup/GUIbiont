@@ -2081,7 +2081,7 @@
         function buildReplicateList(wells) {
             allReplicates = {};
             wells.forEach(wellInfo => {
-                const key = `${wellInfo.condition}\u0000${wellInfo.antibiotic}`;
+                const key = `${wellInfo.condition}|||${wellInfo.antibiotic}`;
                 if (!allReplicates[key]) {
                     allReplicates[key] = { label: `${wellInfo.condition} | ${wellInfo.antibiotic}`, wells: [] };
                 }
@@ -2103,7 +2103,7 @@
                 const item = document.createElement('div');
                 item.className = `replicate-item ${selectedReplicateKeys.has(key) ? 'selected' : ''}`;
                 item.dataset.replicateKey = key;
-                item.onclick = () => toggleReplicate(key);
+                item.onclick = function() { toggleReplicate(key, this); };
                 item.innerHTML = `
                     <div class="replicate-name">${rep.label}</div>
                     <div class="replicate-count">${rep.wells.length} wells · ${expLabel}</div>
@@ -2112,14 +2112,13 @@
             });
         }
 
-        function toggleReplicate(key) {
-            const item = document.querySelector(`[data-replicate-key="${CSS.escape(key)}"]`);
+        function toggleReplicate(key, el) {
             if (selectedReplicateKeys.has(key)) {
                 selectedReplicateKeys.delete(key);
-                if (item) item.classList.remove('selected');
+                if (el) el.classList.remove('selected');
             } else {
                 selectedReplicateKeys.add(key);
-                if (item) item.classList.add('selected');
+                if (el) el.classList.add('selected');
             }
             updateSelectedReplicatesCount();
             if (selectedReplicateKeys.size > 0) {
@@ -2130,11 +2129,11 @@
         }
 
         function selectAllReplicates() {
-            Object.keys(allReplicates).forEach(key => {
-                if (allReplicates[key].wells.length >= 2) {
+            document.querySelectorAll('.replicate-item').forEach(item => {
+                const key = item.dataset.replicateKey;
+                if (key) {
                     selectedReplicateKeys.add(key);
-                    const item = document.querySelector(`[data-replicate-key="${CSS.escape(key)}"]`);
-                    if (item) item.classList.add('selected');
+                    item.classList.add('selected');
                 }
             });
             updateSelectedReplicatesCount();
@@ -2900,7 +2899,7 @@
                 if (expInfo.wells) {
                     const repMap = {};
                     expInfo.wells.forEach(wellInfo => {
-                        const key = `${wellInfo.condition}\u0000${wellInfo.antibiotic}`;
+                        const key = `${wellInfo.condition}|||${wellInfo.antibiotic}`;
                         if (!repMap[key]) {
                             repMap[key] = { label: `${wellInfo.condition} | ${wellInfo.antibiotic}`, wells: [] };
                         }
