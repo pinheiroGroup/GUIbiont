@@ -881,7 +881,7 @@ function router(req)
                         for bw in list_of_blank
                             if bw in names(growth_data)
                                 for val in growth_data[!, bw]
-                                    try push!(blank_vals, parse(Float64, string(val))) catch end
+                                    try push!(blank_vals, parse(Float64, string(val))) catch _ end
                                 end
                             end
                         end
@@ -898,7 +898,7 @@ function router(req)
                         well_sym = Symbol(well)
                         od = Float64[]
                         for val in growth_data[!, well_sym]
-                            try push!(od, parse(Float64, string(val))) catch push!(od, NaN) end
+                            try push!(od, parse(Float64, string(val))) catch _ push!(od, NaN) end
                         end
                         od = od .- blank_value
                         od = max.(od, 0.01)
