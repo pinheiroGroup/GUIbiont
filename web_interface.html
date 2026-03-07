@@ -1349,9 +1349,9 @@
                 // Hide stats for fitting (not relevant)
                 statsContainer.style.display = 'none';
                 
-                // Show fitting results if they exist
+                // Show fitting results if they have content
                 const fittingResults = document.getElementById('fitting-results');
-                if (fittingResults && fittingResults.style.display === 'block') {
+                if (fittingResults && fittingResults.innerHTML.trim()) {
                     fittingResults.style.display = 'block';
                 }
             }
