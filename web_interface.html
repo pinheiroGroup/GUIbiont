@@ -993,6 +993,93 @@
             color: #17a2b8;
         }
 
+        /* Mode toggle buttons */
+        .plot-mode-toggle, .fit-mode-toggle {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 15px;
+            background: #f8f9fa;
+            border: 2px solid #dee2e6;
+            border-radius: 8px;
+            padding: 4px;
+            width: fit-content;
+        }
+
+        .mode-btn {
+            padding: 7px 18px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            background: transparent;
+            color: #6c757d;
+            transition: all 0.2s ease;
+        }
+
+        .mode-btn.active {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            box-shadow: 0 2px 8px rgba(79, 172, 254, 0.3);
+        }
+
+        .mode-btn:hover:not(.active) {
+            background: rgba(79, 172, 254, 0.1);
+            color: #4facfe;
+        }
+
+        /* Replicates list */
+        .replicates-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-height: 400px;
+            overflow-y: auto;
+            padding: 4px;
+        }
+
+        .replicate-item {
+            padding: 10px 14px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            background: white;
+        }
+
+        .replicate-item:hover {
+            border-color: #4facfe;
+            background: rgba(79, 172, 254, 0.05);
+        }
+
+        .replicate-item.selected {
+            border-color: #4facfe;
+            background: rgba(79, 172, 254, 0.1);
+        }
+
+        .replicate-name {
+            font-weight: 600;
+            color: #495057;
+            font-size: 14px;
+        }
+
+        .replicate-count {
+            color: #6c757d;
+            font-size: 12px;
+            margin-top: 3px;
+        }
+
+        .replicate-toggle-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 12px;
+            font-size: 14px;
+            color: #495057;
+            cursor: pointer;
+            user-select: none;
+        }
+
         @media (max-width: 768px) {
             .wells-grid {
                 grid-template-columns: 1fr;
@@ -1163,25 +1250,50 @@
                 </div>
 
                 <div class="control-group" id="wells-group" style="display: none;">
-                <label for="wells-accordion">📍 Select Wells to Plot:</label>
-                <div class="wells-container">
-                    <div class="wells-buttons" style="margin-bottom: 15px;">
-                        <input type="text" id="condition-filter" placeholder="Filter by condition (e.g., glucose, control...)" 
-                               style="padding: 8px 12px; border: 2px solid #ced4da; border-radius: 6px; font-size: 14px; margin-right: 10px; width: 200px;"
-                               onkeyup="filterWellsAccordion()" />
-                        <input type="text" id="antibiotic-filter" placeholder="Filter by antibiotic (e.g., ampicillin...)" 
-                               style="padding: 8px 12px; border: 2px solid #ced4da; border-radius: 6px; font-size: 14px; margin-right: 10px; width: 200px;"
-                               onkeyup="filterWellsAccordion()" />
-                        <button class="btn" onclick="selectAllFilteredWells()">Select All Filtered</button>
-                        <button class="btn" onclick="clearAllSelectedWells()">Clear All</button>
-                        <span id="selected-count" class="wells-info"></span>
+                    <div class="plot-mode-toggle">
+                        <button class="mode-btn active" id="mode-btn-wells" onclick="setPlotMode('wells')">Plot Wells</button>
+                        <button class="mode-btn" id="mode-btn-replicates" onclick="setPlotMode('replicates')">Plot Replicates</button>
                     </div>
-                    <div id="wells-accordion" class="experiments-accordion">
-                        <!-- Accordion will be populated here -->
+
+                    <!-- Wells mode content -->
+                    <div id="wells-mode-content">
+                        <label for="wells-accordion">📍 Available Wells:</label>
+                        <div class="wells-container">
+                            <div class="wells-buttons" style="margin-bottom: 15px;">
+                                <input type="text" id="condition-filter" placeholder="Filter by condition (e.g., glucose, control...)"
+                                       style="padding: 8px 12px; border: 2px solid #ced4da; border-radius: 6px; font-size: 14px; margin-right: 10px; width: 200px;"
+                                       onkeyup="filterWellsAccordion()" />
+                                <input type="text" id="antibiotic-filter" placeholder="Filter by antibiotic (e.g., ampicillin...)"
+                                       style="padding: 8px 12px; border: 2px solid #ced4da; border-radius: 6px; font-size: 14px; margin-right: 10px; width: 200px;"
+                                       onkeyup="filterWellsAccordion()" />
+                                <button class="btn" onclick="selectAllFilteredWells()">Select All Filtered</button>
+                                <button class="btn" onclick="clearAllSelectedWells()">Clear All</button>
+                                <span id="selected-count" class="wells-info"></span>
+                            </div>
+                            <div id="wells-accordion" class="experiments-accordion">
+                                <!-- Accordion will be populated here -->
+                            </div>
+                            <div id="filter-info" style="margin-top: 10px; color: #6c757d; font-size: 14px;"></div>
+                        </div>
                     </div>
-                    <div id="filter-info" style="margin-top: 10px; color: #6c757d; font-size: 14px;"></div>
+
+                    <!-- Replicates mode content -->
+                    <div id="replicates-mode-content" style="display: none;">
+                        <label>📍 Available Replicates:</label>
+                        <div class="wells-container">
+                            <div class="wells-buttons" style="margin-bottom: 12px;">
+                                <button class="btn" onclick="selectAllReplicates()">Select All</button>
+                                <button class="btn" onclick="clearAllReplicates()">Clear All</button>
+                                <span id="selected-replicates-count" class="wells-info"></span>
+                            </div>
+                            <label class="replicate-toggle-label">
+                                <input type="checkbox" id="show-individual-wells" onchange="onShowIndividualChange()">
+                                Also show individual wells
+                            </label>
+                            <div id="replicates-list" class="replicates-list"></div>
+                        </div>
+                    </div>
                 </div>
-            </div>
             </div>
 
             <!-- Fit Curve Tab Content -->
@@ -1189,8 +1301,13 @@
                 <div class="control-group" id="curve-fitting-group">
                     <label>🧮 Curve Fitting (aHPM Model)</label>
                     <div class="fitting-container">
-                        <p class="fitting-description">Select ONE experiment and ONE well to fit a growth curve using the aHPM model.</p>
-                        
+                        <p class="fitting-description">Select ONE experiment and ONE well or replicate to fit a growth curve using the aHPM model.</p>
+
+                        <div class="fit-mode-toggle">
+                            <button class="mode-btn active" id="fit-mode-btn-well" onclick="setFitMode('well')">Fit Well</button>
+                            <button class="mode-btn" id="fit-mode-btn-replicate" onclick="setFitMode('replicate')">Fit Replicate</button>
+                        </div>
+
                         <div class="fitting-controls">
                             <div class="fitting-selectors">
                                 <select id="fitting-experiment" class="fitting-select">
@@ -1198,6 +1315,9 @@
                                 </select>
                                 <select id="fitting-well" class="fitting-select" disabled>
                                     <option value="">Select Well</option>
+                                </select>
+                                <select id="fitting-replicate" class="fitting-select" disabled style="display: none;">
+                                    <option value="">Select Replicate</option>
                                 </select>
                             </div>
                             <button class="btn fit-btn" onclick="fitGrowthCurve()" id="fit-button" disabled>📊 Fit Curve</button>
@@ -1263,6 +1383,10 @@
         let allWells = [];
         let allExperiments = [];
         let experimentSearchData = {};
+        let currentPlotMode = 'wells';
+        let currentFitMode = 'well';
+        let selectedReplicateKeys = new Set();
+        let allReplicates = {};
 
         // Initialize the app
         async function init() {
@@ -1443,7 +1567,8 @@
                 
                 experimentInfo = await response.json();
                 allWells = experimentInfo.wells;
-                
+                selectedReplicateKeys.clear();
+
                 displayWells(allWells);
                 hideLoading();
                 
@@ -1566,7 +1691,8 @@
             
             wellsGroup.style.display = 'block';
             updateSelectedCount();
-            
+            buildReplicateList(wells);
+
             // Reapply any existing filters
             setTimeout(() => {
                 filterWellsAccordion();
@@ -1919,6 +2045,7 @@
 
         function hideWellsAndPlot() {
             document.getElementById('wells-group').style.display = 'none';
+            selectedReplicateKeys.clear();
             hidePlotAndStats();
             document.getElementById('info').innerHTML = '👋 Select an experiment to get started.';
             document.getElementById('info').className = 'info';
@@ -1946,6 +2073,293 @@
                 section.style.display = 'none';
                 header.classList.remove('active');
                 icon.textContent = '▼';
+            }
+        }
+
+        // ── Replicate helpers ──────────────────────────────────────────────────
+
+        function buildReplicateList(wells) {
+            allReplicates = {};
+            wells.forEach(wellInfo => {
+                const key = `${wellInfo.condition}\u0000${wellInfo.antibiotic}`;
+                if (!allReplicates[key]) {
+                    allReplicates[key] = { label: `${wellInfo.condition} | ${wellInfo.antibiotic}`, wells: [] };
+                }
+                allReplicates[key].wells.push(wellInfo);
+            });
+
+            const replicatesList = document.getElementById('replicates-list');
+            replicatesList.innerHTML = '';
+
+            const entries = Object.entries(allReplicates).filter(([, rep]) => rep.wells.length >= 2);
+            if (entries.length === 0) {
+                replicatesList.innerHTML = '<p style="color:#6c757d;font-style:italic;padding:10px;">No replicates found (need at least 2 wells with matching conditions).</p>';
+                return;
+            }
+
+            entries.forEach(([key, rep]) => {
+                const experiments = [...new Set(rep.wells.map(w => w.experiment))];
+                const expLabel = experiments.length === 1 ? experiments[0] : `${experiments.length} experiments`;
+                const item = document.createElement('div');
+                item.className = `replicate-item ${selectedReplicateKeys.has(key) ? 'selected' : ''}`;
+                item.dataset.replicateKey = key;
+                item.onclick = () => toggleReplicate(key);
+                item.innerHTML = `
+                    <div class="replicate-name">${rep.label}</div>
+                    <div class="replicate-count">${rep.wells.length} wells · ${expLabel}</div>
+                `;
+                replicatesList.appendChild(item);
+            });
+        }
+
+        function toggleReplicate(key) {
+            const item = document.querySelector(`[data-replicate-key="${CSS.escape(key)}"]`);
+            if (selectedReplicateKeys.has(key)) {
+                selectedReplicateKeys.delete(key);
+                if (item) item.classList.remove('selected');
+            } else {
+                selectedReplicateKeys.add(key);
+                if (item) item.classList.add('selected');
+            }
+            updateSelectedReplicatesCount();
+            if (selectedReplicateKeys.size > 0) {
+                plotReplicates();
+            } else {
+                hidePlotAndStats();
+            }
+        }
+
+        function selectAllReplicates() {
+            Object.keys(allReplicates).forEach(key => {
+                if (allReplicates[key].wells.length >= 2) {
+                    selectedReplicateKeys.add(key);
+                    const item = document.querySelector(`[data-replicate-key="${CSS.escape(key)}"]`);
+                    if (item) item.classList.add('selected');
+                }
+            });
+            updateSelectedReplicatesCount();
+            if (selectedReplicateKeys.size > 0) plotReplicates();
+        }
+
+        function clearAllReplicates() {
+            selectedReplicateKeys.clear();
+            document.querySelectorAll('.replicate-item').forEach(item => item.classList.remove('selected'));
+            updateSelectedReplicatesCount();
+            hidePlotAndStats();
+        }
+
+        function updateSelectedReplicatesCount() {
+            document.getElementById('selected-replicates-count').textContent =
+                `${selectedReplicateKeys.size} replicates selected`;
+        }
+
+        function onShowIndividualChange() {
+            if (selectedReplicateKeys.size > 0) plotReplicates();
+        }
+
+        function setPlotMode(mode) {
+            currentPlotMode = mode;
+            document.getElementById('wells-mode-content').style.display = mode === 'wells' ? 'block' : 'none';
+            document.getElementById('replicates-mode-content').style.display = mode === 'replicates' ? 'block' : 'none';
+            document.getElementById('mode-btn-wells').classList.toggle('active', mode === 'wells');
+            document.getElementById('mode-btn-replicates').classList.toggle('active', mode === 'replicates');
+
+            if (mode === 'wells') {
+                if (selectedWellIds.size > 0) plotGrowthCurves(); else hidePlotAndStats();
+            } else {
+                if (selectedReplicateKeys.size > 0) plotReplicates(); else hidePlotAndStats();
+            }
+        }
+
+        function computeReplicateAverage(traces) {
+            if (traces.length === 0) return { x: [], y: [] };
+            if (traces.length === 1) return { x: traces[0].x, y: [...traces[0].y] };
+            const minLen = Math.min(...traces.map(t => t.x.length));
+            const avgX = traces[0].x.slice(0, minLen);
+            const avgY = avgX.map((_, i) => {
+                const vals = traces.map(t => t.y[i]).filter(v => !isNaN(v));
+                return vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : NaN;
+            });
+            return { x: avgX, y: avgY };
+        }
+
+        function trapezoidalAUC(x, y) {
+            let auc = 0;
+            for (let i = 1; i < x.length; i++) {
+                if (!isNaN(y[i]) && !isNaN(y[i - 1])) {
+                    auc += (x[i] - x[i - 1]) * (y[i] + y[i - 1]) / 2;
+                }
+            }
+            return auc;
+        }
+
+        async function plotReplicates() {
+            if (selectedReplicateKeys.size === 0) return;
+            showLoading();
+            try {
+                const allWellSelections = [];
+                const replicateWellMap = {};
+
+                selectedReplicateKeys.forEach(key => {
+                    const rep = allReplicates[key];
+                    replicateWellMap[key] = [];
+                    rep.wells.forEach(wellInfo => {
+                        allWellSelections.push({ experiment: wellInfo.experiment, well: wellInfo.well });
+                        replicateWellMap[key].push(`${wellInfo.experiment}_${wellInfo.well}`);
+                    });
+                });
+
+                const response = await fetch(`${API_BASE}/api/plot-data`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ well_selections: allWellSelections })
+                });
+                const data = await response.json();
+
+                const traceMap = {};
+                data.traces.forEach(trace => { traceMap[trace.well] = trace; });
+
+                const showIndividual = document.getElementById('show-individual-wells').checked;
+                const plotTraces = [];
+                const stats = [];
+                const colors = ['#4facfe', '#e74c3c', '#2ecc71', '#e67e22', '#9b59b6', '#1abc9c', '#f39c12', '#3498db'];
+                let colorIdx = 0;
+
+                selectedReplicateKeys.forEach(key => {
+                    const rep = allReplicates[key];
+                    const groupTraces = replicateWellMap[key].map(id => traceMap[id]).filter(Boolean);
+                    if (groupTraces.length === 0) return;
+
+                    const color = colors[colorIdx % colors.length];
+                    colorIdx++;
+
+                    const avg = computeReplicateAverage(groupTraces);
+                    plotTraces.push({
+                        x: avg.x, y: avg.y,
+                        mode: 'lines+markers',
+                        name: `${rep.label} (avg, n=${groupTraces.length})`,
+                        line: { width: 3, color },
+                        marker: { size: 5, color }
+                    });
+
+                    const validY = avg.y.filter(v => !isNaN(v));
+                    stats.push({
+                        well: `${rep.label} (avg)`,
+                        condition: groupTraces[0].condition,
+                        antibiotic: groupTraces[0].antibiotic,
+                        max_od: validY.length > 0 ? Math.max(...validY).toFixed(3) : '0',
+                        final_od: validY.length > 0 ? validY[validY.length - 1].toFixed(3) : '0',
+                        auc: trapezoidalAUC(avg.x, avg.y).toFixed(2)
+                    });
+
+                    if (showIndividual) {
+                        groupTraces.forEach(trace => {
+                            plotTraces.push({
+                                x: trace.x, y: trace.y,
+                                mode: 'lines',
+                                name: trace.well,
+                                line: { width: 1, color, dash: 'dot' },
+                                opacity: 0.5
+                            });
+                        });
+                    }
+                });
+
+                const layout = {
+                    title: { text: 'Growth Curves - Replicates', font: { size: 20, color: '#495057' } },
+                    xaxis: { title: 'Time (hours)', gridcolor: '#e9ecef' },
+                    yaxis: { title: 'Optical Density (OD)', gridcolor: '#e9ecef' },
+                    hovermode: 'x unified',
+                    template: 'plotly_white',
+                    legend: { x: 1.02, y: 1 },
+                    margin: { l: 60, r: 120, t: 80, b: 60 },
+                    autosize: true
+                };
+                const config = { responsive: true, displayModeBar: true, modeBarButtonsToRemove: ['lasso2d', 'select2d'] };
+
+                document.getElementById('plot-growth-container').style.display = 'block';
+                document.getElementById('stats-container').style.display = 'block';
+                const plotDiv = document.getElementById('plot-growth');
+                Plotly.purge(plotDiv);
+                await Plotly.newPlot(plotDiv, plotTraces, layout, config);
+                displayStats(stats);
+                hideLoading();
+            } catch (error) {
+                console.error('Error plotting replicates:', error);
+                hideLoading();
+                showError('Error plotting replicates');
+            }
+        }
+
+        // ── Fit Curve replicate mode ───────────────────────────────────────────
+
+        function setFitMode(mode) {
+            currentFitMode = mode;
+            const wellSelect = document.getElementById('fitting-well');
+            const replicateSelect = document.getElementById('fitting-replicate');
+            document.getElementById('fit-mode-btn-well').classList.toggle('active', mode === 'well');
+            document.getElementById('fit-mode-btn-replicate').classList.toggle('active', mode === 'replicate');
+            if (mode === 'well') {
+                wellSelect.style.display = '';
+                replicateSelect.style.display = 'none';
+                document.getElementById('fit-button').disabled = !wellSelect.value;
+            } else {
+                wellSelect.style.display = 'none';
+                replicateSelect.style.display = '';
+                document.getElementById('fit-button').disabled = !replicateSelect.value;
+            }
+        }
+
+        function onFittingReplicateChange() {
+            const replicateSelect = document.getElementById('fitting-replicate');
+            document.getElementById('fit-button').disabled = !replicateSelect.value;
+        }
+
+        async function fitReplicateAverage() {
+            const experimentSelect = document.getElementById('fitting-experiment');
+            const replicateSelect = document.getElementById('fitting-replicate');
+            const fitButton = document.getElementById('fit-button');
+
+            const experiment = experimentSelect.value;
+            const replicateKey = replicateSelect.value;
+            if (!experiment || !replicateKey) {
+                alert('Please select an experiment and a replicate');
+                return;
+            }
+
+            fitButton.disabled = true;
+            fitButton.textContent = '⏳ Fitting...';
+
+            try {
+                const selectedOption = replicateSelect.selectedOptions[0];
+                const replicateWells = JSON.parse(selectedOption.dataset.wells);
+                const label = selectedOption.textContent;
+
+                const fitResponse = await fetch(`${API_BASE}/api/fit-replicate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        well_selections: replicateWells,
+                        label: label,
+                        experiment: experiment
+                    })
+                });
+
+                if (!fitResponse.ok) {
+                    const errorData = await fitResponse.json();
+                    throw new Error(errorData.error || 'Fitting failed');
+                }
+
+                const fitData = await fitResponse.json();
+                displayFittingResults(fitData);
+                plotFittedCurve(fitData);
+
+            } catch (error) {
+                console.error('Error fitting replicate:', error);
+                alert(`Error fitting replicate: ${error.message}`);
+            } finally {
+                fitButton.disabled = false;
+                fitButton.textContent = '📊 Fit Curve';
             }
         }
 
@@ -2467,9 +2881,8 @@
             try {
                 const response = await fetch(`${API_BASE}/api/experiment/${selectedExperiment}/info`);
                 const expInfo = await response.json();
-                
+
                 wellSelect.innerHTML = '<option value="">Select Well</option>';
-                
                 if (expInfo.wells) {
                     expInfo.wells.forEach(wellInfo => {
                         const option = document.createElement('option');
@@ -2478,10 +2891,33 @@
                         wellSelect.appendChild(option);
                     });
                 }
-                
                 wellSelect.disabled = false;
                 wellSelect.addEventListener('change', onFittingWellChange);
-                
+
+                // Populate replicate selector
+                const replicateSelect = document.getElementById('fitting-replicate');
+                replicateSelect.innerHTML = '<option value="">Select Replicate</option>';
+                if (expInfo.wells) {
+                    const repMap = {};
+                    expInfo.wells.forEach(wellInfo => {
+                        const key = `${wellInfo.condition}\u0000${wellInfo.antibiotic}`;
+                        if (!repMap[key]) {
+                            repMap[key] = { label: `${wellInfo.condition} | ${wellInfo.antibiotic}`, wells: [] };
+                        }
+                        repMap[key].wells.push({ experiment: selectedExperiment, well: wellInfo.well });
+                    });
+                    Object.entries(repMap)
+                        .filter(([, rep]) => rep.wells.length >= 2)
+                        .forEach(([, rep]) => {
+                            const option = document.createElement('option');
+                            option.textContent = `${rep.label} (${rep.wells.length} wells)`;
+                            option.dataset.wells = JSON.stringify(rep.wells);
+                            replicateSelect.appendChild(option);
+                        });
+                }
+                replicateSelect.disabled = false;
+                replicateSelect.addEventListener('change', onFittingReplicateChange);
+
             } catch (error) {
                 console.error('Error loading wells for fitting:', error);
                 wellSelect.disabled = true;
@@ -2497,14 +2933,18 @@
         }
 
         async function fitGrowthCurve() {
+            if (currentFitMode === 'replicate') {
+                return fitReplicateAverage();
+            }
+
             const experimentSelect = document.getElementById('fitting-experiment');
             const wellSelect = document.getElementById('fitting-well');
             const fitButton = document.getElementById('fit-button');
             const resultsDiv = document.getElementById('fitting-results');
-            
+
             const experiment = experimentSelect.value;
             const well = wellSelect.value;
-            
+
             if (!experiment || !well) {
                 alert('Please select both experiment and well');
                 return;
