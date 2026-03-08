@@ -206,6 +206,65 @@
             font-size: 0.9em;
             color: #495057;
             border-bottom: 1px solid #dee2e6;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .cluster-cell-title .cluster-title-text {
+            flex: 1;
+        }
+
+        .cluster-cell-title .cluster-btn {
+            background: none;
+            border: 1px solid #ced4da;
+            border-radius: 5px;
+            padding: 2px 8px;
+            font-size: 0.8em;
+            cursor: pointer;
+            color: #495057;
+            margin-left: 6px;
+        }
+
+        .cluster-cell-title .cluster-btn:hover {
+            background: #e9ecef;
+        }
+
+        .cluster-series-list {
+            display: none;
+            padding: 10px 14px;
+            border-top: 1px solid #dee2e6;
+            background: #fdfdfd;
+            font-size: 0.82em;
+            color: #495057;
+            max-height: 160px;
+            overflow-y: auto;
+            column-count: 2;
+            column-gap: 10px;
+        }
+
+        .cluster-series-list.open {
+            display: block;
+        }
+
+        .cluster-series-list span {
+            display: block;
+            padding: 1px 0;
+            break-inside: avoid;
+        }
+
+        .cluster-cell.fullscreen {
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            border-radius: 0;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .cluster-cell.fullscreen .cluster-plot-div {
+            flex: 1;
+            height: 0 !important;
         }
 
         .stats-title {
@@ -3328,21 +3387,62 @@
                 const cell = document.createElement('div');
                 cell.className = 'cluster-cell';
 
+                // Title bar with series toggle and fullscreen buttons
                 const title = document.createElement('div');
                 title.className = 'cluster-cell-title';
-                title.textContent = `Cluster ${cluster.id}  (${cluster.series_labels.length} series)`;
+
+                const titleText = document.createElement('span');
+                titleText.className = 'cluster-title-text';
+                titleText.textContent = `Cluster ${cluster.id}  (${cluster.series_labels.length} series)`;
+                title.appendChild(titleText);
+
+                const seriesBtn = document.createElement('button');
+                seriesBtn.className = 'cluster-btn';
+                seriesBtn.textContent = '📋 Series';
+                title.appendChild(seriesBtn);
+
+                const fsBtn = document.createElement('button');
+                fsBtn.className = 'cluster-btn';
+                fsBtn.textContent = '⛶ Fullscreen';
+                title.appendChild(fsBtn);
+
                 cell.appendChild(title);
 
+                // Plot div
                 const plotDiv = document.createElement('div');
+                plotDiv.className = 'cluster-plot-div';
                 plotDiv.style.width = '100%';
                 plotDiv.style.height = '300px';
                 cell.appendChild(plotDiv);
 
+                // Series list (hidden by default)
+                const seriesList = document.createElement('div');
+                seriesList.className = 'cluster-series-list';
+                cluster.series_labels.forEach(label => {
+                    const s = document.createElement('span');
+                    s.textContent = label;
+                    seriesList.appendChild(s);
+                });
+                cell.appendChild(seriesList);
+
                 grid.appendChild(cell);
+
+                // Series list toggle
+                seriesBtn.onclick = () => {
+                    seriesList.classList.toggle('open');
+                    seriesBtn.textContent = seriesList.classList.contains('open') ? '📋 Hide' : '📋 Series';
+                };
+
+                // Fullscreen toggle
+                fsBtn.onclick = () => {
+                    const isFs = cell.classList.toggle('fullscreen');
+                    fsBtn.textContent = isFs ? '✕ Exit' : '⛶ Fullscreen';
+                    document.body.style.overflow = isFs ? 'hidden' : '';
+                    Plotly.Plots.resize(plotDiv);
+                };
 
                 // Build traces: individual lines (light grey) + average (red, bold)
                 const traces = [];
-
                 const seriesData = cluster.series_data;
                 const seriesLabels = cluster.series_labels;
 
