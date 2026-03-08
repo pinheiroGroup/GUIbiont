@@ -3597,7 +3597,9 @@
                     legend: { x: 0, y: 1 }
                 };
 
-                Plotly.newPlot(plotDiv, traces, layout, { responsive: true, displayModeBar: false });
+                Plotly.newPlot(plotDiv, traces, layout, { responsive: true, displayModeBar: false }).then(() => {
+                    Plotly.Plots.resize(plotDiv);
+                });
             });
 
             document.getElementById('cluster-grid-container').style.display = 'block';
