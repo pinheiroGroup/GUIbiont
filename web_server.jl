@@ -818,6 +818,154 @@ function router(req)
                 return HTTP.Response(500, headers, JSON3.write(Dict("error" => "Curve fitting failed: $e")))
             end
             
+        elseif path == "/api/fit-replicate" && HTTP.method(req) == "POST"
+            # POST /api/fit-replicate - Fit averaged replicate data
+            body = String(req.body)
+            request_data = JSON3.read(body)
+
+            well_selections = request_data.well_selections
+            label = string(get(request_data, :label, "replicate"))
+            experiment_name = string(get(request_data, :experiment, "replicate"))
+
+            try
+                # Group selections by experiment to load each file only once
+                exp_wells = Dict{String, Vector{String}}()
+                for sel in well_selections
+                    exp = string(sel.experiment)
+                    well = string(sel.well)
+                    if !haskey(exp_wells, exp)
+                        exp_wells[exp] = String[]
+                    end
+                    push!(exp_wells[exp], well)
+                end
+
+                all_od_data = Vector{Vector{Float64}}()
+                all_time_data = Vector{Vector{Float64}}()
+
+                for (exp, wells) in exp_wells
+                    data_file = joinpath(CLEAN_DATA_PATH, exp, "data_channel_1.csv")
+                    annotation_file = joinpath(CLEAN_DATA_PATH, exp, "annotation_clean.csv")
+                    if !isfile(data_file) || !isfile(annotation_file)
+                        continue
+                    end
+
+                    growth_data = CSV.read(data_file, DataFrame, header=1, silencewarnings=true)
+                    annotations = CSV.read(annotation_file, DataFrame, header=false, silencewarnings=true, stringtype=String)
+
+                    # Identify blank wells
+                    list_of_blank = []
+                    for i in 1:nrow(annotations)
+                        if length(annotations[i, :]) >= 2 && (annotations[i, 2] == "b" || annotations[i, 2] == "X")
+                            push!(list_of_blank, Symbol(annotations[i, 1]))
+                        end
+                    end
+
+                    # Parse time column
+                    time_col = names(growth_data)[1]
+                    time_raw = growth_data[!, time_col]
+                    if eltype(time_raw) <: AbstractString
+                        try
+                            time_numeric = [parse(Float64, t) for t in time_raw[2:end]]
+                            time_numeric = [0.0; time_numeric]
+                        catch
+                            time_numeric = Float64.(0:(nrow(growth_data)-1))
+                        end
+                    else
+                        time_numeric = Float64.(time_raw)
+                    end
+
+                    # Compute blank value for this experiment
+                    blank_value = 0.0
+                    if !isempty(list_of_blank)
+                        blank_vals = Float64[]
+                        for bw in list_of_blank
+                            if bw in names(growth_data)
+                                for val in growth_data[!, bw]
+                                    try push!(blank_vals, parse(Float64, string(val))) catch _ end
+                                end
+                            end
+                        end
+                        if !isempty(blank_vals)
+                            blank_value = mean(filter(!isnan, blank_vals))
+                        end
+                    end
+
+                    col_names_str = string.(names(growth_data))
+                    for well in wells
+                        if !(well in col_names_str)
+                            continue
+                        end
+                        well_sym = Symbol(well)
+                        od = Float64[]
+                        for val in growth_data[!, well_sym]
+                            try push!(od, parse(Float64, string(val))) catch _ push!(od, NaN) end
+                        end
+                        od = od .- blank_value
+                        od = max.(od, 0.01)
+                        push!(all_od_data, od)
+                        push!(all_time_data, time_numeric)
+                    end
+                end
+
+                if isempty(all_od_data)
+                    return HTTP.Response(400, headers, JSON3.write(Dict("error" => "No valid well data found")))
+                end
+
+                # Average across wells (align by minimum length)
+                min_len = minimum(length.(all_od_data))
+                avg_time = all_time_data[1][1:min_len]
+                avg_od = zeros(Float64, min_len)
+                for od in all_od_data
+                    avg_od .+= od[1:min_len]
+                end
+                avg_od ./= length(all_od_data)
+
+                valid_indices = findall(.!isnan.(avg_od))
+                if length(valid_indices) < 10
+                    return HTTP.Response(400, headers, JSON3.write(Dict("error" => "Not enough valid data points for fitting")))
+                end
+
+                data_matrix = hcat(avg_time[valid_indices], avg_od[valid_indices])'
+
+                try
+                    data_matrix = Kinbiont.smoothing_data(data_matrix; method="rolling_avg", pt_avg=14)
+                catch e
+                    println("Warning: smoothing failed: ", e)
+                end
+
+                data_cut = find_stationary_phase(data_matrix; percentile_thr=0.05, pt_smooth_derivative=10, win_size=5)
+                if data_cut === nothing
+                    data_cut = data_matrix
+                end
+
+                model = "aHPM"
+                param = [0.2, 0.2, 0.80, 1.0]
+                fit_results = fitting_one_well_ODE_constrained(
+                    data_cut, label, experiment_name, model, param;
+                    pt_avg=3, pt_smooth_derivative=10,
+                    multiple_scattering_correction=false,
+                    lb=[0.0, 0.0, 0.0, 0.0], ub=param.*10
+                )
+
+                response_data = Dict(
+                    "experiment" => experiment_name,
+                    "well" => label,
+                    "experimental_time" => avg_time[valid_indices],
+                    "experimental_od" => avg_od[valid_indices],
+                    "fit_time" => fit_results[4],
+                    "fit_od" => fit_results[3],
+                    "parameters" => fit_results[2],
+                    "model" => model,
+                    "blank_value" => 0.0,
+                    "stationary_phase_start" => data_cut[1, end]
+                )
+                return HTTP.Response(200, headers, JSON3.write(response_data))
+
+            catch e
+                println("Error in replicate fitting: ", e)
+                return HTTP.Response(500, headers, JSON3.write(Dict("error" => "Replicate fitting failed: $e")))
+            end
+
         elseif path == "/api/plot-data" && HTTP.method(req) == "POST"
             # POST /api/plot-data - Get plot data for specific wells (supports multi-experiment)
             body = String(req.body)
