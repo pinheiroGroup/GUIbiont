@@ -239,18 +239,15 @@
             color: #495057;
             max-height: 180px;
             overflow-y: auto;
-            column-count: 2;
-            column-gap: 10px;
         }
 
         .cluster-series-list.open {
             display: block;
         }
 
-        .cluster-series-list span {
-            display: block;
+        .cluster-series-list .series-line {
             padding: 2px 0;
-            break-inside: avoid;
+            word-break: break-word;
         }
 
         .clustering-exp-list {
@@ -3519,22 +3516,33 @@
                 plotDiv.style.height = '300px';
                 cell.appendChild(plotDiv);
 
-                // Series list
+                // Series list — group by experiment
                 const seriesList = document.createElement('div');
                 seriesList.className = 'cluster-series-list';
-                cluster.series_labels.forEach(label => {
-                    const s = document.createElement('span');
-                    if (label.includes('/')) {
+                if (hasExperiments) {
+                    // Group wells by experiment
+                    const byExp = {};
+                    cluster.series_labels.forEach(label => {
                         const slash = label.indexOf('/');
-                        const exp  = label.slice(0, slash);
-                        const well = label.slice(slash + 1);
+                        const exp  = slash >= 0 ? label.slice(0, slash) : '';
+                        const well = slash >= 0 ? label.slice(slash + 1) : label;
+                        if (!byExp[exp]) byExp[exp] = [];
+                        byExp[exp].push(well);
+                    });
+                    Object.entries(byExp).forEach(([exp, wells]) => {
+                        const line = document.createElement('div');
+                        line.className = 'series-line';
                         const color = expColorMap[exp] || '#888';
-                        s.innerHTML = `<span style="color:${color};font-weight:600;">${exp}</span> / ${well}`;
-                    } else {
-                        s.textContent = label;
-                    }
-                    seriesList.appendChild(s);
-                });
+                        line.innerHTML = `<span style="color:${color};font-weight:600;">${exp}:</span> ${wells.join(', ')}`;
+                        seriesList.appendChild(line);
+                    });
+                } else {
+                    // File mode — just list all labels
+                    const line = document.createElement('div');
+                    line.className = 'series-line';
+                    line.textContent = cluster.series_labels.join(', ');
+                    seriesList.appendChild(line);
+                }
                 cell.appendChild(seriesList);
 
                 grid.appendChild(cell);
