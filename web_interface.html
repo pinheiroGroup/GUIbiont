@@ -1493,6 +1493,10 @@
 
                         <div id="cluster-experiments-content" style="display: none;">
                             <p class="fitting-description">Select experiments — all non-blank wells will be clustered.</p>
+                            <div style="margin-bottom: 6px;">
+                                <button class="btn" style="padding: 4px 12px; font-size: 0.85em;" onclick="selectAllClusteringExperiments()">Select All</button>
+                                <button class="btn" style="padding: 4px 12px; font-size: 0.85em;" onclick="clearAllClusteringExperiments()">Clear</button>
+                            </div>
                             <div id="clustering-experiments-list" class="clustering-exp-list"></div>
                         </div>
 
@@ -3409,6 +3413,16 @@
             } else {
                 btn.disabled = document.querySelectorAll('.clustering-exp-checkbox:checked').length === 0;
             }
+        }
+
+        function selectAllClusteringExperiments() {
+            document.querySelectorAll('.clustering-exp-checkbox').forEach(cb => cb.checked = true);
+            updateClusteringRunBtn();
+        }
+
+        function clearAllClusteringExperiments() {
+            document.querySelectorAll('.clustering-exp-checkbox').forEach(cb => cb.checked = false);
+            updateClusteringRunBtn();
         }
 
         function populateClusteringExperiments() {
