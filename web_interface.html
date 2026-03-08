@@ -237,7 +237,7 @@
             background: #fdfdfd;
             font-size: 0.82em;
             color: #495057;
-            max-height: 160px;
+            max-height: 180px;
             overflow-y: auto;
             column-count: 2;
             column-gap: 10px;
@@ -249,8 +249,35 @@
 
         .cluster-series-list span {
             display: block;
-            padding: 1px 0;
+            padding: 2px 0;
             break-inside: avoid;
+        }
+
+        .clustering-exp-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 4px;
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            padding: 8px;
+            background: white;
+            margin-bottom: 10px;
+        }
+
+        .clustering-exp-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 6px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.88em;
+        }
+
+        .clustering-exp-item:hover {
+            background: #f0f4ff;
         }
 
         .cluster-cell.fullscreen {
@@ -1457,9 +1484,22 @@
                 <div class="control-group">
                     <label>🔵 K-means Clustering</label>
                     <div class="clustering-container">
-                        <p class="fitting-description">Upload a CSV with columns: <strong>Time, Series 1, Series 2, ...</strong> — time series will be grouped into <em>k</em> clusters and displayed in a grid.</p>
+                        <div class="plot-mode-toggle" style="margin-bottom: 14px;">
+                            <button class="mode-btn active" id="cluster-mode-btn-file" onclick="setClusteringMode('file')">From File</button>
+                            <button class="mode-btn" id="cluster-mode-btn-experiments" onclick="setClusteringMode('experiments')">From Experiments</button>
+                        </div>
+
+                        <div id="cluster-file-content">
+                            <p class="fitting-description">Upload a CSV with columns: <strong>Time, Series 1, Series 2, ...</strong></p>
+                            <input type="file" id="clustering-file" accept=".csv" onchange="onClusteringFileChange()" style="margin-bottom: 10px;">
+                        </div>
+
+                        <div id="cluster-experiments-content" style="display: none;">
+                            <p class="fitting-description">Select experiments — all non-blank wells will be clustered.</p>
+                            <div id="clustering-experiments-list" class="clustering-exp-list"></div>
+                        </div>
+
                         <div class="clustering-controls">
-                            <input type="file" id="clustering-file" accept=".csv" onchange="onClusteringFileChange()">
                             <label for="clustering-k">k =</label>
                             <input type="number" id="clustering-k" value="3" min="1" max="20">
                             <label style="display: flex; align-items: center; gap: 6px;">
@@ -1644,13 +1684,14 @@
             try {
                 const response = await fetch(`${API_BASE}/api/experiments`);
                 const experiments = await response.json();
-                
+
                 // Store experiments globally for fitting interface
                 experimentInfo = experiments;
-                
+                allExperiments = experiments;
+
                 const experimentList = document.getElementById('experiment-list');
                 experimentList.innerHTML = '';
-                
+
                 experiments.forEach(exp => {
                     const checkboxItem = document.createElement('div');
                     checkboxItem.className = 'experiment-checkbox-item';
@@ -1662,7 +1703,9 @@
                     `;
                     experimentList.appendChild(checkboxItem);
                 });
-                
+
+                populateClusteringExperiments();
+
             } catch (error) {
                 console.error('Error loading experiments:', error);
                 document.getElementById('info').innerHTML = '❌ Error loading experiments. Make sure the server is running.';
@@ -3339,19 +3382,69 @@
         // K-means Clustering
         // ----------------------------------------------------------------
 
+        let currentClusteringMode = 'file';
+
+        const CLUSTER_PALETTE = [
+            '#4facfe', '#f5576c', '#43e97b', '#f093fb', '#ffd06e',
+            '#00c9ff', '#c471ed', '#f7971e', '#12c2e9', '#4776e6'
+        ];
+
+        function hexToRgba(hex, alpha) {
+            const r = parseInt(hex.slice(1, 3), 16);
+            const g = parseInt(hex.slice(3, 5), 16);
+            const b = parseInt(hex.slice(5, 7), 16);
+            return `rgba(${r},${g},${b},${alpha})`;
+        }
+
+        function setClusteringMode(mode) {
+            currentClusteringMode = mode;
+            document.getElementById('cluster-mode-btn-file').classList.toggle('active', mode === 'file');
+            document.getElementById('cluster-mode-btn-experiments').classList.toggle('active', mode === 'experiments');
+            document.getElementById('cluster-file-content').style.display = mode === 'file' ? 'block' : 'none';
+            document.getElementById('cluster-experiments-content').style.display = mode === 'experiments' ? 'block' : 'none';
+            updateClusteringRunBtn();
+        }
+
+        function updateClusteringRunBtn() {
+            const btn = document.getElementById('clustering-run-btn');
+            if (currentClusteringMode === 'file') {
+                btn.disabled = !document.getElementById('clustering-file').files[0];
+            } else {
+                btn.disabled = document.querySelectorAll('.clustering-exp-checkbox:checked').length === 0;
+            }
+        }
+
+        function populateClusteringExperiments() {
+            const list = document.getElementById('clustering-experiments-list');
+            if (!list || !allExperiments.length) return;
+            list.innerHTML = '';
+            allExperiments.forEach(exp => {
+                const item = document.createElement('label');
+                item.className = 'clustering-exp-item';
+                item.innerHTML = `<input type="checkbox" class="clustering-exp-checkbox" value="${exp}"> ${exp}`;
+                item.querySelector('input').onchange = updateClusteringRunBtn;
+                list.appendChild(item);
+            });
+        }
+
         function onClusteringFileChange() {
-            const file = document.getElementById('clustering-file').files[0];
-            document.getElementById('clustering-run-btn').disabled = !file;
+            updateClusteringRunBtn();
         }
 
         async function runClustering() {
-            const file = document.getElementById('clustering-file').files[0];
-            if (!file) return;
-
             const k = parseInt(document.getElementById('clustering-k').value) || 3;
             const normalize = document.getElementById('clustering-normalize').checked;
+            let body;
 
-            const csvText = await file.text();
+            if (currentClusteringMode === 'file') {
+                const file = document.getElementById('clustering-file').files[0];
+                if (!file) return;
+                body = { csv: await file.text(), k, normalize };
+            } else {
+                const selected = [...document.querySelectorAll('.clustering-exp-checkbox:checked')].map(c => c.value);
+                if (!selected.length) return;
+                body = { experiments: selected, k, normalize };
+            }
 
             document.getElementById('loading').style.display = 'flex';
             document.getElementById('cluster-grid-container').style.display = 'none';
@@ -3360,15 +3453,14 @@
                 const response = await fetch(`${API_BASE}/api/cluster`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ csv: csvText, k, normalize })
+                    body: JSON.stringify(body)
                 });
                 if (!response.ok) {
                     const err = await response.json();
                     alert('Clustering error: ' + (err.error || response.statusText));
                     return;
                 }
-                const data = await response.json();
-                renderClusterGrid(data);
+                renderClusterGrid(await response.json());
             } catch (e) {
                 alert('Clustering failed: ' + e.message);
             } finally {
@@ -3383,14 +3475,26 @@
             const time = data.time;
             const clusters = data.clusters;
 
+            // Build experiment → color map (labels may be "ExpName/WellName")
+            const expColorMap = {};
+            let colorIdx = 0;
+            clusters.forEach(cluster => {
+                cluster.series_labels.forEach(label => {
+                    const exp = label.includes('/') ? label.split('/')[0] : null;
+                    if (exp && !(exp in expColorMap)) {
+                        expColorMap[exp] = CLUSTER_PALETTE[colorIdx++ % CLUSTER_PALETTE.length];
+                    }
+                });
+            });
+            const hasExperiments = Object.keys(expColorMap).length > 0;
+
             clusters.forEach(cluster => {
                 const cell = document.createElement('div');
                 cell.className = 'cluster-cell';
 
-                // Title bar with series toggle and fullscreen buttons
+                // Title bar
                 const title = document.createElement('div');
                 title.className = 'cluster-cell-title';
-
                 const titleText = document.createElement('span');
                 titleText.className = 'cluster-title-text';
                 titleText.textContent = `Cluster ${cluster.id}  (${cluster.series_labels.length} series)`;
@@ -3415,25 +3519,31 @@
                 plotDiv.style.height = '300px';
                 cell.appendChild(plotDiv);
 
-                // Series list (hidden by default)
+                // Series list
                 const seriesList = document.createElement('div');
                 seriesList.className = 'cluster-series-list';
                 cluster.series_labels.forEach(label => {
                     const s = document.createElement('span');
-                    s.textContent = label;
+                    if (label.includes('/')) {
+                        const slash = label.indexOf('/');
+                        const exp  = label.slice(0, slash);
+                        const well = label.slice(slash + 1);
+                        const color = expColorMap[exp] || '#888';
+                        s.innerHTML = `<span style="color:${color};font-weight:600;">${exp}</span> / ${well}`;
+                    } else {
+                        s.textContent = label;
+                    }
                     seriesList.appendChild(s);
                 });
                 cell.appendChild(seriesList);
 
                 grid.appendChild(cell);
 
-                // Series list toggle
                 seriesBtn.onclick = () => {
                     seriesList.classList.toggle('open');
                     seriesBtn.textContent = seriesList.classList.contains('open') ? '📋 Hide' : '📋 Series';
                 };
 
-                // Fullscreen toggle
                 fsBtn.onclick = () => {
                     const isFs = cell.classList.toggle('fullscreen');
                     fsBtn.textContent = isFs ? '✕ Exit' : '⛶ Fullscreen';
@@ -3441,22 +3551,25 @@
                     Plotly.Plots.resize(plotDiv);
                 };
 
-                // Build traces: individual lines (light grey) + average (red, bold)
+                // Build traces
                 const traces = [];
-                const seriesData = cluster.series_data;
+                const seriesData   = cluster.series_data;
                 const seriesLabels = cluster.series_labels;
 
                 seriesData.forEach((y, i) => {
+                    const label = seriesLabels[i];
+                    const exp   = label.includes('/') ? label.split('/')[0] : null;
+                    const color = exp ? hexToRgba(expColorMap[exp], 0.45) : 'rgba(120,120,120,0.4)';
                     traces.push({
                         x: time, y,
                         mode: 'lines', type: 'scatter',
-                        name: seriesLabels[i],
-                        line: { width: 1, color: 'rgba(120,120,120,0.4)' },
+                        name: label,
+                        line: { width: 1, color },
                         showlegend: false
                     });
                 });
 
-                // Compute point-wise average
+                // Point-wise average — red, thinner
                 const avgY = time.map((_, ti) => {
                     const vals = seriesData.map(s => s[ti]).filter(v => isFinite(v));
                     return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
@@ -3465,7 +3578,7 @@
                     x: time, y: avgY,
                     mode: 'lines', type: 'scatter',
                     name: 'Average',
-                    line: { width: 3, color: 'red' },
+                    line: { width: 1.5, color: 'red' },
                     showlegend: true
                 });
 
