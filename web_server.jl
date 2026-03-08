@@ -1,5 +1,4 @@
 using HTTP, JSON3, CSV, DataFrames, Statistics
-using Clustering: kmeans, assignments
 include("function_for_fitting.jl")
 include("function_clean_synergy.jl")
 
@@ -1248,41 +1247,47 @@ function router(req)
             k_input   = Int(request_data["k"])
             normalize = Bool(get(request_data, "normalize", false))
 
-            df = CSV.read(IOBuffer(csv_text), DataFrame)
-            time_col = names(df)[1]
-            times    = Float64.(df[!, time_col])
-
+            # Build GrowthData from the uploaded CSV text
+            df           = CSV.read(IOBuffer(csv_text), DataFrame)
+            time_col     = names(df)[1]
+            times        = Float64.(df[!, time_col])
             series_names = names(df)[2:end]
             n_series     = length(series_names)
-            n_tp         = length(times)
 
-            curves = Matrix{Float64}(undef, n_series, n_tp)
+            curves = Matrix{Float64}(undef, n_series, length(times))
             for (i, s) in enumerate(series_names)
                 curves[i, :] = Float64.(df[!, s])
             end
 
+            gd   = GrowthData(curves, times, String.(series_names))
+            opts = FitOptions(
+                cluster            = true,
+                n_clusters         = min(k_input, n_series),
+                cluster_trend_test = false,   # user controls k directly; skip auto flat-curve labelling
+            )
+            processed   = preprocess(gd, opts)
+            cluster_ids = processed.clusters   # Vector{Int}, length n_series
+
+            # Optionally z-score for display (shape-only view)
+            display_curves = copy(curves)
             if normalize
                 for i in 1:n_series
-                    row = curves[i, :]
+                    row = display_curves[i, :]
                     s   = std(row)
                     if s > 1e-12
-                        curves[i, :] = (row .- mean(row)) ./ s
+                        display_curves[i, :] = (row .- mean(row)) ./ s
                     end
                 end
             end
 
-            k_actual = min(k_input, n_series)
-            result   = kmeans(permutedims(curves), k_actual)
-            cluster_ids = assignments(result)
-
             clusters = []
-            for c in 1:k_actual
+            for c in 1:min(k_input, n_series)
                 mask = findall(cluster_ids .== c)
                 isempty(mask) && continue
                 push!(clusters, Dict(
                     "id"            => c,
                     "series_labels" => series_names[mask],
-                    "series_data"   => [curves[i, :] for i in mask]
+                    "series_data"   => [display_curves[i, :] for i in mask]
                 ))
             end
 
