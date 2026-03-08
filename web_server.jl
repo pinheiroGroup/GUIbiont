@@ -1,4 +1,5 @@
 using HTTP, JSON3, CSV, DataFrames, Statistics
+using Clustering: kmeans, assignments
 include("function_for_fitting.jl")
 include("function_clean_synergy.jl")
 
@@ -1241,6 +1242,55 @@ function router(req)
                 return HTTP.Response(404, headers, JSON3.write(Dict("error" => "Data not found")))
             end
             
+        elseif path == "/api/cluster" && HTTP.method(req) == "POST"
+            request_data = JSON3.read(String(req.body))
+            csv_text  = String(request_data["csv"])
+            k_input   = Int(request_data["k"])
+            normalize = Bool(get(request_data, "normalize", false))
+
+            df = CSV.read(IOBuffer(csv_text), DataFrame)
+            time_col = names(df)[1]
+            times    = Float64.(df[!, time_col])
+
+            series_names = names(df)[2:end]
+            n_series     = length(series_names)
+            n_tp         = length(times)
+
+            curves = Matrix{Float64}(undef, n_series, n_tp)
+            for (i, s) in enumerate(series_names)
+                curves[i, :] = Float64.(df[!, s])
+            end
+
+            if normalize
+                for i in 1:n_series
+                    row = curves[i, :]
+                    s   = std(row)
+                    if s > 1e-12
+                        curves[i, :] = (row .- mean(row)) ./ s
+                    end
+                end
+            end
+
+            k_actual = min(k_input, n_series)
+            result   = kmeans(permutedims(curves), k_actual)
+            cluster_ids = assignments(result)
+
+            clusters = []
+            for c in 1:k_actual
+                mask = findall(cluster_ids .== c)
+                isempty(mask) && continue
+                push!(clusters, Dict(
+                    "id"            => c,
+                    "series_labels" => series_names[mask],
+                    "series_data"   => [curves[i, :] for i in mask]
+                ))
+            end
+
+            return HTTP.Response(200, headers, JSON3.write(Dict(
+                "time"     => times,
+                "clusters" => clusters
+            )))
+
         elseif path == "/"
             # Serve the main HTML page
             html_content = read("web_interface.html", String)

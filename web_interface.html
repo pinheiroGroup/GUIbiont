@@ -152,6 +152,62 @@
             box-shadow: 0 4px 12px rgba(0,0,0,0.05);
         }
 
+        .clustering-container {
+            background: white;
+            border-radius: 10px;
+            padding: 25px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+
+        .clustering-controls {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+        }
+
+        .clustering-controls label {
+            font-weight: 500;
+            color: #495057;
+        }
+
+        .clustering-controls input[type="file"] {
+            flex: 1;
+            min-width: 200px;
+        }
+
+        .clustering-controls input[type="number"] {
+            width: 70px;
+            padding: 7px 10px;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            font-size: 0.9em;
+        }
+
+        .cluster-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .cluster-cell {
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            overflow: hidden;
+            background: white;
+        }
+
+        .cluster-cell-title {
+            padding: 8px 14px;
+            background: #f8f9fa;
+            font-weight: 600;
+            font-size: 0.9em;
+            color: #495057;
+            border-bottom: 1px solid #dee2e6;
+        }
+
         .stats-title {
             font-size: 1.5em;
             font-weight: 600;
@@ -1174,6 +1230,7 @@
             <button class="tab-button active" onclick="switchTab('clean-data')">🧹 Clean Data</button>
             <button class="tab-button" onclick="switchTab('plot-growth')">📊 Plot Growth</button>
             <button class="tab-button" onclick="switchTab('fit-curve')">🧮 Fit Curve</button>
+            <button class="tab-button" onclick="switchTab('clustering')">🔵 Clustering</button>
         </div>
 
         <div class="controls">
@@ -1335,6 +1392,25 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Clustering Tab Content -->
+            <div id="clustering-content" class="tab-content">
+                <div class="control-group">
+                    <label>🔵 K-means Clustering</label>
+                    <div class="clustering-container">
+                        <p class="fitting-description">Upload a CSV with columns: <strong>Time, Series 1, Series 2, ...</strong> — time series will be grouped into <em>k</em> clusters and displayed in a grid.</p>
+                        <div class="clustering-controls">
+                            <input type="file" id="clustering-file" accept=".csv" onchange="onClusteringFileChange()">
+                            <label for="clustering-k">k =</label>
+                            <input type="number" id="clustering-k" value="3" min="1" max="20">
+                            <label style="display: flex; align-items: center; gap: 6px;">
+                                <input type="checkbox" id="clustering-normalize"> Normalize
+                            </label>
+                            <button class="btn fit-btn" id="clustering-run-btn" onclick="runClustering()" disabled>▶ Run Clustering</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <div class="content">
@@ -1367,6 +1443,11 @@
             <div class="stats-container" id="stats-container" style="display: none;">
                 <div class="stats-title">📈 Well Statistics</div>
                 <div id="stats-table"></div>
+            </div>
+
+            <!-- Clustering Grid Container -->
+            <div id="cluster-grid-container" style="display: none; padding: 20px;">
+                <div id="cluster-grid" class="cluster-grid"></div>
             </div>
 
             <div id="loading" class="loading" style="display: none;">
@@ -1449,6 +1530,7 @@
             const fittingContainer = document.getElementById('plot-fitting-container');
             const statsContainer = document.getElementById('stats-container');
             
+            const clusterGridContainer = document.getElementById('cluster-grid-container');
             if (tabName === 'plot-growth') {
                 // Show growth plot if it has been created (check if plot div has data)
                 const growthPlotDiv = document.getElementById('plot-growth');
@@ -1458,14 +1540,15 @@
                     growthContainer.style.display = 'none';
                 }
                 fittingContainer.style.display = 'none';
-                
+                if (clusterGridContainer) clusterGridContainer.style.display = 'none';
+
                 // Show stats if they exist for growth plot
                 if (statsContainer.querySelector('#stats-table') && statsContainer.querySelector('#stats-table').innerHTML.trim()) {
                     statsContainer.style.display = 'block';
                 } else {
                     statsContainer.style.display = 'none';
                 }
-                
+
                 document.getElementById('fitting-results').style.display = 'none';
             } else if (tabName === 'fit-curve') {
                 // Show fitting plot if it has been created (check if plot div has data)
@@ -1476,7 +1559,8 @@
                     fittingContainer.style.display = 'none';
                 }
                 growthContainer.style.display = 'none';
-                
+                if (clusterGridContainer) clusterGridContainer.style.display = 'none';
+
                 // Hide stats for fitting (not relevant)
                 statsContainer.style.display = 'none';
                 
@@ -1484,6 +1568,14 @@
                 const fittingResults = document.getElementById('fitting-results');
                 if (fittingResults && fittingResults.innerHTML.trim()) {
                     fittingResults.style.display = 'block';
+                }
+            } else if (tabName === 'clustering') {
+                growthContainer.style.display = 'none';
+                fittingContainer.style.display = 'none';
+                statsContainer.style.display = 'none';
+                if (clusterGridContainer) {
+                    const hasResults = document.getElementById('cluster-grid').innerHTML.trim();
+                    clusterGridContainer.style.display = hasResults ? 'block' : 'none';
                 }
             }
         }
@@ -3182,6 +3274,112 @@
             
             // Clear stats since this is curve fitting, not multi-well analysis
             document.getElementById('stats-container').style.display = 'none';
+        }
+
+        // ----------------------------------------------------------------
+        // K-means Clustering
+        // ----------------------------------------------------------------
+
+        function onClusteringFileChange() {
+            const file = document.getElementById('clustering-file').files[0];
+            document.getElementById('clustering-run-btn').disabled = !file;
+        }
+
+        async function runClustering() {
+            const file = document.getElementById('clustering-file').files[0];
+            if (!file) return;
+
+            const k = parseInt(document.getElementById('clustering-k').value) || 3;
+            const normalize = document.getElementById('clustering-normalize').checked;
+
+            const csvText = await file.text();
+
+            document.getElementById('loading').style.display = 'flex';
+            document.getElementById('cluster-grid-container').style.display = 'none';
+
+            try {
+                const response = await fetch(`${API_BASE}/api/cluster`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ csv: csvText, k, normalize })
+                });
+                if (!response.ok) {
+                    const err = await response.json();
+                    alert('Clustering error: ' + (err.error || response.statusText));
+                    return;
+                }
+                const data = await response.json();
+                renderClusterGrid(data);
+            } catch (e) {
+                alert('Clustering failed: ' + e.message);
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
+
+        function renderClusterGrid(data) {
+            const grid = document.getElementById('cluster-grid');
+            grid.innerHTML = '';
+
+            const time = data.time;
+            const clusters = data.clusters;
+
+            clusters.forEach(cluster => {
+                const cell = document.createElement('div');
+                cell.className = 'cluster-cell';
+
+                const title = document.createElement('div');
+                title.className = 'cluster-cell-title';
+                title.textContent = `Cluster ${cluster.id}  (${cluster.series_labels.length} series)`;
+                cell.appendChild(title);
+
+                const plotDiv = document.createElement('div');
+                plotDiv.style.width = '100%';
+                plotDiv.style.height = '300px';
+                cell.appendChild(plotDiv);
+
+                grid.appendChild(cell);
+
+                // Build traces: individual lines (light grey) + average (red, bold)
+                const traces = [];
+
+                const seriesData = cluster.series_data;
+                const seriesLabels = cluster.series_labels;
+
+                seriesData.forEach((y, i) => {
+                    traces.push({
+                        x: time, y,
+                        mode: 'lines', type: 'scatter',
+                        name: seriesLabels[i],
+                        line: { width: 1, color: 'rgba(120,120,120,0.4)' },
+                        showlegend: false
+                    });
+                });
+
+                // Compute point-wise average
+                const avgY = time.map((_, ti) => {
+                    const vals = seriesData.map(s => s[ti]).filter(v => isFinite(v));
+                    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+                });
+                traces.push({
+                    x: time, y: avgY,
+                    mode: 'lines', type: 'scatter',
+                    name: 'Average',
+                    line: { width: 3, color: 'red' },
+                    showlegend: true
+                });
+
+                const layout = {
+                    margin: { t: 10, r: 10, b: 40, l: 50 },
+                    xaxis: { title: 'Time' },
+                    yaxis: { title: 'Value' },
+                    legend: { x: 0, y: 1 }
+                };
+
+                Plotly.newPlot(plotDiv, traces, layout, { responsive: true, displayModeBar: false });
+            });
+
+            document.getElementById('cluster-grid-container').style.display = 'block';
         }
     </script>
 </body>
