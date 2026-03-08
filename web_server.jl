@@ -1243,16 +1243,16 @@ function router(req)
             
         elseif path == "/api/cluster" && HTTP.method(req) == "POST"
             request_data = JSON3.read(String(req.body))
-            k_input   = Int(request_data["k"])
-            normalize = Bool(get(request_data, "normalize", false))
+            k_input   = Int(request_data[:k])
+            normalize = Bool(get(request_data, :normalize, false))
 
             times_all  = Vector{Vector{Float64}}()
             curves_all = Vector{Vector{Float64}}()
             labels_all = Vector{String}()
 
-            if haskey(request_data, "csv")
+            if haskey(request_data, :csv)
                 # From file: first column = Time, rest = series
-                df       = CSV.read(IOBuffer(String(request_data["csv"])), DataFrame)
+                df       = CSV.read(IOBuffer(String(request_data[:csv])), DataFrame)
                 csv_time = Float64.(df[!, names(df)[1]])
                 for s in names(df)[2:end]
                     push!(times_all,  csv_time)
@@ -1261,7 +1261,7 @@ function router(req)
                 end
             else
                 # From experiments: load all non-blank wells
-                for exp_name in String.(request_data["experiments"])
+                for exp_name in String.(request_data[:experiments])
                     data_file       = joinpath(CLEAN_DATA_PATH, exp_name, "data_channel_1.csv")
                     annotation_file = joinpath(CLEAN_DATA_PATH, exp_name, "annotation_clean.csv")
                     isfile(data_file) || continue
