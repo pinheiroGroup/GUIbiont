@@ -1241,6 +1241,111 @@ function router(req)
                 return HTTP.Response(404, headers, JSON3.write(Dict("error" => "Data not found")))
             end
             
+        elseif path == "/api/cluster" && HTTP.method(req) == "POST"
+            request_data = JSON3.read(String(req.body))
+            k_input   = Int(request_data[:k])
+            normalize = Bool(get(request_data, :normalize, false))
+
+            times_all  = Vector{Vector{Float64}}()
+            curves_all = Vector{Vector{Float64}}()
+            labels_all = Vector{String}()
+
+            if haskey(request_data, :csv)
+                # From file: first column = Time, rest = series
+                df       = CSV.read(IOBuffer(String(request_data[:csv])), DataFrame)
+                csv_time = Float64.(df[!, names(df)[1]])
+                for s in names(df)[2:end]
+                    push!(times_all,  csv_time)
+                    push!(curves_all, Float64.(df[!, s]))
+                    push!(labels_all, String(s))
+                end
+            else
+                # From experiments: load all non-blank wells
+                for exp_name in String.(request_data[:experiments])
+                    data_file       = joinpath(CLEAN_DATA_PATH, exp_name, "data_channel_1.csv")
+                    annotation_file = joinpath(CLEAN_DATA_PATH, exp_name, "annotation_clean.csv")
+                    isfile(data_file) || continue
+                    try
+                        gd_raw      = CSV.read(data_file, DataFrame, header=1, silencewarnings=true)
+                        blank_wells = Set{String}()
+                        if isfile(annotation_file)
+                            ann = CSV.read(annotation_file, DataFrame, header=false,
+                                          silencewarnings=true, stringtype=String)
+                            blank_wells = get_blank_wells(ann)
+                        end
+                        time_data = gd_raw[!, names(gd_raw)[1]]
+                        if eltype(time_data) <: AbstractString
+                            try
+                                time_numeric = [0.0; [parse(Float64, t) for t in time_data[2:end]]]
+                            catch _
+                                time_numeric = Float64.(0:(nrow(gd_raw)-1))
+                            end
+                        else
+                            time_numeric = Float64.(time_data)
+                        end
+                        for well in names(gd_raw)[2:end]
+                            well in blank_wells && continue
+                            od = Float64[]
+                            for val in gd_raw[!, well]
+                                try push!(od, parse(Float64, string(val))) catch _ push!(od, NaN) end
+                            end
+                            push!(times_all,  time_numeric)
+                            push!(curves_all, od)
+                            push!(labels_all, "$exp_name/$well")
+                        end
+                    catch e
+                        println("Error loading $exp_name for clustering: $e")
+                    end
+                end
+            end
+
+            isempty(curves_all) && return HTTP.Response(400, headers,
+                JSON3.write(Dict("error" => "No data loaded")))
+
+            # Align all series to minimum length
+            min_len  = minimum(length.(curves_all))
+            times    = times_all[1][1:min_len]
+            n_series = length(curves_all)
+            curves   = Matrix{Float64}(undef, n_series, min_len)
+            for (i, c) in enumerate(curves_all)
+                curves[i, :] = c[1:min_len]
+            end
+
+            gd   = GrowthData(curves, times, labels_all)
+            opts = FitOptions(
+                cluster            = true,
+                n_clusters         = min(k_input, n_series),
+                cluster_trend_test = false,
+            )
+            processed   = preprocess(gd, opts)
+            cluster_ids = processed.clusters
+
+            # Optionally z-score curves for display
+            display_curves = copy(curves)
+            if normalize
+                for i in 1:n_series
+                    row = display_curves[i, :]
+                    s   = std(row)
+                    s > 1e-12 && (display_curves[i, :] = (row .- mean(row)) ./ s)
+                end
+            end
+
+            clusters = []
+            for c in 1:min(k_input, n_series)
+                mask = findall(cluster_ids .== c)
+                isempty(mask) && continue
+                push!(clusters, Dict(
+                    "id"            => c,
+                    "series_labels" => labels_all[mask],
+                    "series_data"   => [display_curves[i, :] for i in mask]
+                ))
+            end
+
+            return HTTP.Response(200, headers, JSON3.write(Dict(
+                "time"     => times,
+                "clusters" => clusters
+            )))
+
         elseif path == "/"
             # Serve the main HTML page
             html_content = read("web_interface.html", String)
