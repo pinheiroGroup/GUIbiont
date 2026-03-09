@@ -385,12 +385,18 @@ function find_stationary_phase(data;percentile_thr=0.05,pt_smooth_derivative=7,w
     index = findall(specific_growth_rate .> thr)
     if length(index) > win_size
 
-
-    # find the first point after maximum where the growth rate is lower than the threshold   
+    # find the first point after maximum where the growth rate is lower than the threshold
     for i in maximum_index:(length(specific_growth_rate).-win_size)
 
         if all(specific_growth_rate[i:(i+win_size-1)] .< thr)
-            return data[:,1:(i +index_od[1]-1)]
+            # Snap to OD peak within the next win_size points.
+            # The SGR threshold detects deceleration, but OD may still rise
+            # for a few timepoints before the true plateau is reached.
+            base_idx    = i + index_od[1] - 1
+            search_end  = min(base_idx + win_size, size(data, 2))
+            peak_offset = argmax(data[2, base_idx:search_end])
+            cutoff_idx  = base_idx + peak_offset - 1
+            return data[:,1:cutoff_idx]
         end
     end
 
