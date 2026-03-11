@@ -22,5 +22,6 @@ end
 # Include and start the server
 println("📂 Loading web server...")
 include("web_server.jl")
-println("🚀 Starting server on port 8080...")
-start_server(8080)
+port = haskey(ENV, "PORT") ? parse(Int, ENV["PORT"]) : 8080
+println("🚀 Starting server on port $port...")
+start_server(port)
