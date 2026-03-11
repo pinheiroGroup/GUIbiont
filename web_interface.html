@@ -1518,7 +1518,43 @@
             <div class="plot-container" id="plot-growth-container" style="display: none;">
                 <div class="plot-controls" style="padding: 15px; background: #f8f9fa; border-bottom: 1px solid #dee2e6; display: flex; justify-content: space-between; align-items: center;">
                     <h3 style="margin: 0; color: #495057;">📈 Growth Curves</h3>
-                    <div class="plot-buttons">
+                    <div class="plot-buttons" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                        <label style="font-size: 13px; color: #495057; white-space: nowrap;">Legend:</label>
+                        <select class="legend-font-select" onchange="setLegendFontSize(this.value)" style="padding: 4px 8px; font-size: 13px; border: 1px solid #ced4da; border-radius: 6px; width: auto;">
+                            <option value="10">10</option>
+                            <option value="11">11</option>
+                            <option value="12">12</option>
+                            <option value="13">13</option>
+                            <option value="14">14</option>
+                            <option value="16">16</option>
+                            <option value="18">18</option>
+                            <option value="20">20</option>
+                            <option value="22">22</option>
+                        </select>
+                        <label style="font-size: 13px; color: #495057; white-space: nowrap;">Axis title:</label>
+                        <select class="axis-title-font-select" onchange="setAxisTitleFontSize(this.value)" style="padding: 4px 8px; font-size: 13px; border: 1px solid #ced4da; border-radius: 6px; width: auto;">
+                            <option value="10">10</option>
+                            <option value="11">11</option>
+                            <option value="12">12</option>
+                            <option value="13">13</option>
+                            <option value="14">14</option>
+                            <option value="16">16</option>
+                            <option value="18">18</option>
+                            <option value="20">20</option>
+                            <option value="22">22</option>
+                        </select>
+                        <label style="font-size: 13px; color: #495057; white-space: nowrap;">Tick labels:</label>
+                        <select class="axis-tick-font-select" onchange="setAxisTickFontSize(this.value)" style="padding: 4px 8px; font-size: 13px; border: 1px solid #ced4da; border-radius: 6px; width: auto;">
+                            <option value="8">8</option>
+                            <option value="9">9</option>
+                            <option value="10">10</option>
+                            <option value="11">11</option>
+                            <option value="12">12</option>
+                            <option value="13">13</option>
+                            <option value="14">14</option>
+                            <option value="16">16</option>
+                            <option value="18">18</option>
+                        </select>
                         <button class="btn" onclick="toggleFullscreen('plot-growth')" id="fullscreen-growth-btn">🔍 Fullscreen</button>
                         <button class="btn" onclick="exportPlot('plot-growth')">💾 Export PNG</button>
                         <button class="btn" onclick="exportPlotSVG('plot-growth')">📊 Export SVG</button>
@@ -1531,7 +1567,43 @@
             <div class="plot-container" id="plot-fitting-container" style="display: none;">
                 <div class="plot-controls" style="padding: 15px; background: #f8f9fa; border-bottom: 1px solid #dee2e6; display: flex; justify-content: space-between; align-items: center;">
                     <h3 style="margin: 0; color: #495057;">🧮 Curve Fitting</h3>
-                    <div class="plot-buttons">
+                    <div class="plot-buttons" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                        <label style="font-size: 13px; color: #495057; white-space: nowrap;">Legend:</label>
+                        <select class="legend-font-select" onchange="setLegendFontSize(this.value)" style="padding: 4px 8px; font-size: 13px; border: 1px solid #ced4da; border-radius: 6px; width: auto;">
+                            <option value="10">10</option>
+                            <option value="11">11</option>
+                            <option value="12">12</option>
+                            <option value="13">13</option>
+                            <option value="14">14</option>
+                            <option value="16">16</option>
+                            <option value="18">18</option>
+                            <option value="20">20</option>
+                            <option value="22">22</option>
+                        </select>
+                        <label style="font-size: 13px; color: #495057; white-space: nowrap;">Axis title:</label>
+                        <select class="axis-title-font-select" onchange="setAxisTitleFontSize(this.value)" style="padding: 4px 8px; font-size: 13px; border: 1px solid #ced4da; border-radius: 6px; width: auto;">
+                            <option value="10">10</option>
+                            <option value="11">11</option>
+                            <option value="12">12</option>
+                            <option value="13">13</option>
+                            <option value="14">14</option>
+                            <option value="16">16</option>
+                            <option value="18">18</option>
+                            <option value="20">20</option>
+                            <option value="22">22</option>
+                        </select>
+                        <label style="font-size: 13px; color: #495057; white-space: nowrap;">Tick labels:</label>
+                        <select class="axis-tick-font-select" onchange="setAxisTickFontSize(this.value)" style="padding: 4px 8px; font-size: 13px; border: 1px solid #ced4da; border-radius: 6px; width: auto;">
+                            <option value="8">8</option>
+                            <option value="9">9</option>
+                            <option value="10">10</option>
+                            <option value="11">11</option>
+                            <option value="12">12</option>
+                            <option value="13">13</option>
+                            <option value="14">14</option>
+                            <option value="16">16</option>
+                            <option value="18">18</option>
+                        </select>
                         <button class="btn" onclick="toggleFullscreen('plot-fitting')" id="fullscreen-fitting-btn">🔍 Fullscreen</button>
                         <button class="btn" onclick="exportPlot('plot-fitting')">💾 Export PNG</button>
                         <button class="btn" onclick="exportPlotSVG('plot-fitting')">📊 Export SVG</button>
@@ -1575,9 +1647,56 @@
         let allReplicates = {};
         let lastFitData = null;
         let lastReplicateTraces = [];
+        let legendFontSize = parseInt(localStorage.getItem('legendFontSize') || '14');
+        let axisTitleFontSize = parseInt(localStorage.getItem('axisTitleFontSize') || '14');
+        let axisTickFontSize = parseInt(localStorage.getItem('axisTickFontSize') || '12');
+
+        function relayoutFontSizes() {
+            const plots = [
+                { divId: 'plot-growth', containerId: 'plot-growth-container' },
+                { divId: 'plot-fitting', containerId: 'plot-fitting-container' }
+            ];
+            plots.forEach(({ divId, containerId }) => {
+                const container = document.getElementById(containerId);
+                const plotDiv = document.getElementById(divId);
+                if (!container || container.style.display === 'none') return;
+                if (!plotDiv || !plotDiv._fullLayout) return;
+                Plotly.relayout(plotDiv, {
+                    'legend.font.size': legendFontSize,
+                    'xaxis.title.font.size': axisTitleFontSize,
+                    'yaxis.title.font.size': axisTitleFontSize,
+                    'xaxis.tickfont.size': axisTickFontSize,
+                    'yaxis.tickfont.size': axisTickFontSize
+                });
+            });
+        }
+
+        function setLegendFontSize(val) {
+            legendFontSize = parseInt(val);
+            localStorage.setItem('legendFontSize', String(val));
+            document.querySelectorAll('.legend-font-select').forEach(s => s.value = val);
+            relayoutFontSizes();
+        }
+
+        function setAxisTitleFontSize(val) {
+            axisTitleFontSize = parseInt(val);
+            localStorage.setItem('axisTitleFontSize', String(val));
+            document.querySelectorAll('.axis-title-font-select').forEach(s => s.value = val);
+            relayoutFontSizes();
+        }
+
+        function setAxisTickFontSize(val) {
+            axisTickFontSize = parseInt(val);
+            localStorage.setItem('axisTickFontSize', String(val));
+            document.querySelectorAll('.axis-tick-font-select').forEach(s => s.value = val);
+            relayoutFontSizes();
+        }
 
         // Initialize the app
         async function init() {
+            document.querySelectorAll('.legend-font-select').forEach(s => s.value = legendFontSize);
+            document.querySelectorAll('.axis-title-font-select').forEach(s => s.value = axisTitleFontSize);
+            document.querySelectorAll('.axis-tick-font-select').forEach(s => s.value = axisTickFontSize);
             await applyConfig();
             await loadExperiments();
             loadFittingExperiments();
@@ -2146,20 +2265,25 @@
                         font: { size: 20, color: '#495057' }
                     },
                     xaxis: {
-                        title: 'Time (hours)',
+                        title: { text: 'Time (hours)', font: { size: axisTitleFontSize } },
+                        tickfont: { size: axisTickFontSize },
                         gridcolor: '#e9ecef'
                     },
                     yaxis: {
-                        title: 'Optical Density (OD)',
+                        title: { text: 'Optical Density (OD)', font: { size: axisTitleFontSize } },
+                        tickfont: { size: axisTickFontSize },
                         gridcolor: '#e9ecef'
                     },
                     hovermode: 'x unified',
                     template: 'plotly_white',
                     legend: {
-                        x: 1.02,
-                        y: 1
+                        orientation: 'h',
+                        xanchor: 'center',
+                        x: 0.5,
+                        y: -0.2,
+                        font: { size: legendFontSize }
                     },
-                    margin: { l: 60, r: 120, t: 80, b: 60 },
+                    margin: { l: 60, r: 30, t: 80, b: 120 },
                     autosize: true
                 };
 
@@ -2468,12 +2592,18 @@
 
                 const layout = {
                     title: { text: 'Growth Curves - Replicates', font: { size: 20, color: '#495057' } },
-                    xaxis: { title: 'Time (hours)', gridcolor: '#e9ecef' },
-                    yaxis: { title: 'Optical Density (OD)', gridcolor: '#e9ecef' },
+                    xaxis: { title: { text: 'Time (hours)', font: { size: axisTitleFontSize } }, tickfont: { size: axisTickFontSize }, gridcolor: '#e9ecef' },
+                    yaxis: { title: { text: 'Optical Density (OD)', font: { size: axisTitleFontSize } }, tickfont: { size: axisTickFontSize }, gridcolor: '#e9ecef' },
                     hovermode: 'x unified',
                     template: 'plotly_white',
-                    legend: { x: 1.02, y: 1 },
-                    margin: { l: 60, r: 120, t: 80, b: 60 },
+                    legend: {
+                        orientation: 'h',
+                        xanchor: 'center',
+                        x: 0.5,
+                        y: -0.2,
+                        font: { size: legendFontSize }
+                    },
+                    margin: { l: 60, r: 30, t: 80, b: 120 },
                     autosize: true
                 };
                 const config = { responsive: true, displayModeBar: true, modeBarButtonsToRemove: ['lasso2d', 'select2d'] };
@@ -3351,9 +3481,10 @@
             
             const layout = {
                 title: `Growth Curve Fitting: ${fitData.experiment} - ${fitData.well}`,
-                xaxis: { title: 'Time (hours)' },
-                yaxis: { title: 'OD (Arb. Units)' },
+                xaxis: { title: { text: 'Time (hours)', font: { size: axisTitleFontSize } }, tickfont: { size: axisTickFontSize } },
+                yaxis: { title: { text: 'OD (Arb. Units)', font: { size: axisTitleFontSize } }, tickfont: { size: axisTickFontSize } },
                 showlegend: true,
+                legend: { font: { size: legendFontSize } },
                 hovermode: 'closest',
                 autosize: true
             };
