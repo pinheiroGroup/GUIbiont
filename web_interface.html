@@ -847,6 +847,92 @@
             font-size: 14px;
         }
 
+        /* Tooltip */
+        .tooltip-wrap {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+        }
+        .tooltip-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #6c757d;
+            color: #fff;
+            font-size: 10px;
+            font-weight: bold;
+            cursor: default;
+            border: none;
+            padding: 0;
+            flex-shrink: 0;
+        }
+        .tooltip-box {
+            visibility: hidden;
+            opacity: 0;
+            transition: opacity 0.15s;
+            position: absolute;
+            left: 22px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: #2d2d2d;
+            color: #f0f0f0;
+            font-size: 12px;
+            line-height: 1.5;
+            padding: 10px 13px;
+            border-radius: 6px;
+            width: 320px;
+            z-index: 9999;
+            pointer-events: none;
+            white-space: normal;
+        }
+        .tooltip-wrap:hover .tooltip-box {
+            visibility: visible;
+            opacity: 1;
+        }
+
+        /* Blank analysis recommendation card */
+        .blank-analysis-card {
+            margin-top: 10px;
+            padding: 10px 13px;
+            border-radius: 6px;
+            font-size: 12.5px;
+            line-height: 1.5;
+            border-left: 3px solid #4facfe;
+            background: rgba(79,172,254,0.07);
+        }
+        .blank-analysis-card .ba-title {
+            font-weight: 600;
+            margin-bottom: 6px;
+            font-size: 13px;
+        }
+        .blank-analysis-card .ba-row {
+            display: flex;
+            gap: 8px;
+            align-items: baseline;
+            margin-bottom: 3px;
+        }
+        .ba-method-label {
+            font-weight: 600;
+            min-width: 110px;
+        }
+        .ba-status-good        { color: #4caf50; }
+        .ba-status-ok          { color: #ff9800; }
+        .ba-status-warning     { color: #f44336; }
+        .ba-status-not_recommended { color: #f44336; }
+        .ba-recommended-badge {
+            display: inline-block;
+            font-size: 10px;
+            background: #4caf50;
+            color: #fff;
+            border-radius: 3px;
+            padding: 1px 5px;
+            margin-left: 4px;
+            vertical-align: middle;
+        }
+
         .fitting-controls {
             display: flex;
             gap: 15px;
@@ -1460,6 +1546,30 @@
                             </div>
                             <button class="btn fit-btn" onclick="fitGrowthCurve()" id="fit-button" disabled>📊 Fit Curve</button>
                         </div>
+
+                        <div style="margin-top: 8px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
+                            <label style="display: flex; align-items: center; gap: 8px; font-size: 0.9em; cursor: pointer;">
+                                <input type="checkbox" id="fit-blank-subtraction" onchange="onBlankSubtractionChange()">
+                                Blank subtraction
+                            </label>
+                            <div id="fit-blank-method-container" style="display: none; align-items: center; gap: 6px; font-size: 0.9em;">
+                                <label for="fit-blank-method">Method:</label>
+                                <select id="fit-blank-method" style="font-size: 0.9em; padding: 2px 6px;" onchange="onBlankMethodChange()">
+                                    <option value="pointbypoint" selected>Point-by-point</option>
+                                    <option value="shift">Shift minimum</option>
+                                    <option value="clip">Clip to zero</option>
+                                </select>
+                                <span class="tooltip-wrap">
+                                    <button class="tooltip-btn" tabindex="-1">?</button>
+                                    <div class="tooltip-box">
+                                        <strong>Point-by-point</strong> — subtracts the mean blank OD at each individual time point. Best choice when blank drifts over time (evaporation, temperature). Recommended default.<br><br>
+                                        <strong>Shift minimum</strong> — subtracts a single global blank mean, then shifts the entire corrected series up so all values are positive. Preserves growth curve shape. Works well when blank is stable and the well OD is mostly above blank. Can produce a visible discontinuity at the fit start for wells that are mostly below blank.<br><br>
+                                        <strong>Clip to zero</strong> — subtracts a single global blank mean and clips any negative values to zero. Simple and safe. Some distortion of the early growth phase if many points are negative.
+                                    </div>
+                                </span>
+                            </div>
+                        </div>
+                        <div id="blank-analysis-card" style="display: none;"></div>
 
                         <div id="fit-show-individual-container" style="display: none;">
                             <label class="replicate-toggle-label">
@@ -3219,6 +3329,8 @@
                 fitButton.disabled = true;
                 return;
             }
+            window._lastBlankAnalysis = null;
+            document.getElementById('blank-analysis-card').style.display = 'none';
             
             try {
                 const response = await fetch(`${API_BASE}/api/experiment/${selectedExperiment}/info`);
@@ -3267,11 +3379,93 @@
             }
         }
 
-        function onFittingWellChange() {
+        async function onFittingWellChange() {
             const wellSelect = document.getElementById('fitting-well');
             const fitButton = document.getElementById('fit-button');
-            
             fitButton.disabled = !wellSelect.value;
+            if (wellSelect.value) await runBlankAnalysis();
+        }
+
+        function onBlankSubtractionChange() {
+            const checked = document.getElementById('fit-blank-subtraction').checked;
+            document.getElementById('fit-blank-method-container').style.display = checked ? 'flex' : 'none';
+            if (checked) renderBlankAnalysisCard(window._lastBlankAnalysis);
+            else document.getElementById('blank-analysis-card').style.display = 'none';
+        }
+
+        function onBlankMethodChange() {
+            renderBlankAnalysisCard(window._lastBlankAnalysis);
+        }
+
+        async function runBlankAnalysis() {
+            const experiment = document.getElementById('fitting-experiment').value;
+            const well = document.getElementById('fitting-well').value;
+            if (!experiment || !well) return;
+            try {
+                const resp = await fetch(`${API_BASE}/api/blank-analysis`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ experiment, well })
+                });
+                if (!resp.ok) return;
+                const data = await resp.json();
+                window._lastBlankAnalysis = data;
+                renderBlankAnalysisCard(data);
+            } catch (e) {
+                console.error('Blank analysis failed:', e);
+            }
+        }
+
+        function renderBlankAnalysisCard(data) {
+            const card = document.getElementById('blank-analysis-card');
+            const subtractChecked = document.getElementById('fit-blank-subtraction').checked;
+            if (!data || !subtractChecked) { card.style.display = 'none'; return; }
+
+            if (!data.has_blank_wells) {
+                card.className = 'blank-analysis-card';
+                card.style.borderLeftColor = '#ff9800';
+                card.style.background = 'rgba(255,152,0,0.07)';
+                card.innerHTML = `<div class="ba-title">⚠ No blank wells found</div>
+                    <div>${data.message}</div>`;
+                card.style.display = '';
+                return;
+            }
+
+            const currentMethod = document.getElementById('fit-blank-method').value;
+            const notes = data.method_notes || {};
+            const methodLabels = { pointbypoint: 'Point-by-point', shift: 'Shift minimum', clip: 'Clip to zero' };
+            const statusIcon = { good: '✓', ok: '~', warning: '✗', not_recommended: '✗' };
+
+            // Auto-select recommended method if user hasn't manually changed it
+            if (data.recommendation && document.getElementById('fit-blank-method').value !== data.recommendation) {
+                const sel = document.getElementById('fit-blank-method');
+                // Only auto-select if current value is the default (pointbypoint) or matches recommendation
+                if (sel.value === 'pointbypoint' || sel.value === data.recommendation) {
+                    sel.value = data.recommendation;
+                }
+            }
+
+            let rows = '';
+            for (const [method, label] of Object.entries(methodLabels)) {
+                const n = notes[method] || {};
+                const statusClass = `ba-status-${n.status || 'ok'}`;
+                const icon = statusIcon[n.status] || '~';
+                const badge = method === data.recommendation
+                    ? `<span class="ba-recommended-badge">recommended</span>` : '';
+                const active = method === currentMethod ? ' style="font-weight:700;"' : '';
+                rows += `<div class="ba-row"${active}>
+                    <span class="ba-method-label ${statusClass}">${icon} ${label}${badge}</span>
+                    <span>${n.note || ''}</span>
+                </div>`;
+            }
+
+            card.className = 'blank-analysis-card';
+            card.style.borderLeftColor = '#4facfe';
+            card.style.background = 'rgba(79,172,254,0.07)';
+            card.innerHTML = `
+                <div class="ba-title">Blank analysis — ${data.blank_wells.join(', ')} (mean OD: ${data.blank_value.toFixed(4)})</div>
+                ${rows}`;
+            card.style.display = '';
         }
 
         async function fitGrowthCurve() {
@@ -3303,7 +3497,9 @@
                     },
                     body: JSON.stringify({
                         experiment: experiment,
-                        well: well
+                        well: well,
+                        blank_subtraction: document.getElementById('fit-blank-subtraction').checked,
+                        blank_method: document.getElementById('fit-blank-method').value
                     })
                 });
                 
@@ -3358,6 +3554,16 @@
                     <span class="parameter-name">Blank Value:</span>
                     <span class="parameter-value">${typeof fitData.blank_value === 'number' && isFinite(fitData.blank_value) ? fitData.blank_value.toFixed(4) : String(fitData.blank_value)}</span>
                 </div>
+                ${fitData.blank_subtraction && fitData.blank_wells && fitData.blank_wells.length > 0 ? `
+                <div class="parameter-row">
+                    <span class="parameter-name">Blank Wells:</span>
+                    <span class="parameter-value">${fitData.blank_wells.join(', ')}</span>
+                </div>` : ''}
+                ${fitData.blank_subtraction ? `
+                <div class="parameter-row">
+                    <span class="parameter-name">Blank Subtraction:</span>
+                    <span class="parameter-value" style="color: #4caf50;">${fitData.blank_method === 'pointbypoint' ? 'Point-by-point' : fitData.blank_method === 'clip' ? 'Clip to zero' : 'Shift minimum'}</span>
+                </div>` : ''}
                 <div class="parameter-row">
                     <span class="parameter-name">Stationary Phase Start:</span>
                     <span class="parameter-value">${typeof fitData.stationary_phase_start === 'number' && isFinite(fitData.stationary_phase_start) ? fitData.stationary_phase_start.toFixed(2) : String(fitData.stationary_phase_start)}</span>
@@ -3436,48 +3642,56 @@
 
         function plotFittedCurve(fitData) {
             const plotDiv = document.getElementById('plot-fitting');
-            
-            // Create experimental data trace
+            const blankSub = fitData.blank_subtraction && fitData.experimental_od_subtracted;
+
+            // Raw experimental data — always shown
             const experimentalTrace = {
                 x: fitData.experimental_time,
                 y: fitData.experimental_od,
                 mode: 'markers',
                 type: 'scatter',
-                name: `${fitData.experiment}: ${fitData.well} (Data)`,
+                name: `${fitData.experiment}: ${fitData.well} (Raw)`,
                 marker: {
-                    color: 'black',
+                    color: blankSub ? 'rgba(150,150,150,0.4)' : 'black',
                     size: 6
                 }
             };
-            
-            // Create fitted curve trace
-            const fittedTrace = {
+
+            const data = [experimentalTrace];
+
+            // Blank-subtracted experimental data (only when blank subtraction was applied)
+            if (blankSub) {
+                data.push({
+                    x: fitData.experimental_time,
+                    y: fitData.experimental_od_subtracted,
+                    mode: 'markers',
+                    type: 'scatter',
+                    name: `${fitData.experiment}: ${fitData.well} (Blank-subtracted)`,
+                    marker: { color: 'black', size: 6 }
+                });
+            }
+
+            // Fitted curve trace
+            data.push({
                 x: fitData.fit_time,
                 y: fitData.fit_od,
                 mode: 'lines',
                 type: 'scatter',
                 name: `aHPM Fit`,
-                line: {
-                    color: 'red',
-                    width: 3
-                }
-            };
-            
-            // Add stationary phase marker
+                line: { color: 'red', width: 3 }
+            });
+
+            // Stationary phase marker (use subtracted OD range when applicable)
+            const yRef = blankSub ? fitData.experimental_od_subtracted : fitData.experimental_od;
             const stationaryLine = {
                 x: [fitData.stationary_phase_start, fitData.stationary_phase_start],
-                y: [Math.min(...fitData.experimental_od), Math.max(...fitData.experimental_od)],
+                y: [Math.min(...yRef), Math.max(...yRef)],
                 mode: 'lines',
                 type: 'scatter',
                 name: 'Stationary Phase Start',
-                line: {
-                    color: 'gray',
-                    width: 2,
-                    dash: 'dash'
-                }
+                line: { color: 'gray', width: 2, dash: 'dash' }
             };
-            
-            const data = [experimentalTrace, fittedTrace, stationaryLine];
+            data.push(stationaryLine);
             
             const layout = {
                 title: `Growth Curve Fitting: ${fitData.experiment} - ${fitData.well}`,
