@@ -1,5 +1,5 @@
 using HTTP, JSON3, CSV, DataFrames, Statistics
-include("function_for_fitting.jl")
+using Kinbiont
 include("function_clean_synergy.jl")
 
 # Configuration - adjust paths for standalone deployment
@@ -7,15 +7,109 @@ const CLEAN_DATA_PATH = haskey(ENV, "CLEAN_DATA_PATH") ? ENV["CLEAN_DATA_PATH"] 
 const RAW_DATA_PATH = haskey(ENV, "RAW_DATA_PATH") ? ENV["RAW_DATA_PATH"] : "./raw_data/"
 const PORT = haskey(ENV, "PORT") ? parse(Int, ENV["PORT"]) : 8080
 
-# Helper function to determine blank wells from annotation data
+# Read an annotation CSV with graceful handling of missing/inconsistent values
+function read_annotation_file(annotation_file::String)::DataFrame
+    annotations = try
+        CSV.read(annotation_file, DataFrame, header=false, silencewarnings=true, stringtype=String)
+    catch
+        raw = CSV.File(annotation_file, header=false) |> DataFrame
+        DataFrame([string.(col) for col in eachcol(raw)], :auto)
+    end
+    # Normalise missing/empty second column to "X" (excluded)
+    for i in 1:nrow(annotations)
+        if ncol(annotations) >= 2 && (ismissing(annotations[i, 2]) || annotations[i, 2] in ("", "missing"))
+            annotations[i, 2] = "X"
+        end
+    end
+    return annotations
+end
+
+# Return the set of well names marked as blank ("b") or excluded ("X"/"x")
 function get_blank_wells(annotations::DataFrame)
     blank_wells = Set{String}()
     for i in 1:nrow(annotations)
-        if length(annotations[i, :]) >= 2 && (annotations[i, 2] == "b" || annotations[i, 2] == "X" || annotations[i, 2] == "x")
+        if ncol(annotations) >= 2 && (annotations[i, 2] == "b" || annotations[i, 2] == "X" || annotations[i, 2] == "x")
             push!(blank_wells, string(annotations[i, 1]))
         end
     end
     return blank_wells
+end
+
+# Parse the first column of a growth data file into a Float64 time vector
+function parse_time_column(growth_data::DataFrame)::Vector{Float64}
+    time_raw = growth_data[!, names(growth_data)[1]]
+    if eltype(time_raw) <: AbstractString
+        try
+            return [0.0; [parse(Float64, t) for t in time_raw[2:end]]]
+        catch
+            return Float64.(0:(nrow(growth_data)-1))
+        end
+    end
+    return Float64.(time_raw)
+end
+
+# Parse an OD column into a Float64 vector, using NaN for non-numeric entries
+function parse_od_column(growth_data::DataFrame, well_sym::Symbol)::Vector{Float64}
+    od = Float64[]
+    for val in growth_data[!, well_sym]
+        try
+            push!(od, parse(Float64, string(val)))
+        catch
+            push!(od, NaN)
+        end
+    end
+    return od
+end
+
+# Return sorted list of well names marked as blank ("b") in the annotation file.
+function get_blank_well_names(annotations::DataFrame)::Vector{String}
+    names_out = String[]
+    for i in 1:nrow(annotations)
+        ncol(annotations) >= 2 || continue
+        annotations[i, 2] == "b" || continue
+        push!(names_out, string(annotations[i, 1]))
+    end
+    return sort(names_out)
+end
+
+# Compute the mean blank OD from wells marked as blank ("b") only.
+# Excluded ("X") wells are intentionally omitted — they may have anomalous OD.
+function compute_blank_value(growth_data::DataFrame, annotations::DataFrame)::Float64
+    vals = Float64[]
+    col_names = string.(names(growth_data))
+    for i in 1:nrow(annotations)
+        ncol(annotations) >= 2 || continue
+        annotations[i, 2] == "b" || continue
+        bw = string(annotations[i, 1])
+        bw in col_names || continue
+        for val in growth_data[!, Symbol(bw)]
+            try push!(vals, parse(Float64, string(val))) catch _ end
+        end
+    end
+    isempty(vals) && return 0.0
+    return mean(filter(!isnan, vals))
+end
+
+# Compute the mean blank OD at each time point across all blank ("b") wells.
+# Returns a vector of length nrow(growth_data). Used for point-by-point subtraction.
+function compute_blank_timeseries(growth_data::DataFrame, annotations::DataFrame)::Vector{Float64}
+    n = nrow(growth_data)
+    col_names = string.(names(growth_data))
+    columns = Vector{Float64}[]
+    for i in 1:nrow(annotations)
+        ncol(annotations) >= 2 || continue
+        annotations[i, 2] == "b" || continue
+        bw = string(annotations[i, 1])
+        bw in col_names || continue
+        col = Float64[]
+        for val in growth_data[!, Symbol(bw)]
+            try push!(col, parse(Float64, string(val))) catch _ push!(col, NaN) end
+        end
+        length(col) == n && push!(columns, col)
+    end
+    isempty(columns) && return zeros(Float64, n)
+    # Mean across blank wells at each time point, ignoring NaN
+    return [mean(filter(!isnan, [columns[j][t] for j in 1:length(columns)])) for t in 1:n]
 end
 
 # CORS headers for allowing frontend requests
@@ -33,6 +127,117 @@ function handle_cors(req)
         return HTTP.Response(200, cors_headers())
     end
     return nothing
+end
+
+# ---------------------------------------------------------------------------
+# Shared growth curve fitting using the KinBiont.jl new API
+# ---------------------------------------------------------------------------
+# Accepts already-validated, NaN-filtered time and raw OD vectors plus the
+# computed blank value. Returns a Dict ready to serialise as JSON.
+function fit_well_data(
+    time_numeric::Vector{Float64},
+    od_raw::Vector{Float64},
+    blank_value::Float64,
+    calibration_file::String,
+    label::String,
+    experiment::String;
+    subtract_blank::Bool = false,
+    blank_method::String = "pointbypoint",  # "shift" | "pointbypoint" | "clip"
+    blank_timeseries::Vector{Float64} = Float64[],
+    blank_well_names::Vector{String} = String[],
+)
+    if subtract_blank && blank_value > 0.0
+        if blank_method == "pointbypoint" && length(blank_timeseries) == length(od_raw)
+            od_corrected = od_raw .- blank_timeseries
+        else
+            od_corrected = od_raw .- blank_value
+        end
+        od_subtracted_display = max.(od_corrected, 0.0)
+        anchor = od_subtracted_display[1]
+
+        if blank_method == "clip"
+            # Clip negatives to a small positive floor — simple, no shift needed.
+            od_for_fit = max.(od_corrected, 1e-4)
+            shift = 0.0
+        else
+            # Shift the entire series up so the minimum is just above zero.
+            # Preserves the growth curve shape; fit is shifted back after.
+            shift = max(-minimum(od_corrected), 0.0) + 1e-4
+            od_for_fit = od_corrected .+ shift
+        end
+    else
+        od_subtracted_display = nothing
+        od_for_fit = max.(od_raw, 0.01)
+        anchor = od_raw[1]
+        shift = 0.0
+    end
+
+    data = GrowthData(reshape(od_for_fit, 1, :), time_numeric, [label])
+
+    p0 = [0.2, 0.2, 0.80, 1.0]
+    spec = ModelSpec(
+        [MODEL_REGISTRY["aHPM"]],
+        [p0];
+        lower = [[0.0, 0.0, 0.0, 0.0]],
+        upper = [p0 .* 10],
+    )
+
+    opts = FitOptions(
+        scattering_correction           = false,
+        smooth                          = true,
+        smooth_method                   = :rolling_avg,
+        smooth_pt_avg                   = 14,
+        cut_stationary_phase            = true,
+        stationary_percentile_thr       = 0.05,
+        stationary_pt_smooth_derivative = 10,
+        stationary_win_size             = 5,
+        loss                            = "RE",
+    )
+
+    fit_results = kinbiont_fit(data, spec, opts)
+    r = fit_results[1]
+
+    # If blank subtraction was applied, shift the fitted curve back to
+    # blank-subtracted display space (undo the positive-shift applied for fitting).
+    fit_od_curve = subtract_blank && blank_value > 0.0 ?
+        r.fitted_curve .- shift :
+        r.fitted_curve
+
+    # The rolling-average smoother drops the first (pt_avg-1) time points, so
+    # r.times[1] > time_numeric[1].  Prepend a flat segment anchored to the
+    # first experimental OD so the fit line starts at the same time as the data.
+    fit_start_idx = argmin(abs.(time_numeric .- r.times[1]))
+    if fit_start_idx > 1
+        pre_times    = time_numeric[1:fit_start_idx - 1]
+        pre_fit_od   = fill(anchor, length(pre_times))
+        fit_time_out = vcat(pre_times, r.times)
+        fit_od_out   = vcat(pre_fit_od, fit_od_curve)
+    else
+        fit_time_out = r.times
+        fit_od_out   = fit_od_curve
+    end
+
+    result = Dict{String, Any}(
+        "experiment"             => experiment,
+        "well"                   => label,
+        "experimental_time"      => time_numeric,
+        "experimental_od"        => od_raw,
+        "fit_time"               => fit_time_out,
+        "fit_od"                 => fit_od_out,
+        "parameters"             => r.best_params,
+        "model"                  => r.best_model.name,
+        "blank_value"            => blank_value,
+        "blank_subtraction"      => subtract_blank,
+        "blank_method"           => blank_method,
+        "blank_wells"            => blank_well_names,
+        "stationary_phase_start" => r.times[end],
+    )
+
+    if od_subtracted_display !== nothing
+        result["experimental_od_subtracted"] = od_subtracted_display
+    end
+
+    return result
 end
 
 # Get list of available experiments
@@ -605,303 +810,206 @@ function router(req)
             # POST /api/fit-curve - Fit growth curve for a single well
             body = String(req.body)
             request_data = JSON3.read(body)
-            
-            experiment = request_data.experiment
-            well = request_data.well
-            
+
+            experiment      = string(request_data.experiment)
+            well            = string(request_data.well)
+            subtract_blank  = Bool(get(request_data, :blank_subtraction, false))
+            blank_method    = string(get(request_data, :blank_method, "pointbypoint"))
+
             try
-                data_file = joinpath(CLEAN_DATA_PATH, experiment, "data_channel_1.csv")
-                annotation_file = joinpath(CLEAN_DATA_PATH, experiment, "annotation_clean.csv")
+                data_file        = joinpath(CLEAN_DATA_PATH, experiment, "data_channel_1.csv")
+                annotation_file  = joinpath(CLEAN_DATA_PATH, experiment, "annotation_clean.csv")
                 calibration_file = "./cal_curve_avg.csv"
-                
+
                 if !isfile(data_file) || !isfile(annotation_file)
                     return HTTP.Response(404, headers, JSON3.write(Dict("error" => "Data files not found")))
                 end
-                
-                # Read data files
-                growth_data = CSV.read(data_file, DataFrame, header=1, silencewarnings=true)
-                
-                # Read annotation file with error handling for missing values
-                annotations = try
-                    CSV.read(annotation_file, DataFrame, header=false, silencewarnings=true, stringtype=String)
-                catch e
-                    # If CSV reading fails due to missing values, preprocess the file
-                    println("Warning: Issues reading annotation file. Preprocessing...")
-                    raw_annotations = CSV.File(annotation_file, header=false) |> DataFrame
-                    
-                    # Handle missing values and inconsistent columns
-                    for i in 1:nrow(raw_annotations)
-                        # Handle empty second column specifically
-                        if ncol(raw_annotations) >= 2 && (ismissing(raw_annotations[i, 2]) || raw_annotations[i, 2] == "")
-                            raw_annotations[i, 2] = "X"  # Mark as excluded well
-                        end
-                        
-                        # Replace all missing values with empty strings
-                        for j in 1:ncol(raw_annotations)
-                            if ismissing(raw_annotations[i, j])
-                                raw_annotations[i, j] = ""
-                            end
-                        end
-                    end
-                    
-                    # Convert to strings and return
-                    DataFrame([string.(col) for col in eachcol(raw_annotations)], :auto)
-                end
-                
-                # Additional check for missing values in second column
-                for i in 1:nrow(annotations)
-                    if ncol(annotations) >= 2 && (ismissing(annotations[i, 2]) || annotations[i, 2] == "" || annotations[i, 2] == "missing")
-                        annotations[i, 2] = "X"  # Mark as excluded well
-                    end
-                end
-                
-                # Process annotation file to find blanks
-                list_of_blank = []
-                for i in 1:nrow(annotations)
-                    if length(annotations[i, :]) >= 2 && (annotations[i, 2] == "b" || annotations[i, 2] == "X")
-                        push!(list_of_blank, Symbol(annotations[i, 1]))
-                    end
-                end
-                
-                # Get time data
-                time_col = names(growth_data)[1]
-                time_data = growth_data[!, time_col]
-                
-                # Parse time data
-                if eltype(time_data) <: AbstractString
-                    try
-                        time_numeric = [parse(Float64, t) for t in time_data[2:end]]
-                        time_numeric = [0.0; time_numeric]
-                    catch
-                        time_numeric = Float64.(0:(nrow(growth_data)-1))
-                    end
-                else
-                    time_numeric = Float64.(time_data)
-                end
-                
-                # Filter wells (exclude blanks like in the regular API)
-                all_well_columns = names(growth_data)[2:end]
-                blank_wells = get_blank_wells(annotations)
-                well_columns = filter(well_name -> !(string(well_name) in blank_wells), all_well_columns)
-                
-                # Get well data
-                println("Debug - Requested well: '$well'")
-                println("Debug - All wells: $all_well_columns")
-                println("Debug - Filtered wells: $well_columns")
-                println("Debug - Looking for Symbol: $(Symbol(well))")
-                println("Debug - Growth data column names: $(names(growth_data))")
-                println("Debug - Growth data column types: $(typeof.(names(growth_data)))")
-                
-                # Convert column names to strings for comparison
+
+                growth_data      = CSV.read(data_file, DataFrame, header=1, silencewarnings=true)
+                annotations      = read_annotation_file(annotation_file)
+                excluded_wells   = get_blank_wells(annotations)   # "b" + "X"
+                blank_well_names = get_blank_well_names(annotations)  # "b" only
                 column_names_str = string.(names(growth_data))
-                println("Debug - Column names as strings: $column_names_str")
-                println("Debug - Well '$well' in column names: $(well in column_names_str)")
-                
-                well_symbol = Symbol(well)
+
                 if !(well in column_names_str)
-                    return HTTP.Response(404, headers, JSON3.write(Dict("error" => "Well '$well' not found in data columns: $column_names_str")))
+                    return HTTP.Response(404, headers, JSON3.write(Dict("error" => "Well '$well' not found")))
                 end
-                
-                # Also check if the well is in the filtered list (not a blank)
-                well_columns_str = string.(well_columns)
-                if !(well in well_columns_str)
-                    return HTTP.Response(400, headers, JSON3.write(Dict("error" => "Well '$well' appears to be a blank well. Please select a data well from: $well_columns_str")))
+                if well in excluded_wells
+                    return HTTP.Response(400, headers, JSON3.write(Dict("error" => "Well '$well' is a blank well")))
                 end
-                
-                well_data = growth_data[!, well_symbol]
-                od_data = Float64[]
-                for val in well_data
-                    try
-                        push!(od_data, parse(Float64, string(val)))
-                    catch
-                        push!(od_data, NaN)
-                    end
-                end
-                
-                # Calculate blank value for subtraction
-                blank_value = 0.0
-                if !isempty(list_of_blank)
-                    blank_values = []
-                    for blank_well in list_of_blank
-                        if blank_well in names(growth_data)
-                            blank_well_data = growth_data[!, blank_well]
-                            for val in blank_well_data
-                                try
-                                    push!(blank_values, parse(Float64, string(val)))
-                                catch
-                                    # Skip non-numeric values
-                                end
-                            end
-                        end
-                    end
-                    if !isempty(blank_values)
-                        blank_value = mean(filter(!isnan, blank_values))
-                    end
-                end
-                
-                # Subtract blank
-                od_data = od_data .- blank_value
-                
-                # Remove negative values
-                od_data = max.(od_data, 0.01)
-                
-                # Create data matrix for fitting (2 x n matrix: time, OD)
-                valid_indices = findall(.!isnan.(od_data))
+
+                time_numeric     = parse_time_column(growth_data)
+                od_raw           = parse_od_column(growth_data, Symbol(well))
+                blank_value      = compute_blank_value(growth_data, annotations)
+                blank_timeseries = (subtract_blank && blank_method == "pointbypoint") ?
+                    compute_blank_timeseries(growth_data, annotations) : Float64[]
+
+                valid_indices = findall(.!isnan.(od_raw))
                 if length(valid_indices) < 10
                     return HTTP.Response(400, headers, JSON3.write(Dict("error" => "Not enough valid data points for fitting")))
                 end
-                
-                data_matrix = hcat(time_numeric[valid_indices], od_data[valid_indices])'
-                
-                # Apply multiple scattering correction if calibration file exists
-                if isfile(calibration_file)
-                    try
-                        data_matrix = correction_OD_multiple_scattering(data_matrix, calibration_file; method="interpolation")
-                    catch e
-                        println("Warning: Could not apply calibration correction: ", e)
-                    end
-                end
-                
-                # Smoothing (rolling average with 14 points as in the original)
-                try
-                    data_matrix = Kinbiont.smoothing_data(data_matrix; method="rolling_avg", pt_avg=14)
-                catch e
-                    println("Warning: Could not apply smoothing: ", e)
-                end
-                
-                # Find stationary phase
-                data_cut = find_stationary_phase(data_matrix; percentile_thr=0.05, pt_smooth_derivative=10, win_size=5)
-                if data_cut === nothing
-                    data_cut = data_matrix
-                end
-                
-                # Fit aHPM model
-                model = "aHPM"
-                param = [0.2, 0.2, 0.80, 1.0]
-                
-                fit_results = fitting_one_well_ODE_constrained(
-                    data_cut,
-                    string(well),
-                    experiment,
-                    model,
-                    param;
-                    pt_avg=3,
-                    pt_smooth_derivative=10,
-                    multiple_scattering_correction=false,
-                    lb=[0.0, 0.0, 0.0, 0.0],
-                    ub=param.*10
+
+                # Align blank timeseries to valid indices if computed
+                blank_ts_valid = isempty(blank_timeseries) ? Float64[] : blank_timeseries[valid_indices]
+
+                response_data = fit_well_data(
+                    time_numeric[valid_indices], od_raw[valid_indices],
+                    blank_value, calibration_file, well, experiment;
+                    subtract_blank   = subtract_blank,
+                    blank_method     = blank_method,
+                    blank_timeseries = blank_ts_valid,
+                    blank_well_names = blank_well_names,
                 )
-                
-                # Extract fit results
-                fit_times = fit_results[4]
-                fit_values = fit_results[3]
-                fitted_parameters = fit_results[2]
-                
-                # Prepare response
-                response_data = Dict(
-                    "experiment" => experiment,
-                    "well" => well,
-                    "experimental_time" => time_numeric[valid_indices],
-                    "experimental_od" => od_data[valid_indices],
-                    "fit_time" => fit_times,
-                    "fit_od" => fit_values,
-                    "parameters" => fitted_parameters,
-                    "model" => model,
-                    "blank_value" => blank_value,
-                    "stationary_phase_start" => data_cut[1, end]
-                )
-                
                 return HTTP.Response(200, headers, JSON3.write(response_data))
-                
+
             catch e
                 println("Error in curve fitting: ", e)
                 return HTTP.Response(500, headers, JSON3.write(Dict("error" => "Curve fitting failed: $e")))
             end
             
+        elseif path == "/api/blank-analysis" && HTTP.method(req) == "POST"
+            # POST /api/blank-analysis - Analyse a well's OD vs blank and recommend subtraction method
+            body = String(req.body)
+            request_data = JSON3.read(body)
+            experiment = string(request_data.experiment)
+            well       = string(request_data.well)
+
+            try
+                data_file       = joinpath(CLEAN_DATA_PATH, experiment, "data_channel_1.csv")
+                annotation_file = joinpath(CLEAN_DATA_PATH, experiment, "annotation_clean.csv")
+
+                if !isfile(data_file) || !isfile(annotation_file)
+                    return HTTP.Response(404, headers, JSON3.write(Dict("error" => "Data files not found")))
+                end
+
+                growth_data      = CSV.read(data_file, DataFrame, header=1, silencewarnings=true)
+                annotations      = read_annotation_file(annotation_file)
+                blank_well_names = get_blank_well_names(annotations)
+
+                if isempty(blank_well_names)
+                    return HTTP.Response(200, headers, JSON3.write(Dict(
+                        "has_blank_wells"    => false,
+                        "blank_wells"        => String[],
+                        "blank_value"        => 0.0,
+                        "recommendation"     => "none",
+                        "message"            => "No blank wells found in annotation. Blank subtraction cannot be applied.",
+                    )))
+                end
+
+                od_raw           = parse_od_column(growth_data, Symbol(well))
+                valid_od         = filter(!isnan, od_raw)
+                blank_value      = compute_blank_value(growth_data, annotations)
+                blank_timeseries = compute_blank_timeseries(growth_data, annotations)
+
+                od_corrected_global  = valid_od .- blank_value
+                od_corrected_pbp     = valid_od .- blank_timeseries[findall(.!isnan.(od_raw))]
+
+                frac_below_global = count(od_corrected_global .< 0) / length(od_corrected_global)
+                frac_below_pbp    = count(od_corrected_pbp    .< 0) / length(od_corrected_pbp)
+                min_global        = minimum(od_corrected_global)
+                min_pbp           = minimum(od_corrected_pbp)
+
+                # Build per-method notes
+                method_notes = Dict{String, Dict{String, String}}()
+
+                # Point-by-point
+                if frac_below_pbp < 0.05
+                    method_notes["pointbypoint"] = Dict("status" => "good",
+                        "note" => "$(round(Int, frac_below_pbp*100))% of points below blank after subtraction — works well.")
+                elseif frac_below_pbp < 0.3
+                    method_notes["pointbypoint"] = Dict("status" => "ok",
+                        "note" => "$(round(Int, frac_below_pbp*100))% of points below blank — acceptable, negatives will be shown as zero.")
+                else
+                    method_notes["pointbypoint"] = Dict("status" => "warning",
+                        "note" => "$(round(Int, frac_below_pbp*100))% of points below blank — well OD is near or below blank throughout. Results may have limited reliability.")
+                end
+
+                # Shift minimum
+                if frac_below_global < 0.1 && min_global > -0.02
+                    method_notes["shift"] = Dict("status" => "good",
+                        "note" => "Only $(round(Int, frac_below_global*100))% of points below blank — shift is small and will not distort the fit.")
+                elseif frac_below_global > 0.3 || min_global < -0.05
+                    method_notes["shift"] = Dict("status" => "not_recommended",
+                        "note" => "$(round(Int, frac_below_global*100))% of points below blank (min = $(round(min_global, digits=3))). Large shift will cause a visible discontinuity at the fit seam.")
+                else
+                    method_notes["shift"] = Dict("status" => "ok",
+                        "note" => "$(round(Int, frac_below_global*100))% of points below blank — small shift, may produce minor artefact at fit start.")
+                end
+
+                # Clip
+                if frac_below_global < 0.1
+                    method_notes["clip"] = Dict("status" => "good",
+                        "note" => "Few points below blank — clipping will have minimal effect on the fit.")
+                elseif frac_below_global > 0.5
+                    method_notes["clip"] = Dict("status" => "warning",
+                        "note" => "$(round(Int, frac_below_global*100))% of points below blank — clipping to zero may distort the initial phase of the fit.")
+                else
+                    method_notes["clip"] = Dict("status" => "ok",
+                        "note" => "$(round(Int, frac_below_global*100))% of points below blank — clipping will set early points to zero.")
+                end
+
+                # Overall recommendation
+                recommendation = if frac_below_pbp < frac_below_global && frac_below_pbp < 0.3
+                    "pointbypoint"
+                elseif frac_below_global < 0.1 && min_global > -0.02
+                    "shift"
+                else
+                    "pointbypoint"
+                end
+
+                return HTTP.Response(200, headers, JSON3.write(Dict(
+                    "has_blank_wells"      => true,
+                    "blank_wells"          => blank_well_names,
+                    "blank_value"          => blank_value,
+                    "frac_below_global"    => frac_below_global,
+                    "frac_below_pbp"       => frac_below_pbp,
+                    "min_corrected_global" => min_global,
+                    "min_corrected_pbp"    => min_pbp,
+                    "recommendation"       => recommendation,
+                    "method_notes"         => method_notes,
+                )))
+            catch e
+                println("Error in blank analysis: ", e)
+                return HTTP.Response(500, headers, JSON3.write(Dict("error" => "Blank analysis failed: $e")))
+            end
+
         elseif path == "/api/fit-replicate" && HTTP.method(req) == "POST"
             # POST /api/fit-replicate - Fit averaged replicate data
             body = String(req.body)
             request_data = JSON3.read(body)
 
-            well_selections = request_data.well_selections
-            label = string(get(request_data, :label, "replicate"))
-            experiment_name = string(get(request_data, :experiment, "replicate"))
+            well_selections  = request_data.well_selections
+            label            = string(get(request_data, :label, "replicate"))
+            experiment_name  = string(get(request_data, :experiment, "replicate"))
+            calibration_file = "./cal_curve_avg.csv"
 
             try
                 # Group selections by experiment to load each file only once
                 exp_wells = Dict{String, Vector{String}}()
                 for sel in well_selections
-                    exp = string(sel.experiment)
+                    exp  = string(sel.experiment)
                     well = string(sel.well)
-                    if !haskey(exp_wells, exp)
-                        exp_wells[exp] = String[]
-                    end
-                    push!(exp_wells[exp], well)
+                    push!(get!(exp_wells, exp, String[]), well)
                 end
 
-                all_od_data = Vector{Vector{Float64}}()
+                all_od_data   = Vector{Vector{Float64}}()
                 all_time_data = Vector{Vector{Float64}}()
 
                 for (exp, wells) in exp_wells
-                    data_file = joinpath(CLEAN_DATA_PATH, exp, "data_channel_1.csv")
+                    data_file       = joinpath(CLEAN_DATA_PATH, exp, "data_channel_1.csv")
                     annotation_file = joinpath(CLEAN_DATA_PATH, exp, "annotation_clean.csv")
-                    if !isfile(data_file) || !isfile(annotation_file)
-                        continue
-                    end
+                    isfile(data_file) && isfile(annotation_file) || continue
 
-                    growth_data = CSV.read(data_file, DataFrame, header=1, silencewarnings=true)
-                    annotations = CSV.read(annotation_file, DataFrame, header=false, silencewarnings=true, stringtype=String)
-
-                    # Identify blank wells
-                    list_of_blank = []
-                    for i in 1:nrow(annotations)
-                        if length(annotations[i, :]) >= 2 && (annotations[i, 2] == "b" || annotations[i, 2] == "X")
-                            push!(list_of_blank, Symbol(annotations[i, 1]))
-                        end
-                    end
-
-                    # Parse time column
-                    time_col = names(growth_data)[1]
-                    time_raw = growth_data[!, time_col]
-                    if eltype(time_raw) <: AbstractString
-                        try
-                            time_numeric = [parse(Float64, t) for t in time_raw[2:end]]
-                            time_numeric = [0.0; time_numeric]
-                        catch
-                            time_numeric = Float64.(0:(nrow(growth_data)-1))
-                        end
-                    else
-                        time_numeric = Float64.(time_raw)
-                    end
-
-                    # Compute blank value for this experiment
-                    blank_value = 0.0
-                    if !isempty(list_of_blank)
-                        blank_vals = Float64[]
-                        for bw in list_of_blank
-                            if bw in names(growth_data)
-                                for val in growth_data[!, bw]
-                                    try push!(blank_vals, parse(Float64, string(val))) catch _ end
-                                end
-                            end
-                        end
-                        if !isempty(blank_vals)
-                            blank_value = mean(filter(!isnan, blank_vals))
-                        end
-                    end
-
+                    growth_data   = CSV.read(data_file, DataFrame, header=1, silencewarnings=true)
+                    annotations   = read_annotation_file(annotation_file)
+                    time_numeric  = parse_time_column(growth_data)
+                    blank_value   = compute_blank_value(growth_data, annotations)
                     col_names_str = string.(names(growth_data))
+
                     for well in wells
-                        if !(well in col_names_str)
-                            continue
-                        end
-                        well_sym = Symbol(well)
-                        od = Float64[]
-                        for val in growth_data[!, well_sym]
-                            try push!(od, parse(Float64, string(val))) catch _ push!(od, NaN) end
-                        end
-                        od = od .- blank_value
-                        od = max.(od, 0.01)
+                        well in col_names_str || continue
+                        od = parse_od_column(growth_data, Symbol(well))
+                        od = max.(od .- blank_value, 0.01)
                         push!(all_od_data, od)
                         push!(all_time_data, time_numeric)
                     end
@@ -912,52 +1020,18 @@ function router(req)
                 end
 
                 # Average across wells (align by minimum length)
-                min_len = minimum(length.(all_od_data))
+                min_len  = minimum(length.(all_od_data))
                 avg_time = all_time_data[1][1:min_len]
-                avg_od = zeros(Float64, min_len)
-                for od in all_od_data
-                    avg_od .+= od[1:min_len]
-                end
-                avg_od ./= length(all_od_data)
+                avg_od   = sum(od[1:min_len] for od in all_od_data) ./ length(all_od_data)
 
                 valid_indices = findall(.!isnan.(avg_od))
                 if length(valid_indices) < 10
                     return HTTP.Response(400, headers, JSON3.write(Dict("error" => "Not enough valid data points for fitting")))
                 end
 
-                data_matrix = hcat(avg_time[valid_indices], avg_od[valid_indices])'
-
-                try
-                    data_matrix = Kinbiont.smoothing_data(data_matrix; method="rolling_avg", pt_avg=14)
-                catch e
-                    println("Warning: smoothing failed: ", e)
-                end
-
-                data_cut = find_stationary_phase(data_matrix; percentile_thr=0.05, pt_smooth_derivative=10, win_size=5)
-                if data_cut === nothing
-                    data_cut = data_matrix
-                end
-
-                model = "aHPM"
-                param = [0.2, 0.2, 0.80, 1.0]
-                fit_results = fitting_one_well_ODE_constrained(
-                    data_cut, label, experiment_name, model, param;
-                    pt_avg=3, pt_smooth_derivative=10,
-                    multiple_scattering_correction=false,
-                    lb=[0.0, 0.0, 0.0, 0.0], ub=param.*10
-                )
-
-                response_data = Dict(
-                    "experiment" => experiment_name,
-                    "well" => label,
-                    "experimental_time" => avg_time[valid_indices],
-                    "experimental_od" => avg_od[valid_indices],
-                    "fit_time" => fit_results[4],
-                    "fit_od" => fit_results[3],
-                    "parameters" => fit_results[2],
-                    "model" => model,
-                    "blank_value" => 0.0,
-                    "stationary_phase_start" => data_cut[1, end]
+                response_data = fit_well_data(
+                    avg_time[valid_indices], avg_od[valid_indices],
+                    0.0, calibration_file, label, experiment_name,
                 )
                 return HTTP.Response(200, headers, JSON3.write(response_data))
 
