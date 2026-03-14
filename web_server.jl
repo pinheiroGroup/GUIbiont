@@ -1,5 +1,27 @@
 using HTTP, JSON3, CSV, DataFrames, Statistics
 using Kinbiont
+import Clustering
+
+# Pairwise Euclidean distance matrix (n × n) for a matrix with rows = observations.
+function _pairwise_euclidean(X::Matrix{Float64})::Matrix{Float64}
+    n = size(X, 1)
+    D = Matrix{Float64}(undef, n, n)
+    for i in 1:n, j in 1:n
+        D[i, j] = sqrt(sum((X[i, k] - X[j, k])^2 for k in axes(X, 2)))
+    end
+    return D
+end
+
+# Z-score each row (curve) across time; constant rows become all-zeros.
+function _zscore_rows(m::Matrix{Float64})::Matrix{Float64}
+    out = similar(m)
+    for i in axes(m, 1)
+        row = m[i, :]
+        s   = std(row)
+        out[i, :] = s < 1e-12 ? zeros(length(row)) : (row .- mean(row)) ./ s
+    end
+    return out
+end
 include("function_clean_synergy.jl")
 
 # Configuration - adjust paths for standalone deployment
@@ -1317,15 +1339,23 @@ function router(req)
             
         elseif path == "/api/cluster" && HTTP.method(req) == "POST"
             request_data = JSON3.read(String(req.body))
-            k_input   = Int(request_data[:k])
-            normalize = Bool(get(request_data, :normalize, false))
+            k_input        = Int(get(request_data, :k, 3))
+            normalize      = Bool(get(request_data, :normalize, false))
+            smooth_method  = Symbol(get(request_data, :smooth_method, "lowess"))
+            lowess_frac    = Float64(get(request_data, :lowess_frac, 0.05))
+            gaussian_hmult = Float64(get(request_data, :gaussian_h_mult, 2.0))
+            cluster_method = string(get(request_data, :cluster_method, "kmeans"))
+            maxiter        = Int(get(request_data, :maxiter, 100))
+            tol            = Float64(get(request_data, :tol, 1e-6))
+            dbscan_eps     = Float64(get(request_data, :dbscan_eps, 1.0))
+            dbscan_minpts  = Int(get(request_data, :dbscan_min_pts, 3))
+            hclust_linkage = Symbol(get(request_data, :hclust_linkage, "ward"))
 
             times_all  = Vector{Vector{Float64}}()
             curves_all = Vector{Vector{Float64}}()
             labels_all = Vector{String}()
 
             if haskey(request_data, :csv)
-                # From file: first column = Time, rest = series
                 df       = CSV.read(IOBuffer(String(request_data[:csv])), DataFrame)
                 csv_time = Float64.(df[!, names(df)[1]])
                 for s in names(df)[2:end]
@@ -1334,7 +1364,6 @@ function router(req)
                     push!(labels_all, String(s))
                 end
             else
-                # From experiments: load all non-blank wells
                 for exp_name in String.(request_data[:experiments])
                     data_file       = joinpath(CLEAN_DATA_PATH, exp_name, "data_channel_1.csv")
                     annotation_file = joinpath(CLEAN_DATA_PATH, exp_name, "annotation_clean.csv")
@@ -1348,14 +1377,11 @@ function router(req)
                             blank_wells = get_blank_wells(ann)
                         end
                         time_data = gd_raw[!, names(gd_raw)[1]]
-                        if eltype(time_data) <: AbstractString
-                            try
-                                time_numeric = [0.0; [parse(Float64, t) for t in time_data[2:end]]]
-                            catch _
-                                time_numeric = Float64.(0:(nrow(gd_raw)-1))
-                            end
+                        time_numeric = if eltype(time_data) <: AbstractString
+                            try [0.0; [parse(Float64, t) for t in time_data[2:end]]]
+                            catch _ Float64.(0:(nrow(gd_raw)-1)) end
                         else
-                            time_numeric = Float64.(time_data)
+                            Float64.(time_data)
                         end
                         for well in names(gd_raw)[2:end]
                             well in blank_wells && continue
@@ -1376,7 +1402,6 @@ function router(req)
             isempty(curves_all) && return HTTP.Response(400, headers,
                 JSON3.write(Dict("error" => "No data loaded")))
 
-            # Align all series to minimum length
             min_len  = minimum(length.(curves_all))
             times    = times_all[1][1:min_len]
             n_series = length(curves_all)
@@ -1385,17 +1410,69 @@ function router(req)
                 curves[i, :] = c[1:min_len]
             end
 
-            gd   = GrowthData(curves, times, labels_all)
-            opts = FitOptions(
-                cluster            = true,
-                n_clusters         = min(k_input, n_series),
-                cluster_trend_test = false,
-            )
-            processed   = preprocess(gd, opts)
-            cluster_ids = processed.clusters
+            # ------------------------------------------------------------------
+            # Smoothing via KinBiont preprocess
+            # ------------------------------------------------------------------
+            if smooth_method != :none
+                gd_smooth = GrowthData(curves, times, labels_all)
+                smooth_opts = FitOptions(
+                    smooth             = true,
+                    smooth_method      = smooth_method,
+                    lowess_frac        = lowess_frac,
+                    gaussian_h_mult    = gaussian_hmult,
+                    cluster            = false,
+                )
+                gd_proc = preprocess(gd_smooth, smooth_opts)
+                # After smoothing times may change (gaussian can resample); use
+                # smoothed data but keep original times for display alignment.
+                sm_curves = gd_proc.curves   # n_series × n_times matrix
+                sm_times  = gd_proc.times
+                # Trim both to same length in case of mismatch
+                tlen = min(size(sm_curves, 2), length(times))
+                curves_for_cluster = sm_curves[:, 1:tlen]
+                times = sm_times[1:tlen]
+            else
+                curves_for_cluster = curves
+            end
 
-            # Optionally z-score curves for display
-            display_curves = copy(curves)
+            # ------------------------------------------------------------------
+            # Z-score for clustering (always)
+            # ------------------------------------------------------------------
+            zscored = _zscore_rows(curves_for_cluster)
+
+            # ------------------------------------------------------------------
+            # Clustering
+            # ------------------------------------------------------------------
+            k_eff = min(k_input, n_series)
+
+            cluster_ids = if cluster_method == "kmeans"
+                res = Clustering.kmeans(zscored', k_eff; maxiter, tol)
+                Clustering.assignments(res)
+
+            elseif cluster_method == "kmedoids"
+                dmat = _pairwise_euclidean(zscored)
+                res  = Clustering.kmedoids(dmat, k_eff; maxiter, tol)
+                Clustering.assignments(res)
+
+            elseif cluster_method == "hclust"
+                dmat = _pairwise_euclidean(zscored)
+                hc   = Clustering.hclust(dmat; linkage = hclust_linkage)
+                Clustering.cutree(hc; k = k_eff)
+
+            elseif cluster_method == "dbscan"
+                res = Clustering.dbscan(zscored', dbscan_eps, min_neighbors = dbscan_minpts)
+                raw = Clustering.assignments(res)
+                raw   # 0 = noise
+
+            else
+                return HTTP.Response(400, headers,
+                    JSON3.write(Dict("error" => "Unknown cluster_method: $cluster_method")))
+            end
+
+            # ------------------------------------------------------------------
+            # Display curves (optionally z-scored)
+            # ------------------------------------------------------------------
+            display_curves = copy(curves_for_cluster)
             if normalize
                 for i in 1:n_series
                     row = display_curves[i, :]
@@ -1404,20 +1481,26 @@ function router(req)
                 end
             end
 
+            # Collect unique cluster ids (DBSCAN may produce arbitrary ids incl 0)
+            unique_ids = sort(unique(cluster_ids))
             clusters = []
-            for c in 1:min(k_input, n_series)
+            for c in unique_ids
                 mask = findall(cluster_ids .== c)
                 isempty(mask) && continue
+                label = c == 0 ? "Noise" : string(c)
                 push!(clusters, Dict(
                     "id"            => c,
+                    "label"         => label,
                     "series_labels" => labels_all[mask],
                     "series_data"   => [display_curves[i, :] for i in mask]
                 ))
             end
 
             return HTTP.Response(200, headers, JSON3.write(Dict(
-                "time"     => times,
-                "clusters" => clusters
+                "time"           => times,
+                "clusters"       => clusters,
+                "cluster_method" => cluster_method,
+                "smooth_method"  => string(smooth_method),
             )))
 
         elseif path == "/"

@@ -1611,12 +1611,84 @@
                         </div>
 
                         <div class="clustering-controls">
-                            <label for="clustering-k">k =</label>
-                            <input type="number" id="clustering-k" value="3" min="1" max="20">
+                            <label for="clustering-k" id="clustering-k-label">k =</label>
+                            <input type="number" id="clustering-k" value="3" min="1" max="50">
                             <label style="display: flex; align-items: center; gap: 6px;">
                                 <input type="checkbox" id="clustering-normalize"> Normalize
                             </label>
+                            <button class="btn" style="padding: 6px 12px; font-size: 0.85em;" onclick="toggleClusteringAdvanced()">⚙ Advanced</button>
                             <button class="btn fit-btn" id="clustering-run-btn" onclick="runClustering()" disabled>▶ Run Clustering</button>
+                        </div>
+
+                        <!-- Advanced options -->
+                        <div id="clustering-advanced" style="display:none; margin-top:12px; padding:12px; background:#f8f9fa; border-radius:6px; font-size:0.875em;">
+                            <div style="display:flex; flex-wrap:wrap; gap:16px; align-items:flex-end;">
+
+                                <!-- Smoothing -->
+                                <div style="display:flex; flex-direction:column; gap:4px;">
+                                    <label style="font-weight:600;">Smoothing</label>
+                                    <select id="cluster-smooth-method" style="padding:4px 8px;" onchange="onClusterSmoothChange()">
+                                        <option value="lowess" selected>LOWESS</option>
+                                        <option value="gaussian">Gaussian</option>
+                                        <option value="rolling_avg">Rolling average</option>
+                                        <option value="none">None</option>
+                                    </select>
+                                </div>
+                                <div id="cluster-lowess-param" style="display:flex; flex-direction:column; gap:4px;">
+                                    <label>Bandwidth fraction</label>
+                                    <input type="number" id="cluster-lowess-frac" value="0.05" min="0.01" max="1" step="0.01" style="width:90px; padding:4px 6px;">
+                                </div>
+                                <div id="cluster-gaussian-param" style="display:none; flex-direction:column; gap:4px;">
+                                    <label>Bandwidth multiplier</label>
+                                    <input type="number" id="cluster-gaussian-hmult" value="2.0" min="0.1" max="20" step="0.1" style="width:90px; padding:4px 6px;">
+                                </div>
+
+                                <!-- Clustering method -->
+                                <div style="display:flex; flex-direction:column; gap:4px;">
+                                    <label style="font-weight:600;">Cluster method</label>
+                                    <select id="cluster-method" style="padding:4px 8px;" onchange="onClusterMethodChange()">
+                                        <option value="kmeans" selected>K-means</option>
+                                        <option value="kmedoids">K-medoids</option>
+                                        <option value="hclust">Hierarchical (hclust)</option>
+                                        <option value="dbscan">DBSCAN</option>
+                                    </select>
+                                </div>
+
+                                <!-- hclust linkage -->
+                                <div id="cluster-hclust-params" style="display:none; flex-direction:column; gap:4px;">
+                                    <label>Linkage</label>
+                                    <select id="cluster-hclust-linkage" style="padding:4px 8px;">
+                                        <option value="ward" selected>Ward</option>
+                                        <option value="average">Average</option>
+                                        <option value="complete">Complete</option>
+                                        <option value="single">Single</option>
+                                    </select>
+                                </div>
+
+                                <!-- DBSCAN params -->
+                                <div id="cluster-dbscan-params" style="display:none; flex-wrap:wrap; gap:12px; align-items:flex-end;">
+                                    <div style="display:flex; flex-direction:column; gap:4px;">
+                                        <label>ε (radius)</label>
+                                        <input type="number" id="cluster-dbscan-eps" value="1.0" min="0.01" step="0.1" style="width:80px; padding:4px 6px;">
+                                    </div>
+                                    <div style="display:flex; flex-direction:column; gap:4px;">
+                                        <label>Min points</label>
+                                        <input type="number" id="cluster-dbscan-minpts" value="3" min="1" style="width:70px; padding:4px 6px;">
+                                    </div>
+                                </div>
+
+                                <!-- maxiter / tol (kmeans + kmedoids) -->
+                                <div id="cluster-iter-params" style="display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end;">
+                                    <div style="display:flex; flex-direction:column; gap:4px;">
+                                        <label>Max iterations</label>
+                                        <input type="number" id="cluster-maxiter" value="100" min="1" style="width:90px; padding:4px 6px;">
+                                    </div>
+                                    <div style="display:flex; flex-direction:column; gap:4px;">
+                                        <label>Tolerance</label>
+                                        <input type="number" id="cluster-tol" value="1e-6" min="0" step="1e-7" style="width:90px; padding:4px 6px;">
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1729,6 +1801,10 @@
 
             <!-- Clustering Grid Container -->
             <div id="cluster-grid-container" style="display: none; padding: 20px;">
+                <div style="display:flex; justify-content:flex-end; gap:8px; margin-bottom:12px;">
+                    <button class="btn" onclick="exportAllClustersCSV()">📥 Export all (CSV)</button>
+                    <button class="btn" onclick="exportAllClustersPNG()">🖼 Export all (PNG)</button>
+                </div>
                 <div id="cluster-grid" class="cluster-grid"></div>
             </div>
 
@@ -3787,9 +3863,44 @@
             updateClusteringRunBtn();
         }
 
+        function toggleClusteringAdvanced() {
+            const adv = document.getElementById('clustering-advanced');
+            adv.style.display = adv.style.display === 'none' ? 'block' : 'none';
+        }
+
+        function onClusterSmoothChange() {
+            const method = document.getElementById('cluster-smooth-method').value;
+            document.getElementById('cluster-lowess-param').style.display   = method === 'lowess'   ? 'flex' : 'none';
+            document.getElementById('cluster-gaussian-param').style.display = method === 'gaussian' ? 'flex' : 'none';
+        }
+
+        function onClusterMethodChange() {
+            const method = document.getElementById('cluster-method').value;
+            const isDbscan = method === 'dbscan';
+            const isHclust = method === 'hclust';
+            const needsIter = method === 'kmeans' || method === 'kmedoids';
+            document.getElementById('clustering-k-label').textContent = isDbscan ? 'k (unused)' : 'k =';
+            document.getElementById('clustering-k').disabled = isDbscan;
+            document.getElementById('cluster-hclust-params').style.display = isHclust ? 'flex' : 'none';
+            document.getElementById('cluster-dbscan-params').style.display = isDbscan ? 'flex' : 'none';
+            document.getElementById('cluster-iter-params').style.display   = needsIter ? 'flex' : 'none';
+        }
+
+        // Store last cluster data for export
+        let _lastClusterData = null;
+
         async function runClustering() {
-            const k = parseInt(document.getElementById('clustering-k').value) || 3;
-            const normalize = document.getElementById('clustering-normalize').checked;
+            const k          = parseInt(document.getElementById('clustering-k').value) || 3;
+            const normalize  = document.getElementById('clustering-normalize').checked;
+            const smooth     = document.getElementById('cluster-smooth-method').value;
+            const lowessFrac = parseFloat(document.getElementById('cluster-lowess-frac').value);
+            const gHmult     = parseFloat(document.getElementById('cluster-gaussian-hmult').value);
+            const method     = document.getElementById('cluster-method').value;
+            const maxiter    = parseInt(document.getElementById('cluster-maxiter').value) || 100;
+            const tol        = parseFloat(document.getElementById('cluster-tol').value) || 1e-6;
+            const hLinkage   = document.getElementById('cluster-hclust-linkage').value;
+            const dbscanEps  = parseFloat(document.getElementById('cluster-dbscan-eps').value);
+            const dbscanMin  = parseInt(document.getElementById('cluster-dbscan-minpts').value);
             let body;
 
             if (currentClusteringMode === 'file') {
@@ -3801,6 +3912,17 @@
                 if (!selected.length) return;
                 body = { experiments: selected, k, normalize };
             }
+
+            Object.assign(body, {
+                smooth_method: smooth,
+                lowess_frac: lowessFrac,
+                gaussian_h_mult: gHmult,
+                cluster_method: method,
+                maxiter, tol,
+                hclust_linkage: hLinkage,
+                dbscan_eps: dbscanEps,
+                dbscan_min_pts: dbscanMin,
+            });
 
             document.getElementById('loading').style.display = 'flex';
             document.getElementById('cluster-grid-container').style.display = 'none';
@@ -3816,7 +3938,9 @@
                     alert('Clustering error: ' + (err.error || response.statusText));
                     return;
                 }
-                renderClusterGrid(await response.json());
+                const data = await response.json();
+                _lastClusterData = data;
+                renderClusterGrid(data);
             } catch (e) {
                 alert('Clustering failed: ' + e.message);
             } finally {
@@ -3853,13 +3977,24 @@
                 title.className = 'cluster-cell-title';
                 const titleText = document.createElement('span');
                 titleText.className = 'cluster-title-text';
-                titleText.textContent = `Cluster ${cluster.id}  (${cluster.series_labels.length} series)`;
+                const clusterLabel = cluster.label || String(cluster.id);
+                titleText.textContent = `Cluster ${clusterLabel}  (${cluster.series_labels.length} series)`;
                 title.appendChild(titleText);
 
                 const seriesBtn = document.createElement('button');
                 seriesBtn.className = 'cluster-btn';
                 seriesBtn.textContent = '📋 Series';
                 title.appendChild(seriesBtn);
+
+                const exportCsvBtn = document.createElement('button');
+                exportCsvBtn.className = 'cluster-btn';
+                exportCsvBtn.textContent = '📥 CSV';
+                title.appendChild(exportCsvBtn);
+
+                const exportPngBtn = document.createElement('button');
+                exportPngBtn.className = 'cluster-btn';
+                exportPngBtn.textContent = '🖼 PNG';
+                title.appendChild(exportPngBtn);
 
                 const fsBtn = document.createElement('button');
                 fsBtn.className = 'cluster-btn';
@@ -3918,6 +4053,12 @@
                     Plotly.Plots.resize(plotDiv);
                 };
 
+                exportCsvBtn.onclick = () => exportClusterCSV(cluster);
+                exportPngBtn.onclick = () => Plotly.downloadImage(plotDiv, {
+                    format: 'png', width: 900, height: 500,
+                    filename: `cluster_${clusterLabel}`
+                });
+
                 // Build traces
                 const traces = [];
                 const seriesData   = cluster.series_data;
@@ -3962,6 +4103,64 @@
             });
 
             document.getElementById('cluster-grid-container').style.display = 'block';
+        }
+
+        // ----------------------------------------------------------------
+        // Cluster export helpers
+        // ----------------------------------------------------------------
+
+        function _clusterToCSVRows(cluster) {
+            const rows = [['Cluster', 'Experiment', 'Well']];
+            const label = cluster.label || String(cluster.id);
+            cluster.series_labels.forEach(lbl => {
+                const slash = lbl.indexOf('/');
+                const exp  = slash >= 0 ? lbl.slice(0, slash) : '';
+                const well = slash >= 0 ? lbl.slice(slash + 1) : lbl;
+                rows.push([label, exp, well]);
+            });
+            return rows;
+        }
+
+        function _downloadCSV(rows, filename) {
+            const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = filename;
+            a.click();
+            URL.revokeObjectURL(a.href);
+        }
+
+        function exportClusterCSV(cluster) {
+            _downloadCSV(_clusterToCSVRows(cluster), `cluster_${cluster.label || cluster.id}.csv`);
+        }
+
+        function exportAllClustersCSV() {
+            if (!_lastClusterData) return;
+            const rows = [['Cluster', 'Experiment', 'Well']];
+            _lastClusterData.clusters.forEach(cluster => {
+                const label = cluster.label || String(cluster.id);
+                cluster.series_labels.forEach(lbl => {
+                    const slash = lbl.indexOf('/');
+                    rows.push([label, slash >= 0 ? lbl.slice(0, slash) : '', slash >= 0 ? lbl.slice(slash + 1) : lbl]);
+                });
+            });
+            _downloadCSV(rows, 'clusters_all.csv');
+        }
+
+        async function exportAllClustersPNG() {
+            if (!_lastClusterData) return;
+            const plotDivs = document.querySelectorAll('.cluster-plot-div');
+            for (let i = 0; i < plotDivs.length; i++) {
+                const cluster = _lastClusterData.clusters[i];
+                if (!cluster) continue;
+                await Plotly.downloadImage(plotDivs[i], {
+                    format: 'png', width: 900, height: 500,
+                    filename: `cluster_${cluster.label || cluster.id}`
+                });
+                // Small delay between downloads to avoid browser blocking
+                await new Promise(r => setTimeout(r, 400));
+            }
         }
     </script>
 </body>
