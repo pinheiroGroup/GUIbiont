@@ -22,6 +22,113 @@ function _zscore_rows(m::Matrix{Float64})::Matrix{Float64}
     end
     return out
 end
+
+# Compute cluster centroids (k × n_features) from assignments (1-based, no zeros).
+function _cluster_centroids(X::Matrix{Float64}, ids::Vector{Int})::Matrix{Float64}
+    k     = maximum(ids)
+    nfeat = size(X, 2)
+    C     = zeros(Float64, k, nfeat)
+    for c in 1:k
+        mask = ids .== c
+        any(mask) && (C[c, :] = mean(X[mask, :], dims=1))
+    end
+    return C
+end
+
+# Remap arbitrary integer labels to 1..k preserving order.
+function _remap_ids(ids::Vector{Int})::Tuple{Vector{Int}, Vector{Int}}
+    uniq  = sort(unique(ids))
+    imap  = Dict(v => i for (i, v) in enumerate(uniq))
+    return [imap[id] for id in ids], uniq
+end
+
+# Compute all quality indices for a single clustering.
+# X: n_samples × n_features (z-scored), ids: 1-based (no zeros/noise).
+# Returns a Dict with all supported indices; missing ones are stored as `nothing`.
+function _cluster_quality_indices(X::Matrix{Float64}, ids::Vector{Int})::Dict{String,Any}
+    q = Dict{String,Any}()
+    n = length(ids)
+    n_clusters = length(unique(ids))
+
+    if n_clusters < 2 || n < 3
+        for key in ("silhouette_mean","dunn","davies_bouldin","calinski_harabasz","xie_beni","silhouettes")
+            q[key] = nothing
+        end
+        return q
+    end
+
+    dmat = _pairwise_euclidean(X)
+
+    # Silhouettes
+    sil_vals = try
+        Clustering.silhouettes(ids, dmat)
+    catch _
+        nothing
+    end
+    q["silhouettes"]      = sil_vals === nothing ? nothing : collect(Float64, sil_vals)
+    q["silhouette_mean"]  = sil_vals === nothing ? nothing : mean(sil_vals)
+
+    # Dunn (no centers needed)
+    q["dunn"] = try
+        Float64(Clustering.clustering_quality(X', ids; quality_index = :dunn))
+    catch _
+        nothing
+    end
+
+    # Indices that need cluster centers
+    centers = _cluster_centroids(X, ids)   # k × n_features
+    centers_T = centers'                   # n_features × k (needed by clustering_quality)
+
+    q["davies_bouldin"] = try
+        Float64(Clustering.clustering_quality(X', centers_T, ids; quality_index = :davies_bouldin))
+    catch _
+        nothing
+    end
+
+    q["calinski_harabasz"] = try
+        Float64(Clustering.clustering_quality(X', centers_T, ids; quality_index = :calinski_harabasz))
+    catch _
+        nothing
+    end
+
+    q["xie_beni"] = try
+        Float64(Clustering.clustering_quality(X', centers_T, ids; quality_index = :xie_beni))
+    catch _
+        nothing
+    end
+
+    return q
+end
+
+# Compute pairwise comparison metrics between two clusterings.
+function _cluster_comparison(ids1::Vector{Int}, ids2::Vector{Int})::Dict{String,Any}
+    ri = try
+        r = Clustering.randindex(ids1, ids2)
+        Dict("rand_index" => r[1], "adjusted_rand_index" => r[2],
+             "mirkin_index" => r[3], "hubert_index" => r[4])
+    catch _
+        Dict("rand_index" => nothing, "adjusted_rand_index" => nothing,
+             "mirkin_index" => nothing, "hubert_index" => nothing)
+    end
+
+    vi  = try Float64(Clustering.varinfo(ids1, ids2))   catch _ nothing end
+    mi  = try Float64(Clustering.mutualinfo(ids1, ids2)) catch _ nothing end
+    vm  = try Float64(Clustering.vmeasure(ids1, ids2))  catch _ nothing end
+    # Serialize as array-of-rows so JSON consumers get a 2-D structure
+    ct  = try
+        m = Clustering.counts(ids1, ids2)
+        [[m[i, j] for j in axes(m, 2)] for i in axes(m, 1)]
+    catch _
+        nothing
+    end
+
+    return merge(ri, Dict(
+        "varinfo"     => vi,
+        "mutualinfo"  => mi,
+        "vmeasure"    => vm,
+        "contingency" => ct,
+    ))
+end
 include("function_clean_synergy.jl")
 
 # Configuration - adjust paths for standalone deployment
@@ -1496,12 +1603,185 @@ function router(req)
                 ))
             end
 
+            # ------------------------------------------------------------------
+            # Quality indices (exclude DBSCAN noise points for computation)
+            # ------------------------------------------------------------------
+            noise_mask   = cluster_ids .!= 0
+            ids_for_qual = cluster_ids[noise_mask]
+            X_for_qual   = curves_for_cluster[noise_mask, :]
+
+            # Remap to contiguous 1..k (required by clustering_quality)
+            ids_remapped, _ = _remap_ids(ids_for_qual)
+            quality = _cluster_quality_indices(X_for_qual, ids_remapped)
+
+            # Per-cluster silhouette mean (keyed by original cluster id)
+            sil_per_cluster = Dict{String,Any}()
+            if quality["silhouettes"] !== nothing
+                sil_vals = quality["silhouettes"]
+                for (orig_id, remap_id) in zip(ids_for_qual, ids_remapped)
+                    mask_c = ids_for_qual .== orig_id
+                    sil_per_cluster[string(orig_id)] = mean(sil_vals[mask_c])
+                end
+            end
+            quality["silhouette_per_cluster"] = sil_per_cluster
+
+            # Per-series silhouette (same order as labels_all, NaN for noise)
+            sil_per_series = fill(NaN, n_series)
+            if quality["silhouettes"] !== nothing
+                sil_vals   = quality["silhouettes"]
+                nonnoise_i = findall(noise_mask)
+                for (j, gi) in enumerate(nonnoise_i)
+                    sil_per_series[gi] = sil_vals[j]
+                end
+            end
+            quality["silhouettes"]      = sil_per_series
+            quality["series_labels"]    = labels_all
+
             return HTTP.Response(200, headers, JSON3.write(Dict(
                 "time"           => times,
                 "clusters"       => clusters,
                 "cluster_method" => cluster_method,
                 "smooth_method"  => string(smooth_method),
+                "quality"        => quality,
+                "assignments"    => cluster_ids,
+                "series_labels"  => labels_all,
             )))
+
+        # ------------------------------------------------------------------
+        # /api/cluster-sweep  — run clustering for k=2..k_max and return
+        # quality indices per k so the user can find the best number of clusters.
+        # ------------------------------------------------------------------
+        elseif path == "/api/cluster-sweep" && HTTP.method(req) == "POST"
+            request_data   = JSON3.read(String(req.body))
+            k_max          = Int(get(request_data, :k_max, 10))
+            smooth_method  = Symbol(get(request_data, :smooth_method, "lowess"))
+            lowess_frac    = Float64(get(request_data, :lowess_frac, 0.05))
+            gaussian_hmult = Float64(get(request_data, :gaussian_h_mult, 2.0))
+            cluster_method = string(get(request_data, :cluster_method, "kmeans"))
+            maxiter        = Int(get(request_data, :maxiter, 100))
+            tol            = Float64(get(request_data, :tol, 1e-6))
+            hclust_linkage = Symbol(get(request_data, :hclust_linkage, "ward"))
+
+            # Re-use the same data-loading logic as /api/cluster
+            times_all  = Vector{Vector{Float64}}()
+            curves_all = Vector{Vector{Float64}}()
+            labels_all = Vector{String}()
+
+            if haskey(request_data, :csv)
+                df       = CSV.read(IOBuffer(String(request_data[:csv])), DataFrame)
+                csv_time = Float64.(df[!, names(df)[1]])
+                for s in names(df)[2:end]
+                    push!(times_all,  csv_time)
+                    push!(curves_all, Float64.(df[!, s]))
+                    push!(labels_all, String(s))
+                end
+            else
+                for exp_name in String.(request_data[:experiments])
+                    data_file       = joinpath(CLEAN_DATA_PATH, exp_name, "data_channel_1.csv")
+                    annotation_file = joinpath(CLEAN_DATA_PATH, exp_name, "annotation_clean.csv")
+                    isfile(data_file) || continue
+                    try
+                        gd_raw      = CSV.read(data_file, DataFrame, header=1, silencewarnings=true)
+                        blank_wells = Set{String}()
+                        if isfile(annotation_file)
+                            ann = CSV.read(annotation_file, DataFrame, header=false,
+                                          silencewarnings=true, stringtype=String)
+                            blank_wells = get_blank_wells(ann)
+                        end
+                        time_data    = gd_raw[!, names(gd_raw)[1]]
+                        time_numeric = if eltype(time_data) <: AbstractString
+                            try [0.0; [parse(Float64, t) for t in time_data[2:end]]]
+                            catch _ Float64.(0:(nrow(gd_raw)-1)) end
+                        else
+                            Float64.(time_data)
+                        end
+                        for well in names(gd_raw)[2:end]
+                            well in blank_wells && continue
+                            od = Float64[]
+                            for val in gd_raw[!, well]
+                                try push!(od, parse(Float64, string(val))) catch _ push!(od, NaN) end
+                            end
+                            push!(times_all,  time_numeric)
+                            push!(curves_all, od)
+                            push!(labels_all, "$exp_name/$well")
+                        end
+                    catch e
+                        println("Error loading $exp_name for sweep: $e")
+                    end
+                end
+            end
+
+            isempty(curves_all) && return HTTP.Response(400, headers,
+                JSON3.write(Dict("error" => "No data loaded")))
+
+            min_len  = minimum(length.(curves_all))
+            times    = times_all[1][1:min_len]
+            n_series = length(curves_all)
+            curves   = Matrix{Float64}(undef, n_series, min_len)
+            for (i, c) in enumerate(curves_all)
+                curves[i, :] = c[1:min_len]
+            end
+
+            # Smooth once, then sweep over k
+            if smooth_method != :none
+                gd_smooth   = GrowthData(curves, times, labels_all)
+                smooth_opts = FitOptions(smooth=true, smooth_method=smooth_method,
+                                         lowess_frac=lowess_frac,
+                                         gaussian_h_mult=gaussian_hmult, cluster=false)
+                gd_proc    = preprocess(gd_smooth, smooth_opts)
+                tlen       = min(size(gd_proc.curves, 2), length(times))
+                curves_for = gd_proc.curves[:, 1:tlen]
+            else
+                curves_for = curves
+            end
+            zscored = _zscore_rows(curves_for)
+
+            sweep_results = []
+            for k in 2:min(k_max, n_series)
+                ids = try
+                    if cluster_method == "kmeans"
+                        Clustering.assignments(Clustering.kmeans(zscored', k; maxiter, tol))
+                    elseif cluster_method == "kmedoids"
+                        dmat = _pairwise_euclidean(zscored)
+                        Clustering.assignments(Clustering.kmedoids(dmat, k; maxiter, tol))
+                    elseif cluster_method == "hclust"
+                        dmat = _pairwise_euclidean(zscored)
+                        Clustering.cutree(Clustering.hclust(dmat; linkage=hclust_linkage); k)
+                    else
+                        Clustering.assignments(Clustering.kmeans(zscored', k; maxiter, tol))
+                    end
+                catch e
+                    println("Sweep k=$k error: $e")
+                    continue
+                end
+
+                ids_r, _ = _remap_ids(ids)
+                q = _cluster_quality_indices(zscored, ids_r)
+                push!(sweep_results, Dict(
+                    "k"                 => k,
+                    "silhouette_mean"   => q["silhouette_mean"],
+                    "dunn"              => q["dunn"],
+                    "davies_bouldin"    => q["davies_bouldin"],
+                    "calinski_harabasz" => q["calinski_harabasz"],
+                    "xie_beni"          => q["xie_beni"],
+                ))
+            end
+
+            return HTTP.Response(200, headers, JSON3.write(Dict("sweep" => sweep_results)))
+
+        # ------------------------------------------------------------------
+        # /api/cluster-compare  — compare two saved clusterings
+        # ------------------------------------------------------------------
+        elseif path == "/api/cluster-compare" && HTTP.method(req) == "POST"
+            request_data = JSON3.read(String(req.body))
+            ids1 = Int.(request_data[:assignments1])
+            ids2 = Int.(request_data[:assignments2])
+
+            length(ids1) == length(ids2) || return HTTP.Response(400, headers,
+                JSON3.write(Dict("error" => "assignments must have the same length")))
+
+            result = _cluster_comparison(ids1, ids2)
+            return HTTP.Response(200, headers, JSON3.write(result))
 
         elseif path == "/"
             # Serve the main HTML page
@@ -1509,7 +1789,7 @@ function router(req)
             html_headers = cors_headers()
             push!(html_headers, "Content-Type" => "text/html")
             return HTTP.Response(200, html_headers, html_content)
-            
+
         else
             return HTTP.Response(404, headers, JSON3.write(Dict("error" => "Not found")))
         end
