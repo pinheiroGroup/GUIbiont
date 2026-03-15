@@ -1,5 +1,6 @@
 using HTTP, JSON3, CSV, DataFrames, Statistics
 using Kinbiont
+using Distributions: Normal, cdf
 import Clustering
 
 # Pairwise Euclidean distance matrix (n × n) for a matrix with rows = observations.
@@ -33,6 +34,170 @@ function _cluster_centroids(X::Matrix{Float64}, ids::Vector{Int})::Matrix{Float6
         any(mask) && (C[c, :] = mean(X[mask, :], dims=1))
     end
     return C
+end
+
+# Auto-detect blank curve indices from a curves matrix (rows = series, cols = time).
+# Returns indices of rows that are flat AND have low mean OD.
+# A curve is considered flat if EITHER:
+#   - slope t-test p >= flat_p_thr (statistically no trend), OR
+#   - OD range (max-min) < flat_range_thr (instrument noise only — robust against
+#     high n making the t-test reject even negligible slopes)
+function _detect_blank_indices(
+    curves::Matrix{Float64},
+    times::Vector{Float64};
+    flat_p_thr::Float64     = 0.05,
+    flat_range_thr::Float64 = 0.005,
+    od_percentile::Float64  = 0.10,
+)::Vector{Int}
+    n = length(times)
+    n < 3 && return Int[]
+
+    t_c = times .- mean(times)
+
+    mean_ods   = Float64[]
+    flat_flags = Bool[]
+
+    for i in axes(curves, 1)
+        y = curves[i, :]
+        finite_mask = isfinite.(y)
+        nf = sum(finite_mask)
+        if nf < 3
+            push!(mean_ods, NaN); push!(flat_flags, false); continue
+        end
+        yf  = y[finite_mask]
+        tcf = t_c[finite_mask]
+        push!(mean_ods, mean(yf))
+
+        # Range-based flatness: always passes if OD barely changes
+        od_range = maximum(yf) - minimum(yf)
+        if od_range < flat_range_thr
+            push!(flat_flags, true); continue
+        end
+
+        sst2 = sum(tcf .^ 2)
+        if sst2 < 1e-12
+            push!(flat_flags, true); continue
+        end
+        slope  = sum(tcf .* yf) / sst2
+        yhat   = mean(yf) .+ slope .* tcf
+        s2     = sum((yf .- yhat) .^ 2) / (nf - 2)
+        se     = sqrt(max(s2, 0.0) / sst2)
+        t_stat = se < 1e-12 ? Inf : abs(slope / se)
+        p = 2 * (1 - cdf(Normal(), t_stat))
+        push!(flat_flags, p >= flat_p_thr)
+    end
+
+    finite_means = filter(isfinite, mean_ods)
+    isempty(finite_means) && return Int[]
+    od_thr = quantile(finite_means, od_percentile)
+
+    return [i for i in axes(curves, 1)
+            if flat_flags[i] && isfinite(mean_ods[i]) && mean_ods[i] <= od_thr]
+end
+
+# Apply blank subtraction to a curves matrix using the given blank timeseries.
+# method: "pointbypoint" | "shift" | "clip"
+function _apply_blank_subtraction_matrix(
+    curves::Matrix{Float64},
+    blank_ts::Vector{Float64},
+    method::String,
+)::Matrix{Float64}
+    out = copy(curves)
+    n_tp = size(curves, 2)
+    ts   = blank_ts[1:n_tp]   # guard against length mismatch
+
+    if method == "pointbypoint"
+        for i in axes(out, 1)
+            out[i, :] = out[i, :] .- ts
+        end
+    elseif method == "shift"
+        blank_mean = mean(filter(isfinite, ts))
+        for i in axes(out, 1)
+            corrected = out[i, :] .- blank_mean
+            shift = min(0.0, minimum(filter(isfinite, corrected)))
+            out[i, :] = corrected .- shift
+        end
+    else  # clip
+        blank_mean = mean(filter(isfinite, ts))
+        for i in axes(out, 1)
+            out[i, :] = max.(out[i, :] .- blank_mean, 0.0)
+        end
+    end
+    return out
+end
+
+# Auto-detect likely blank wells when no annotation is available.
+# A well is a blank candidate if:
+#   1. Its growth curve is statistically flat (slope t-test p >= flat_p_thr), AND
+#   2. Its mean OD is in the bottom `od_percentile` fraction of all wells.
+# Returns a sorted Vector{String} of candidate well names.
+function _detect_blank_wells(
+    growth_data::DataFrame;
+    flat_p_thr::Float64     = 0.05,
+    flat_range_thr::Float64 = 0.005,
+    od_percentile::Float64  = 0.10,
+)::Vector{String}
+    time_col = names(growth_data)[1]
+    well_cols = names(growth_data)[2:end]
+
+    times = try Float64.(growth_data[!, time_col])
+            catch _ Float64.(1:nrow(growth_data)) end
+
+    n   = length(times)
+    n < 3 && return String[]
+
+    t_c  = times .- mean(times)
+    ss_t = sum(t_c .^ 2)
+
+    mean_ods   = Float64[]
+    flat_flags = Bool[]
+
+    for w in well_cols
+        od = Float64[]
+        for v in growth_data[!, w]
+            try push!(od, parse(Float64, string(v))) catch _ push!(od, NaN) end
+        end
+        finite_mask = isfinite.(od)
+        nf = sum(finite_mask)
+        if nf < 3
+            push!(mean_ods, NaN); push!(flat_flags, false); continue
+        end
+        y  = od[finite_mask]
+        tc = t_c[finite_mask]
+        sst2 = sum(tc .^ 2)
+        push!(mean_ods, mean(y))
+
+        # Range-based flatness check first
+        od_range = maximum(y) - minimum(y)
+        if od_range < flat_range_thr
+            push!(flat_flags, true); continue
+        end
+
+        if sst2 < 1e-12
+            push!(flat_flags, true); continue
+        end
+        slope     = sum(tc .* y) / sst2
+        y_hat     = mean(y) .+ slope .* tc
+        residuals = y .- y_hat
+        s2        = sum(residuals .^ 2) / (nf - 2)
+        se        = sqrt(max(s2, 0.0) / sst2)
+        t_stat    = se < 1e-12 ? Inf : abs(slope / se)
+        p = 2 * (1 - cdf(Normal(), t_stat))
+        push!(flat_flags, p >= flat_p_thr)
+    end
+
+    # OD threshold: bottom od_percentile of finite mean ODs
+    finite_means = filter(isfinite, mean_ods)
+    isempty(finite_means) && return String[]
+    od_thr = quantile(finite_means, od_percentile)
+
+    candidates = String[]
+    for (i, w) in enumerate(well_cols)
+        if flat_flags[i] && isfinite(mean_ods[i]) && mean_ods[i] <= od_thr
+            push!(candidates, w)
+        end
+    end
+    return sort(candidates)
 end
 
 # Remap arbitrary integer labels to 1..k preserving order.
@@ -238,6 +403,36 @@ function compute_blank_timeseries(growth_data::DataFrame, annotations::DataFrame
     end
     isempty(columns) && return zeros(Float64, n)
     # Mean across blank wells at each time point, ignoring NaN
+    return [mean(filter(!isnan, [columns[j][t] for j in 1:length(columns)])) for t in 1:n]
+end
+
+# Overloads that take an explicit list of blank well names instead of an annotation DataFrame.
+function compute_blank_value(growth_data::DataFrame, blank_wells::Vector{String})::Float64
+    vals = Float64[]
+    col_names = string.(names(growth_data))
+    for bw in blank_wells
+        bw in col_names || continue
+        for val in growth_data[!, Symbol(bw)]
+            try push!(vals, parse(Float64, string(val))) catch _ end
+        end
+    end
+    isempty(vals) && return 0.0
+    return mean(filter(!isnan, vals))
+end
+
+function compute_blank_timeseries(growth_data::DataFrame, blank_wells::Vector{String})::Vector{Float64}
+    n = nrow(growth_data)
+    col_names = string.(names(growth_data))
+    columns = Vector{Float64}[]
+    for bw in blank_wells
+        bw in col_names || continue
+        col = Float64[]
+        for val in growth_data[!, Symbol(bw)]
+            try push!(col, parse(Float64, string(val))) catch _ push!(col, NaN) end
+        end
+        length(col) == n && push!(columns, col)
+    end
+    isempty(columns) && return zeros(Float64, n)
     return [mean(filter(!isnan, [columns[j][t] for j in 1:length(columns)])) for t in 1:n]
 end
 
@@ -685,74 +880,85 @@ function router(req)
             combined_info = Dict("experiments" => experiments, "wells" => combined_wells)
             
             for experiment in experiments
-                data_file = joinpath(CLEAN_DATA_PATH, experiment, "data_channel_1.csv")
-                annotation_file = joinpath(CLEAN_DATA_PATH, experiment, "annotation_clean.csv")
-                
-                if isfile(data_file) && isfile(annotation_file)
-                    try
-                        growth_data = CSV.read(data_file, DataFrame, header=1, silencewarnings=true)
-                        annotations = CSV.read(annotation_file, DataFrame, header=false, silencewarnings=true, stringtype=String)
-                        
-                        # Rename columns - 5th column (index 5) should be antibiotic
-                        col_names = names(annotations)
-                        new_names = Symbol[]
-                        for i in 1:length(col_names)
-                            if i == 1
-                                push!(new_names, :well)
-                            elseif i == 2
-                                push!(new_names, :condition)
-                            elseif i == 5
-                                push!(new_names, :antibiotic)
-                            else
-                                push!(new_names, Symbol("col_$i"))
-                            end
+                exp_dir         = joinpath(CLEAN_DATA_PATH, experiment)
+                annotation_file = joinpath(exp_dir, "annotation_clean.csv")
+
+                # Discover all channel files (data_channel_1.csv, data_channel_2.csv, ...)
+                channel_files = sort(filter(
+                    f -> occursin(r"^data_channel_\d+\.csv$", basename(f)) && isfile(f),
+                    [joinpath(exp_dir, "data_channel_$(ch).csv") for ch in 1:10]
+                ))
+                isempty(channel_files) && continue
+                isfile(annotation_file) || continue
+
+                n_channels = length(channel_files)
+
+                try
+                    annotations = CSV.read(annotation_file, DataFrame, header=false, silencewarnings=true, stringtype=String)
+                    col_names = names(annotations)
+                    new_names = Symbol[]
+                    for i in 1:length(col_names)
+                        if i == 1;     push!(new_names, :well)
+                        elseif i == 2; push!(new_names, :condition)
+                        elseif i == 5; push!(new_names, :antibiotic)
+                        else;          push!(new_names, Symbol("col_$i"))
                         end
-                        rename!(annotations, new_names)
-                        
-                        # Filter wells
-                        all_well_columns = names(growth_data)[2:end]
-                        blank_wells = get_blank_wells(annotations)
-                        well_columns = filter(well -> !(string(well) in blank_wells), all_well_columns)
-                        
-                        # Add wells with experiment prefix
-                        for well in well_columns
-                            condition_parts = ["Unknown"]
-                            antibiotic = "Unknown"
-                            well_annotation = filter(row -> row.well == well, annotations)
-                            if nrow(well_annotation) > 0
-                                row = well_annotation[1, :]
-                                condition_parts = [string(row.condition)]
-                                
-                                # Add columns 3 and 4 if they exist and have values
-                                if "col_3" in names(annotations) && !ismissing(row.col_3) && string(row.col_3) != ""
-                                    push!(condition_parts, string(row.col_3))
-                                end
-                                if "col_4" in names(annotations) && !ismissing(row.col_4) && string(row.col_4) != ""
-                                    push!(condition_parts, string(row.col_4))
-                                end
-                                
-                                # Add antibiotic from column 5
-                                if !ismissing(row.antibiotic) && string(row.antibiotic) != ""
-                                    antibiotic = string(row.antibiotic)
-                                else
-                                    antibiotic = "None"
-                                end
-                            end
-                            
-                            condition = join(condition_parts, " | ")
-                            
-                            push!(combined_wells, Dict(
-                                "experiment" => experiment,
-                                "well" => well,
-                                "well_id" => "$(experiment)_$(well)",
-                                "condition" => condition,
-                                "antibiotic" => antibiotic,
-                                "display_name" => "$(experiment): $(well) ($(condition)) [$(antibiotic)]"
-                            ))
-                        end
-                    catch e
-                        println("Error loading experiment $experiment for multi-select: $e")
                     end
+                    rename!(annotations, new_names)
+                    blank_wells = get_blank_wells(annotations)
+
+                    for (ch_idx, ch_file) in enumerate(channel_files)
+                        ch_num = ch_idx   # 1-based channel number
+                        try
+                            growth_data  = CSV.read(ch_file, DataFrame, header=1, silencewarnings=true)
+                            well_columns = filter(well -> !(string(well) in blank_wells),
+                                                  names(growth_data)[2:end])
+
+                            for well in well_columns
+                                condition_parts = ["Unknown"]
+                                antibiotic = "Unknown"
+                                well_annotation = filter(row -> row.well == well, annotations)
+                                if nrow(well_annotation) > 0
+                                    row = well_annotation[1, :]
+                                    condition_parts = [string(row.condition)]
+                                    if "col_3" in names(annotations) && !ismissing(row.col_3) && string(row.col_3) != ""
+                                        push!(condition_parts, string(row.col_3))
+                                    end
+                                    if "col_4" in names(annotations) && !ismissing(row.col_4) && string(row.col_4) != ""
+                                        push!(condition_parts, string(row.col_4))
+                                    end
+                                    if !ismissing(row.antibiotic) && string(row.antibiotic) != ""
+                                        antibiotic = string(row.antibiotic)
+                                    else
+                                        antibiotic = "None"
+                                    end
+                                end
+                                condition = join(condition_parts, " | ")
+                                # well_id encodes channel so same well from different channels
+                                # can both be selected simultaneously
+                                well_id = n_channels > 1 ?
+                                    "$(experiment)_ch$(ch_num)_$(well)" :
+                                    "$(experiment)_$(well)"
+
+                                push!(combined_wells, Dict(
+                                    "experiment"  => experiment,
+                                    "well"        => well,
+                                    "channel"     => ch_num,
+                                    "n_channels"  => n_channels,
+                                    "well_id"     => well_id,
+                                    "condition"   => condition,
+                                    "antibiotic"  => antibiotic,
+                                    "display_name" => n_channels > 1 ?
+                                        "$(experiment): $(well) Ch$(ch_num) ($(condition)) [$(antibiotic)]" :
+                                        "$(experiment): $(well) ($(condition)) [$(antibiotic)]"
+                                ))
+                            end
+                        catch e
+                            println("Error loading channel $ch_num of $experiment: $e")
+                        end
+                    end
+                catch e
+                    println("Error loading experiment $experiment for multi-select: $e")
                 end
             end
             
@@ -1007,28 +1213,44 @@ function router(req)
                 data_file       = joinpath(CLEAN_DATA_PATH, experiment, "data_channel_1.csv")
                 annotation_file = joinpath(CLEAN_DATA_PATH, experiment, "annotation_clean.csv")
 
-                if !isfile(data_file) || !isfile(annotation_file)
-                    return HTTP.Response(404, headers, JSON3.write(Dict("error" => "Data files not found")))
+                if !isfile(data_file)
+                    return HTTP.Response(404, headers, JSON3.write(Dict("error" => "Data file not found")))
                 end
 
                 growth_data      = CSV.read(data_file, DataFrame, header=1, silencewarnings=true)
-                annotations      = read_annotation_file(annotation_file)
-                blank_well_names = get_blank_well_names(annotations)
+
+                # Allow caller to supply blank wells directly (e.g. from auto-detection)
+                override = get(request_data, :override_blank_wells, nothing)
+                blank_well_names = if override !== nothing && length(override) > 0
+                    String.(override)
+                elseif isfile(annotation_file)
+                    annotations = read_annotation_file(annotation_file)
+                    get_blank_well_names(annotations)
+                else
+                    String[]
+                end
 
                 if isempty(blank_well_names)
+                    range_thr  = Float64(get(request_data, :blank_range_thr, 0.005))
+                    od_pct     = Float64(get(request_data, :blank_od_percentile, 0.10))
+                    auto_wells = isfile(data_file) ? _detect_blank_wells(growth_data;
+                        flat_range_thr = range_thr, od_percentile = od_pct) : String[]
                     return HTTP.Response(200, headers, JSON3.write(Dict(
-                        "has_blank_wells"    => false,
-                        "blank_wells"        => String[],
-                        "blank_value"        => 0.0,
-                        "recommendation"     => "none",
-                        "message"            => "No blank wells found in annotation. Blank subtraction cannot be applied.",
+                        "has_blank_wells"      => false,
+                        "blank_wells"          => String[],
+                        "blank_value"          => 0.0,
+                        "recommendation"       => "none",
+                        "auto_detected_wells"  => auto_wells,
+                        "message"              => isempty(auto_wells)
+                            ? "No blank wells found in annotation and none could be detected automatically."
+                            : "No blank wells annotated. Auto-detected $(length(auto_wells)) candidate blank well(s) based on flat curve and low OD: $(join(auto_wells, ", ")).",
                     )))
                 end
 
                 od_raw           = parse_od_column(growth_data, Symbol(well))
                 valid_od         = filter(!isnan, od_raw)
-                blank_value      = compute_blank_value(growth_data, annotations)
-                blank_timeseries = compute_blank_timeseries(growth_data, annotations)
+                blank_value      = compute_blank_value(growth_data, blank_well_names)
+                blank_timeseries = compute_blank_timeseries(growth_data, blank_well_names)
 
                 od_corrected_global  = valid_od .- blank_value
                 od_corrected_pbp     = valid_od .- blank_timeseries[findall(.!isnan.(od_raw))]
@@ -1183,9 +1405,10 @@ function router(req)
                 
                 for selection in well_selections
                     experiment = selection.experiment
-                    well = selection.well
-                    
-                    data_file = joinpath(CLEAN_DATA_PATH, experiment, "data_channel_1.csv")
+                    well       = selection.well
+                    channel    = Int(get(selection, :channel, 1))
+
+                    data_file = joinpath(CLEAN_DATA_PATH, experiment, "data_channel_$(channel).csv")
                     annotation_file = joinpath(CLEAN_DATA_PATH, experiment, "annotation_clean.csv")
                     
                     if isfile(data_file) && isfile(annotation_file)
@@ -1279,6 +1502,8 @@ function router(req)
                                 push!(traces, Dict(
                                     "well" => "$(experiment)_$(well)",
                                     "experiment" => experiment,
+                                    "well_name" => well,
+                                    "channel" => channel,
                                     "condition" => condition,
                                     "antibiotic" => antibiotic,
                                     "x" => time_numeric,
@@ -1457,10 +1682,18 @@ function router(req)
             dbscan_eps     = Float64(get(request_data, :dbscan_eps, 1.0))
             dbscan_minpts  = Int(get(request_data, :dbscan_min_pts, 3))
             hclust_linkage = Symbol(get(request_data, :hclust_linkage, "ward"))
+            subtract_blank    = Bool(get(request_data, :subtract_blank, false))
+            blank_method      = string(get(request_data, :blank_method, "pointbypoint"))
+            blank_range_thr   = Float64(get(request_data, :blank_range_thr, 0.005))
+            blank_od_pct      = Float64(get(request_data, :blank_od_percentile, 0.10))
 
-            times_all  = Vector{Vector{Float64}}()
-            curves_all = Vector{Vector{Float64}}()
-            labels_all = Vector{String}()
+            times_all       = Vector{Vector{Float64}}()
+            curves_all      = Vector{Vector{Float64}}()
+            labels_all      = Vector{String}()
+            # For experiment mode: store blank curves separately for subtraction
+            blank_curves_all = Vector{Vector{Float64}}()
+            blank_labels_used = Vector{String}()
+            blank_source      = "none"   # "annotated" | "auto" | "none"
 
             if haskey(request_data, :csv)
                 df       = CSV.read(IOBuffer(String(request_data[:csv])), DataFrame)
@@ -1477,11 +1710,11 @@ function router(req)
                     isfile(data_file) || continue
                     try
                         gd_raw      = CSV.read(data_file, DataFrame, header=1, silencewarnings=true)
-                        blank_wells = Set{String}()
+                        annotated_blanks = Set{String}()
                         if isfile(annotation_file)
                             ann = CSV.read(annotation_file, DataFrame, header=false,
                                           silencewarnings=true, stringtype=String)
-                            blank_wells = get_blank_wells(ann)
+                            annotated_blanks = get_blank_wells(ann)
                         end
                         time_data = gd_raw[!, names(gd_raw)[1]]
                         time_numeric = if eltype(time_data) <: AbstractString
@@ -1491,14 +1724,21 @@ function router(req)
                             Float64.(time_data)
                         end
                         for well in names(gd_raw)[2:end]
-                            well in blank_wells && continue
                             od = Float64[]
                             for val in gd_raw[!, well]
                                 try push!(od, parse(Float64, string(val))) catch _ push!(od, NaN) end
                             end
-                            push!(times_all,  time_numeric)
-                            push!(curves_all, od)
-                            push!(labels_all, "$exp_name/$well")
+                            if well in annotated_blanks
+                                push!(blank_curves_all, od)
+                                push!(blank_labels_used, "$exp_name/$well")
+                            else
+                                push!(times_all,  time_numeric)
+                                push!(curves_all, od)
+                                push!(labels_all, "$exp_name/$well")
+                            end
+                        end
+                        if !isempty(annotated_blanks)
+                            blank_source = "annotated"
                         end
                     catch e
                         println("Error loading $exp_name for clustering: $e")
@@ -1515,6 +1755,43 @@ function router(req)
             curves   = Matrix{Float64}(undef, n_series, min_len)
             for (i, c) in enumerate(curves_all)
                 curves[i, :] = c[1:min_len]
+            end
+
+            # ------------------------------------------------------------------
+            # Blank subtraction (before smoothing and clustering)
+            # ------------------------------------------------------------------
+            if subtract_blank
+                # For CSV uploads or experiments without annotated blanks: auto-detect
+                if isempty(blank_curves_all)
+                    blank_idxs = _detect_blank_indices(curves, times;
+                        flat_range_thr = blank_range_thr,
+                        od_percentile  = blank_od_pct)
+                    if !isempty(blank_idxs)
+                        blank_curves_all = [curves[i, :] for i in blank_idxs]
+                        blank_labels_used = labels_all[blank_idxs]
+                        blank_source = "auto"
+                        # Remove detected blanks from the data to be clustered
+                        keep = setdiff(1:n_series, blank_idxs)
+                        curves     = curves[keep, :]
+                        labels_all = labels_all[keep]
+                        n_series   = length(keep)
+                        times_all  = times_all[keep]
+                    end
+                end
+
+                if !isempty(blank_curves_all)
+                    blen      = min(min_len, minimum(length.(blank_curves_all)))
+                    blank_mat = Matrix{Float64}(undef, length(blank_curves_all), blen)
+                    for (i, bc) in enumerate(blank_curves_all)
+                        blank_mat[i, :] = bc[1:blen]
+                    end
+                    # Mean blank timeseries (per timepoint)
+                    blank_ts = [mean(filter(isfinite, blank_mat[:, t])) for t in 1:blen]
+                    # Pad/trim to match curves width
+                    blank_ts_full = length(blank_ts) >= min_len ? blank_ts[1:min_len] :
+                                    vcat(blank_ts, fill(blank_ts[end], min_len - length(blank_ts)))
+                    curves = _apply_blank_subtraction_matrix(curves, blank_ts_full, blank_method)
+                end
             end
 
             # ------------------------------------------------------------------
@@ -1638,13 +1915,16 @@ function router(req)
             quality["series_labels"]    = labels_all
 
             return HTTP.Response(200, headers, JSON3.write(Dict(
-                "time"           => times,
-                "clusters"       => clusters,
-                "cluster_method" => cluster_method,
-                "smooth_method"  => string(smooth_method),
-                "quality"        => quality,
-                "assignments"    => cluster_ids,
-                "series_labels"  => labels_all,
+                "time"             => times,
+                "clusters"         => clusters,
+                "cluster_method"   => cluster_method,
+                "smooth_method"    => string(smooth_method),
+                "quality"          => quality,
+                "assignments"      => cluster_ids,
+                "series_labels"    => labels_all,
+                "blank_subtracted" => subtract_blank && !isempty(blank_curves_all),
+                "blank_source"     => blank_source,
+                "blank_wells_used" => blank_labels_used,
             )))
 
         # ------------------------------------------------------------------
