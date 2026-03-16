@@ -301,6 +301,21 @@ const CLEAN_DATA_PATH = haskey(ENV, "CLEAN_DATA_PATH") ? ENV["CLEAN_DATA_PATH"] 
 const RAW_DATA_PATH = haskey(ENV, "RAW_DATA_PATH") ? ENV["RAW_DATA_PATH"] : "./raw_data/"
 const PORT = haskey(ENV, "PORT") ? parse(Int, ENV["PORT"]) : 8080
 
+# Find the annotation file for a given channel in an experiment directory.
+# Priority: annotation_channel_N_*.csv  >  annotation_clean.csv  >  nothing
+function find_annotation_file(exp_dir::String, channel::Int)::Union{String, Nothing}
+    # Look for channel-specific annotation (any suffix after the channel number)
+    candidates = filter(
+        f -> occursin(Regex("^annotation_channel_$(channel)_.*\\.csv\$"), basename(f)) && isfile(f),
+        readdir(exp_dir, join=true)
+    )
+    isempty(candidates) || return first(sort(candidates))
+
+    # Fall back to the shared annotation file
+    fallback = joinpath(exp_dir, "annotation_clean.csv")
+    isfile(fallback) ? fallback : nothing
+end
+
 # Read an annotation CSV with graceful handling of missing/inconsistent values
 function read_annotation_file(annotation_file::String)::DataFrame
     annotations = try
@@ -880,8 +895,7 @@ function router(req)
             combined_info = Dict("experiments" => experiments, "wells" => combined_wells)
             
             for experiment in experiments
-                exp_dir         = joinpath(CLEAN_DATA_PATH, experiment)
-                annotation_file = joinpath(exp_dir, "annotation_clean.csv")
+                exp_dir = joinpath(CLEAN_DATA_PATH, experiment)
 
                 # Discover all channel files (data_channel_1.csv, data_channel_2.csv, ...)
                 channel_files = sort(filter(
@@ -889,27 +903,31 @@ function router(req)
                     [joinpath(exp_dir, "data_channel_$(ch).csv") for ch in 1:10]
                 ))
                 isempty(channel_files) && continue
-                isfile(annotation_file) || continue
 
                 n_channels = length(channel_files)
 
                 try
-                    annotations = CSV.read(annotation_file, DataFrame, header=false, silencewarnings=true, stringtype=String)
-                    col_names = names(annotations)
-                    new_names = Symbol[]
-                    for i in 1:length(col_names)
-                        if i == 1;     push!(new_names, :well)
-                        elseif i == 2; push!(new_names, :condition)
-                        elseif i == 5; push!(new_names, :antibiotic)
-                        else;          push!(new_names, Symbol("col_$i"))
-                        end
-                    end
-                    rename!(annotations, new_names)
-                    blank_wells = get_blank_wells(annotations)
-
                     for (ch_idx, ch_file) in enumerate(channel_files)
                         ch_num = ch_idx   # 1-based channel number
+
+                        # Per-channel annotation (annotation_channel_N_*.csv) with fallback
+                        ann_file = find_annotation_file(exp_dir, ch_num)
+                        ann_file === nothing && continue   # skip channel if no annotation at all
+
                         try
+                            annotations = CSV.read(ann_file, DataFrame, header=false, silencewarnings=true, stringtype=String)
+                            col_names = names(annotations)
+                            new_names = Symbol[]
+                            for i in 1:length(col_names)
+                                if i == 1;     push!(new_names, :well)
+                                elseif i == 2; push!(new_names, :condition)
+                                elseif i == 5; push!(new_names, :antibiotic)
+                                else;          push!(new_names, Symbol("col_$i"))
+                                end
+                            end
+                            rename!(annotations, new_names)
+                            blank_wells = get_blank_wells(annotations)
+
                             growth_data  = CSV.read(ch_file, DataFrame, header=1, silencewarnings=true)
                             well_columns = filter(well -> !(string(well) in blank_wells),
                                                   names(growth_data)[2:end])
@@ -1409,9 +1427,9 @@ function router(req)
                     channel    = Int(get(selection, :channel, 1))
 
                     data_file = joinpath(CLEAN_DATA_PATH, experiment, "data_channel_$(channel).csv")
-                    annotation_file = joinpath(CLEAN_DATA_PATH, experiment, "annotation_clean.csv")
-                    
-                    if isfile(data_file) && isfile(annotation_file)
+                    annotation_file = find_annotation_file(joinpath(CLEAN_DATA_PATH, experiment), channel)
+
+                    if isfile(data_file) && annotation_file !== nothing
                         try
                             growth_data = CSV.read(data_file, DataFrame, header=1, silencewarnings=true)
                             annotations = CSV.read(annotation_file, DataFrame, header=false, silencewarnings=true, stringtype=String)
