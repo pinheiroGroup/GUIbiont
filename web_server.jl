@@ -302,18 +302,25 @@ const RAW_DATA_PATH = haskey(ENV, "RAW_DATA_PATH") ? ENV["RAW_DATA_PATH"] : "./r
 const PORT = haskey(ENV, "PORT") ? parse(Int, ENV["PORT"]) : 8080
 
 # Find the annotation file for a given channel in an experiment directory.
-# Priority: annotation_channel_N_*.csv  >  annotation_clean.csv  >  nothing
+# Priority: annotation_channel_N_*.csv  >  annotation_clean.csv (only when no
+#           channel-specific files exist at all, i.e. single-channel experiment)
 function find_annotation_file(exp_dir::String, channel::Int)::Union{String, Nothing}
-    # Look for channel-specific annotation (any suffix after the channel number)
-    candidates = filter(
-        f -> occursin(Regex("^annotation_channel_$(channel)_.*\\.csv\$"), basename(f)) && isfile(f),
-        readdir(exp_dir, join=true)
-    )
-    isempty(candidates) || return first(sort(candidates))
+    all_files = try readdir(exp_dir) catch; String[] end
 
-    # Fall back to the shared annotation file
-    fallback = joinpath(exp_dir, "annotation_clean.csv")
-    isfile(fallback) ? fallback : nothing
+    # Look for annotation_channel_N_*.csv for this specific channel
+    prefix = "annotation_channel_$(channel)_"
+    candidates = filter(f -> startswith(f, prefix) && endswith(f, ".csv"), all_files)
+    isempty(candidates) || return joinpath(exp_dir, first(sort(candidates)))
+
+    # Only fall back to annotation_clean.csv when the experiment has NO
+    # channel-specific annotation files at all (single-channel experiment).
+    has_any_channel_ann = any(f -> occursin(r"^annotation_channel_\d+_", f), all_files)
+    if !has_any_channel_ann
+        fallback = joinpath(exp_dir, "annotation_clean.csv")
+        isfile(fallback) && return fallback
+    end
+
+    return nothing
 end
 
 # Read an annotation CSV with graceful handling of missing/inconsistent values
