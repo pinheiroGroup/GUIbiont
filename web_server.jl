@@ -945,7 +945,7 @@ function router(req)
                                     if "col_4" in names(annotations) && !ismissing(row.col_4) && string(row.col_4) != ""
                                         push!(condition_parts, string(row.col_4))
                                     end
-                                    if !ismissing(row.antibiotic) && string(row.antibiotic) != ""
+                                    if "antibiotic" in names(annotations) && !ismissing(row.antibiotic) && string(row.antibiotic) != ""
                                         antibiotic = string(row.antibiotic)
                                     else
                                         antibiotic = "None"
@@ -1493,8 +1493,8 @@ function router(req)
                                         push!(condition_parts, string(row[col_names[4]]))
                                     end
                                     
-                                    # Add antibiotic from column 5
-                                    if !ismissing(row.antibiotic) && string(row.antibiotic) != ""
+                                    # Add antibiotic from column 5 (only present in 7-column annotation_clean.csv)
+                                    if "antibiotic" in names(annotations) && !ismissing(row.antibiotic) && string(row.antibiotic) != ""
                                         antibiotic = string(row.antibiotic)
                                     end
                                 end
