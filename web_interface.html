@@ -2469,13 +2469,20 @@
         // channelList: sorted array of channel numbers present in the data.
         function buildMultiChannelLayout(channelList, title) {
             const multi = channelList.length > 1;
+            const threeChannels = channelList.length >= 3;
+            const xDomainEnd = threeChannels ? 0.78 : 1.0;
             const layout = {
                 title: { text: title, font: { size: 20, color: '#495057' } },
-                xaxis: { title: { text: 'Time (hours)', font: { size: axisTitleFontSize } }, tickfont: { size: axisTickFontSize }, gridcolor: '#e9ecef' },
+                xaxis: {
+                    title: { text: 'Time (hours)', font: { size: axisTitleFontSize } },
+                    tickfont: { size: axisTickFontSize },
+                    gridcolor: '#e9ecef',
+                    domain: threeChannels ? [0, xDomainEnd] : [0, 1]
+                },
                 hovermode: 'x unified',
                 template: 'plotly_white',
                 legend: { orientation: 'h', xanchor: 'center', x: 0.5, y: -0.2, font: { size: legendFontSize } },
-                margin: { l: 70, r: multi ? (channelList.length >= 3 ? 150 : 90) : 30, t: 80, b: 120 },
+                margin: { l: 70, r: multi ? (threeChannels ? 160 : 90) : 30, t: 80, b: 120 },
                 autosize: true
             };
             channelList.forEach((ch, i) => {
@@ -2486,10 +2493,15 @@
                     tickfont: { size: axisTickFontSize, color },
                     gridcolor: '#e9ecef',
                 };
-                if (i > 0) {
+                if (i === 1) {
                     layout[axKey].overlaying = 'y';
                     layout[axKey].side = 'right';
-                    if (i === 2) layout[axKey].position = 0.88;
+                    layout[axKey].anchor = 'x';
+                } else if (i === 2) {
+                    layout[axKey].overlaying = 'y';
+                    layout[axKey].side = 'right';
+                    layout[axKey].anchor = 'free';
+                    layout[axKey].position = xDomainEnd + 0.08;  // just outside the plot domain
                 }
             });
             if (!multi) layout.yaxis.title.text = 'Optical Density (OD)';
