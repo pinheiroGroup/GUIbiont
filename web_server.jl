@@ -36,6 +36,45 @@ function _cluster_centroids(X::Matrix{Float64}, ids::Vector{Int})::Matrix{Float6
     return C
 end
 
+# Identify constant (non-growing) curves using a quantile-ratio criterion.
+# Returns a BitVector where true = constant / non-growing.
+function _prescreen_constant_native(
+    curves::Matrix{Float64},
+    tol_const::Float64,
+    q_low::Float64,
+    q_high::Float64,
+)::BitVector
+    W = size(curves, 1)
+    const_mask = falses(W)
+    for i in 1:W
+        row = curves[i, :]
+        lm  = quantile(row, q_low)
+        hm  = quantile(row, q_high)
+        const_mask[i] = if lm > 0
+            hm <= tol_const * lm
+        else
+            abs(hm - lm) < 1e-6 * (abs(lm) + 1.0)
+        end
+    end
+    return const_mask
+end
+
+# Compute WCSS (within-cluster sum of squares) from feature matrix and 1-based
+# cluster assignments. Points with id == 0 (DBSCAN noise) are excluded.
+function _compute_wcss(X::Matrix{Float64}, ids::Vector{Int})::Float64
+    valid = filter(!=(0), unique(ids))
+    isempty(valid) && return 0.0
+    wcss = 0.0
+    for c in valid
+        mask = findall(==(c), ids)
+        centroid = mean(X[mask, :], dims=1)
+        for i in mask
+            wcss += sum((X[i, :] .- centroid).^2)
+        end
+    end
+    return wcss
+end
+
 # Auto-detect blank curve indices from a curves matrix (rows = series, cols = time).
 # Returns indices of rows that are flat AND have low mean OD.
 # A curve is considered flat if EITHER:
@@ -1711,6 +1750,12 @@ function router(req)
             blank_method      = string(get(request_data, :blank_method, "pointbypoint"))
             blank_range_thr   = Float64(get(request_data, :blank_range_thr, 0.005))
             blank_od_pct      = Float64(get(request_data, :blank_od_percentile, 0.10))
+            clustering_engine          = string(get(request_data, :clustering_engine, "native"))
+            cluster_prescreen_constant = Bool(get(request_data, :cluster_prescreen_constant, false))
+            cluster_tol_const          = Float64(get(request_data, :cluster_tol_const, 1.5))
+            cluster_q_low              = Float64(get(request_data, :cluster_q_low, 0.05))
+            cluster_q_high             = Float64(get(request_data, :cluster_q_high, 0.95))
+            cluster_exp_prototype      = Bool(get(request_data, :cluster_exp_prototype, false))
 
             times_all       = Vector{Vector{Float64}}()
             curves_all      = Vector{Vector{Float64}}()
@@ -1820,62 +1865,118 @@ function router(req)
             end
 
             # ------------------------------------------------------------------
-            # Smoothing via KinBiont preprocess
+            # Engine-branched smoothing + clustering
             # ------------------------------------------------------------------
-            if smooth_method != :none
-                gd_smooth = GrowthData(curves, times, labels_all)
-                smooth_opts = FitOptions(
-                    smooth             = true,
-                    smooth_method      = smooth_method,
-                    lowess_frac        = lowess_frac,
-                    gaussian_h_mult    = gaussian_hmult,
-                    cluster            = false,
+            cluster_ids        = Int[]
+            cent_matrix        = nothing   # n_clusters × n_tp (z-normalised)
+            wcss_val           = nothing
+            curves_for_cluster = curves
+
+            if clustering_engine == "kinbiont"
+                # KinBiont engine: preprocess handles cluster-before-smooth order.
+                # Pass blank-subtracted, un-smoothed curves.
+                k_eff    = min(k_input, n_series)
+                gd_input = GrowthData(curves, times, labels_all)
+                kb_opts  = FitOptions(
+                    cluster                    = true,
+                    n_clusters                 = k_eff,
+                    smooth                     = smooth_method != :none,
+                    smooth_method              = smooth_method,
+                    lowess_frac                = lowess_frac,
+                    gaussian_h_mult            = gaussian_hmult,
+                    cluster_prescreen_constant = cluster_prescreen_constant,
+                    cluster_tol_const          = cluster_tol_const,
+                    cluster_q_low              = cluster_q_low,
+                    cluster_q_high             = cluster_q_high,
+                    cluster_exp_prototype      = cluster_exp_prototype,
                 )
-                gd_proc = preprocess(gd_smooth, smooth_opts)
-                # After smoothing times may change (gaussian can resample); use
-                # smoothed data but keep original times for display alignment.
-                sm_curves = gd_proc.curves   # n_series × n_times matrix
-                sm_times  = gd_proc.times
-                # Trim both to same length in case of mismatch
-                tlen = min(size(sm_curves, 2), length(times))
-                curves_for_cluster = sm_curves[:, 1:tlen]
-                times = sm_times[1:tlen]
-            else
-                curves_for_cluster = curves
-            end
+                gd_proc   = preprocess(gd_input, kb_opts)
+                cluster_ids        = gd_proc.clusters !== nothing ? Int.(gd_proc.clusters) : ones(Int, n_series)
+                cent_matrix        = gd_proc.centroids   # n_clusters × n_tp, z-normalised
+                wcss_val           = gd_proc.wcss
+                tlen               = min(size(gd_proc.curves, 2), length(gd_proc.times))
+                curves_for_cluster = gd_proc.curves[:, 1:tlen]
+                times              = gd_proc.times[1:tlen]
 
-            # ------------------------------------------------------------------
-            # Z-score for clustering (always)
-            # ------------------------------------------------------------------
-            zscored = _zscore_rows(curves_for_cluster)
+            else   # native engine
 
-            # ------------------------------------------------------------------
-            # Clustering
-            # ------------------------------------------------------------------
-            k_eff = min(k_input, n_series)
+                if smooth_method != :none
+                    gd_smooth   = GrowthData(curves, times, labels_all)
+                    smooth_opts = FitOptions(
+                        smooth          = true,
+                        smooth_method   = smooth_method,
+                        lowess_frac     = lowess_frac,
+                        gaussian_h_mult = gaussian_hmult,
+                        cluster         = false,
+                    )
+                    gd_proc    = preprocess(gd_smooth, smooth_opts)
+                    tlen       = min(size(gd_proc.curves, 2), length(gd_proc.times))
+                    curves_for_cluster = gd_proc.curves[:, 1:tlen]
+                    times      = gd_proc.times[1:tlen]
+                end
 
-            cluster_ids = if cluster_method == "kmeans"
-                res = Clustering.kmeans(zscored', k_eff; maxiter, tol)
-                Clustering.assignments(res)
+                zscored = _zscore_rows(curves_for_cluster)
+                k_eff   = min(k_input, n_series)
 
-            elseif cluster_method == "kmedoids"
-                dmat = _pairwise_euclidean(zscored)
-                res  = Clustering.kmedoids(dmat, k_eff; maxiter, tol)
-                Clustering.assignments(res)
+                if cluster_prescreen_constant
+                    # Separate constant curves (label = k_eff) then cluster the rest
+                    const_mask  = _prescreen_constant_native(curves_for_cluster,
+                                                             cluster_tol_const,
+                                                             cluster_q_low, cluster_q_high)
+                    dynamic_idx = findall(.!const_mask)
+                    cluster_ids = fill(k_eff, n_series)
 
-            elseif cluster_method == "hclust"
-                dmat = _pairwise_euclidean(zscored)
-                hc   = Clustering.hclust(dmat; linkage = hclust_linkage)
-                Clustering.cutree(hc; k = k_eff)
+                    if !isempty(dynamic_idx) && k_eff > 1
+                        k_dynamic   = k_eff - 1
+                        zscored_dyn = zscored[dynamic_idx, :]
+                        dyn_ids = if cluster_method == "kmeans"
+                            Clustering.assignments(Clustering.kmeans(zscored_dyn', k_dynamic; maxiter, tol))
+                        elseif cluster_method == "kmedoids"
+                            dmat = _pairwise_euclidean(zscored_dyn)
+                            Clustering.assignments(Clustering.kmedoids(dmat, k_dynamic; maxiter, tol))
+                        elseif cluster_method == "hclust"
+                            dmat = _pairwise_euclidean(zscored_dyn)
+                            Clustering.cutree(Clustering.hclust(dmat; linkage=hclust_linkage); k=k_dynamic)
+                        elseif cluster_method == "dbscan"
+                            Clustering.assignments(Clustering.dbscan(zscored_dyn', dbscan_eps, min_neighbors=dbscan_minpts))
+                        else
+                            return HTTP.Response(400, headers,
+                                JSON3.write(Dict("error" => "Unknown cluster_method: $cluster_method")))
+                        end
+                        for (pos, idx) in enumerate(dynamic_idx)
+                            cluster_ids[idx] = dyn_ids[pos]
+                        end
+                    end
 
-            elseif cluster_method == "dbscan"
-                res = Clustering.dbscan(zscored', dbscan_eps, min_neighbors = dbscan_minpts)
-                raw = Clustering.assignments(res)
-                raw   # 0 = noise
+                else
+                    cluster_ids = if cluster_method == "kmeans"
+                        Clustering.assignments(Clustering.kmeans(zscored', k_eff; maxiter, tol))
+                    elseif cluster_method == "kmedoids"
+                        dmat = _pairwise_euclidean(zscored)
+                        Clustering.assignments(Clustering.kmedoids(dmat, k_eff; maxiter, tol))
+                    elseif cluster_method == "hclust"
+                        dmat = _pairwise_euclidean(zscored)
+                        Clustering.cutree(Clustering.hclust(dmat; linkage=hclust_linkage); k=k_eff)
+                    elseif cluster_method == "dbscan"
+                        raw = Clustering.assignments(Clustering.dbscan(zscored', dbscan_eps, min_neighbors=dbscan_minpts))
+                        raw   # 0 = noise
+                    else
+                        return HTTP.Response(400, headers,
+                            JSON3.write(Dict("error" => "Unknown cluster_method: $cluster_method")))
+                    end
+                end
 
-            else
-                return HTTP.Response(400, headers,
-                    JSON3.write(Dict("error" => "Unknown cluster_method: $cluster_method")))
+                # Centroids in z-normalised space
+                non_noise = filter(!=(0), unique(cluster_ids))
+                if !isempty(non_noise)
+                    max_id      = maximum(non_noise)
+                    cent_matrix = zeros(Float64, max_id, size(zscored, 2))
+                    for c in non_noise
+                        mask = findall(==(c), cluster_ids)
+                        cent_matrix[c, :] = vec(mean(zscored[mask, :], dims=1))
+                    end
+                end
+                wcss_val = _compute_wcss(zscored, cluster_ids)
             end
 
             # ------------------------------------------------------------------
@@ -1890,13 +1991,18 @@ function router(req)
                 end
             end
 
+            # The constant-prescreen cluster always gets id = k_eff (highest label)
+            constant_cluster_id = cluster_prescreen_constant ? k_eff : nothing
+
             # Collect unique cluster ids (DBSCAN may produce arbitrary ids incl 0)
             unique_ids = sort(unique(cluster_ids))
             clusters = []
             for c in unique_ids
                 mask = findall(cluster_ids .== c)
                 isempty(mask) && continue
-                label = c == 0 ? "Noise" : string(c)
+                label = c == 0 ? "Noise" :
+                        (!isnothing(constant_cluster_id) && c == constant_cluster_id) ? "Non-growing" :
+                        string(c)
                 push!(clusters, Dict(
                     "id"            => c,
                     "label"         => label,
@@ -1939,17 +2045,30 @@ function router(req)
             quality["silhouettes"]      = sil_per_series
             quality["series_labels"]    = labels_all
 
+            # Build centroids dict keyed by string cluster id
+            centroids_dict = Dict{String, Vector{Float64}}()
+            if cent_matrix !== nothing
+                for c in 1:size(cent_matrix, 1)
+                    any(cent_matrix[c, :] .!= 0) && (centroids_dict[string(c)] = cent_matrix[c, :])
+                end
+            end
+
             return HTTP.Response(200, headers, JSON3.write(Dict(
-                "time"             => times,
-                "clusters"         => clusters,
-                "cluster_method"   => cluster_method,
-                "smooth_method"    => string(smooth_method),
-                "quality"          => quality,
-                "assignments"      => cluster_ids,
-                "series_labels"    => labels_all,
-                "blank_subtracted" => subtract_blank && !isempty(blank_curves_all),
-                "blank_source"     => blank_source,
-                "blank_wells_used" => blank_labels_used,
+                "time"              => times,
+                "clusters"          => clusters,
+                "cluster_method"    => cluster_method,
+                "smooth_method"     => string(smooth_method),
+                "quality"           => quality,
+                "assignments"       => cluster_ids,
+                "series_labels"     => labels_all,
+                "blank_subtracted"  => subtract_blank && !isempty(blank_curves_all),
+                "blank_source"      => blank_source,
+                "blank_wells_used"  => blank_labels_used,
+                "centroids"           => centroids_dict,
+                "wcss"                => isnothing(wcss_val) ? nothing : wcss_val,
+                "n_series"            => n_series,
+                "clustering_engine"   => clustering_engine,
+                "constant_cluster_id" => isnothing(constant_cluster_id) ? nothing : constant_cluster_id,
             )))
 
         # ------------------------------------------------------------------
@@ -1966,6 +2085,12 @@ function router(req)
             maxiter        = Int(get(request_data, :maxiter, 100))
             tol            = Float64(get(request_data, :tol, 1e-6))
             hclust_linkage = Symbol(get(request_data, :hclust_linkage, "ward"))
+            clustering_engine          = string(get(request_data, :clustering_engine, "native"))
+            cluster_prescreen_constant = Bool(get(request_data, :cluster_prescreen_constant, false))
+            cluster_tol_const          = Float64(get(request_data, :cluster_tol_const, 1.5))
+            cluster_q_low              = Float64(get(request_data, :cluster_q_low, 0.05))
+            cluster_q_high             = Float64(get(request_data, :cluster_q_high, 0.95))
+            cluster_exp_prototype      = Bool(get(request_data, :cluster_exp_prototype, false))
 
             # Re-use the same data-loading logic as /api/cluster
             times_all  = Vector{Vector{Float64}}()
@@ -2027,7 +2152,7 @@ function router(req)
                 curves[i, :] = c[1:min_len]
             end
 
-            # Smooth once, then sweep over k
+            # Smooth once (both engines), then sweep over k
             if smooth_method != :none
                 gd_smooth   = GrowthData(curves, times, labels_all)
                 smooth_opts = FitOptions(smooth=true, smooth_method=smooth_method,
@@ -2036,6 +2161,7 @@ function router(req)
                 gd_proc    = preprocess(gd_smooth, smooth_opts)
                 tlen       = min(size(gd_proc.curves, 2), length(times))
                 curves_for = gd_proc.curves[:, 1:tlen]
+                times      = gd_proc.times[1:tlen]
             else
                 curves_for = curves
             end
@@ -2043,17 +2169,59 @@ function router(req)
 
             sweep_results = []
             for k in 2:min(k_max, n_series)
-                ids = try
-                    if cluster_method == "kmeans"
-                        Clustering.assignments(Clustering.kmeans(zscored', k; maxiter, tol))
-                    elseif cluster_method == "kmedoids"
-                        dmat = _pairwise_euclidean(zscored)
-                        Clustering.assignments(Clustering.kmedoids(dmat, k; maxiter, tol))
-                    elseif cluster_method == "hclust"
-                        dmat = _pairwise_euclidean(zscored)
-                        Clustering.cutree(Clustering.hclust(dmat; linkage=hclust_linkage); k)
+                ids, wcss_k = try
+                    if clustering_engine == "kinbiont"
+                        # Cluster on already-smoothed data with smooth=false
+                        gd_sw = GrowthData(curves_for, times, labels_all)
+                        sw_opts = FitOptions(
+                            cluster                    = true,
+                            n_clusters                 = k,
+                            smooth                     = false,
+                            cluster_prescreen_constant = cluster_prescreen_constant,
+                            cluster_tol_const          = cluster_tol_const,
+                            cluster_q_low              = cluster_q_low,
+                            cluster_q_high             = cluster_q_high,
+                            cluster_exp_prototype      = cluster_exp_prototype,
+                        )
+                        gd_sw_proc = preprocess(gd_sw, sw_opts)
+                        (gd_sw_proc.clusters !== nothing ? Int.(gd_sw_proc.clusters) : ones(Int, n_series)), gd_sw_proc.wcss
                     else
-                        Clustering.assignments(Clustering.kmeans(zscored', k; maxiter, tol))
+                        # Native engine
+                        raw_ids = if cluster_prescreen_constant
+                            const_mask  = _prescreen_constant_native(curves_for, cluster_tol_const, cluster_q_low, cluster_q_high)
+                            dynamic_idx = findall(.!const_mask)
+                            sw_ids      = fill(k, n_series)
+                            if !isempty(dynamic_idx) && k > 1
+                                k_dyn   = k - 1
+                                zs_dyn  = zscored[dynamic_idx, :]
+                                dyn_ids = if cluster_method == "kmeans"
+                                    Clustering.assignments(Clustering.kmeans(zs_dyn', k_dyn; maxiter, tol))
+                                elseif cluster_method == "kmedoids"
+                                    dmat = _pairwise_euclidean(zs_dyn)
+                                    Clustering.assignments(Clustering.kmedoids(dmat, k_dyn; maxiter, tol))
+                                elseif cluster_method == "hclust"
+                                    dmat = _pairwise_euclidean(zs_dyn)
+                                    Clustering.cutree(Clustering.hclust(dmat; linkage=hclust_linkage); k=k_dyn)
+                                else
+                                    Clustering.assignments(Clustering.kmeans(zs_dyn', k_dyn; maxiter, tol))
+                                end
+                                for (pos, idx) in enumerate(dynamic_idx)
+                                    sw_ids[idx] = dyn_ids[pos]
+                                end
+                            end
+                            sw_ids
+                        elseif cluster_method == "kmeans"
+                            Clustering.assignments(Clustering.kmeans(zscored', k; maxiter, tol))
+                        elseif cluster_method == "kmedoids"
+                            dmat = _pairwise_euclidean(zscored)
+                            Clustering.assignments(Clustering.kmedoids(dmat, k; maxiter, tol))
+                        elseif cluster_method == "hclust"
+                            dmat = _pairwise_euclidean(zscored)
+                            Clustering.cutree(Clustering.hclust(dmat; linkage=hclust_linkage); k)
+                        else
+                            Clustering.assignments(Clustering.kmeans(zscored', k; maxiter, tol))
+                        end
+                        raw_ids, _compute_wcss(zscored, raw_ids)
                     end
                 catch e
                     println("Sweep k=$k error: $e")
@@ -2069,6 +2237,7 @@ function router(req)
                     "davies_bouldin"    => q["davies_bouldin"],
                     "calinski_harabasz" => q["calinski_harabasz"],
                     "xie_beni"          => q["xie_beni"],
+                    "wcss"              => isnothing(wcss_k) ? nothing : wcss_k,
                 ))
             end
 

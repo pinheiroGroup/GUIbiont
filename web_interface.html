@@ -1744,6 +1744,49 @@
                                         <input type="number" id="cluster-tol" value="1e-6" min="0" step="1e-7" style="width:90px; padding:4px 6px;">
                                     </div>
                                 </div>
+
+                                <!-- Clustering engine -->
+                                <div style="display:flex; flex-direction:column; gap:4px; border-left:2px solid #dee2e6; padding-left:12px;">
+                                    <label style="font-weight:600;">Clustering engine</label>
+                                    <select id="cluster-engine" style="padding:4px 8px;" onchange="onClusterEngineChange()">
+                                        <option value="native" selected>Native</option>
+                                        <option value="kinbiont">KinBiont</option>
+                                    </select>
+                                </div>
+
+                                <!-- Prescreen constant wells (both engines) -->
+                                <div style="display:flex; flex-direction:column; gap:6px; border-left:2px solid #dee2e6; padding-left:12px;">
+                                    <label style="font-weight:600;">Constant wells</label>
+                                    <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                                        <input type="checkbox" id="cluster-prescreen-constant" onchange="onPrescreenChange()">
+                                        Prescreen non-growing
+                                    </label>
+                                    <div id="cluster-prescreen-params" style="display:none; flex-direction:column; gap:6px;">
+                                        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                                            <div style="display:flex; flex-direction:column; gap:4px;">
+                                                <label title="High quantile must exceed tol_const × low quantile to be considered growing">Tol const <span style="color:#6c757d;">(?)</span></label>
+                                                <input type="number" id="cluster-tol-const" value="1.5" min="1.0" max="10" step="0.1" style="width:75px; padding:4px 6px;">
+                                            </div>
+                                            <div style="display:flex; flex-direction:column; gap:4px;">
+                                                <label>q low</label>
+                                                <input type="number" id="cluster-q-low" value="0.05" min="0.01" max="0.49" step="0.01" style="width:70px; padding:4px 6px;">
+                                            </div>
+                                            <div style="display:flex; flex-direction:column; gap:4px;">
+                                                <label>q high</label>
+                                                <input type="number" id="cluster-q-high" value="0.95" min="0.51" max="0.99" step="0.01" style="width:70px; padding:4px 6px;">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- KinBiont-only options -->
+                                <div id="cluster-kinbiont-options" style="display:none; flex-direction:column; gap:6px; border-left:2px solid #4a90e2; padding-left:12px;">
+                                    <label style="font-weight:600; color:#4a90e2;">KinBiont options</label>
+                                    <label style="display:flex; align-items:center; gap:6px; cursor:pointer;" title="Relabel the cluster whose centroid best matches a pure exponential growth prototype">
+                                        <input type="checkbox" id="cluster-exp-prototype">
+                                        Exponential prototype label
+                                    </label>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1889,6 +1932,7 @@
                         <div id="cluster-sweep-plot-xie_beni"       style="height:220px;"></div>
                         <div id="cluster-sweep-plot-davies_bouldin" style="height:220px;"></div>
                         <div id="cluster-sweep-plot-dunn"           style="height:220px;"></div>
+                        <div id="cluster-sweep-plot-wcss"           style="height:220px;"></div>
                     </div>
                 </div>
             </div>
@@ -4069,6 +4113,16 @@
             document.getElementById('cluster-blank-method-row').style.display = checked ? 'flex' : 'none';
         }
 
+        function onClusterEngineChange() {
+            const isKB = document.getElementById('cluster-engine').value === 'kinbiont';
+            document.getElementById('cluster-kinbiont-options').style.display = isKB ? 'flex' : 'none';
+        }
+
+        function onPrescreenChange() {
+            const checked = document.getElementById('cluster-prescreen-constant').checked;
+            document.getElementById('cluster-prescreen-params').style.display = checked ? 'flex' : 'none';
+        }
+
         function updateClusteringRunBtn() {
             const hasData = currentClusteringMode === 'file'
                 ? !!document.getElementById('clustering-file').files[0]
@@ -4167,6 +4221,12 @@
                 blank_method:         document.getElementById('cluster-blank-method').value,
                 blank_range_thr:      parseFloat(document.getElementById('cluster-blank-range-thr').value),
                 blank_od_percentile:  parseFloat(document.getElementById('cluster-blank-od-pct').value),
+                clustering_engine:           document.getElementById('cluster-engine').value,
+                cluster_prescreen_constant:  document.getElementById('cluster-prescreen-constant').checked,
+                cluster_tol_const:           parseFloat(document.getElementById('cluster-tol-const').value),
+                cluster_q_low:               parseFloat(document.getElementById('cluster-q-low').value),
+                cluster_q_high:              parseFloat(document.getElementById('cluster-q-high').value),
+                cluster_exp_prototype:       document.getElementById('cluster-exp-prototype').checked,
             });
 
             document.getElementById('loading').style.display = 'flex';
@@ -4218,13 +4278,21 @@
             });
             const hasExperiments = Object.keys(expColorMap).length > 0;
 
+            const constantClusterId = data.constant_cluster_id ?? null;
+
             clusters.forEach(cluster => {
+                const isConstant = constantClusterId !== null && cluster.id === constantClusterId;
                 const cell = document.createElement('div');
                 cell.className = 'cluster-cell';
+                if (isConstant) {
+                    cell.style.opacity = '0.75';
+                    cell.style.border = '1px dashed #aaa';
+                }
 
                 // Title bar
                 const title = document.createElement('div');
                 title.className = 'cluster-cell-title';
+                if (isConstant) title.style.background = '#e9ecef';
                 const titleText = document.createElement('span');
                 titleText.className = 'cluster-title-text';
                 const clusterLabel = cluster.label || String(cluster.id);
@@ -4340,6 +4408,20 @@
                     showlegend: true
                 });
 
+                // Centroid overlay (z-normalised prototype from KinBiont or native engine)
+                // Only shown when normalize=true (display space matches centroid space)
+                const normalizeChecked = document.getElementById('clustering-normalize').checked;
+                const centroid = data.centroids && data.centroids[String(cluster.id)];
+                if (normalizeChecked && centroid && centroid.length === time.length) {
+                    traces.push({
+                        x: time, y: centroid,
+                        mode: 'lines', type: 'scatter',
+                        name: 'Centroid',
+                        line: { width: 2, color: 'black', dash: 'dash' },
+                        showlegend: true
+                    });
+                }
+
                 const layout = {
                     margin: { t: 10, r: 10, b: 40, l: 50 },
                     xaxis: { title: 'Time' },
@@ -4430,6 +4512,10 @@
                 { key: 'calinski_harabasz', label: 'Calinski-Harabasz',   fmt: v => v.toFixed(2), range: '0 to ∞',   better: '↑ higher is better. Ratio of between-cluster to within-cluster variance.' },
                 { key: 'xie_beni',          label: 'Xie-Beni',            fmt: v => v.toFixed(4), range: '0 to ∞',   better: '↓ lower is better. Ratio of within-cluster inertia to minimum distance between centres.' },
             ];
+            // WCSS lives at top level (data.wcss), not inside data.quality
+            if (data.wcss !== null && data.wcss !== undefined) {
+                indices.push({ key: '__wcss__', label: 'WCSS / series', fmt: v => v.toFixed(4), range: '0 to ∞', better: '↓ lower is better. Within-cluster sum of squares divided by number of series (scale-independent). Use the elbow plot in the sweep to choose k.' });
+            }
 
             let tableHtml = `<table style="border-collapse:collapse; font-size:0.875em; width:100%;">
                 <thead><tr style="border-bottom:2px solid #dee2e6;">
@@ -4439,7 +4525,9 @@
                     <th style="padding:4px 4px; text-align:left; color:#6c757d;">Better</th>
                 </tr></thead><tbody>`;
             indices.forEach(({ key, label, fmt, range, better }) => {
-                const v = q[key];
+                const v = key === '__wcss__'
+                    ? (data.wcss != null && data.n_series ? data.wcss / data.n_series : null)
+                    : q[key];
                 const valStr = (v === null || v === undefined) ? '<span style="color:#aaa">N/A</span>' : fmt(v);
                 tableHtml += `<tr style="border-bottom:1px solid #f0f0f0;">
                     <td style="padding:4px 16px 4px 4px; white-space:nowrap;">${label}</td>
@@ -4521,6 +4609,12 @@
             Object.assign(body, {
                 smooth_method: smooth, lowess_frac: lowess, gaussian_h_mult: gHmult,
                 cluster_method: method, maxiter, tol, hclust_linkage: hLink,
+                clustering_engine:           document.getElementById('cluster-engine').value,
+                cluster_prescreen_constant:  document.getElementById('cluster-prescreen-constant').checked,
+                cluster_tol_const:           parseFloat(document.getElementById('cluster-tol-const').value),
+                cluster_q_low:               parseFloat(document.getElementById('cluster-q-low').value),
+                cluster_q_high:              parseFloat(document.getElementById('cluster-q-high').value),
+                cluster_exp_prototype:       document.getElementById('cluster-exp-prototype').checked,
             });
 
             document.getElementById('loading').style.display = 'flex';
@@ -4549,11 +4643,18 @@
                 { key: 'xie_beni',          divId: 'cluster-sweep-plot-xie_beni',        label: 'Xie-Beni ↓',            color: '#8e44ad' },
                 { key: 'davies_bouldin',    divId: 'cluster-sweep-plot-davies_bouldin',  label: 'Davies-Bouldin ↓',      color: '#e74c3c' },
                 { key: 'dunn',              divId: 'cluster-sweep-plot-dunn',            label: 'Dunn ↑',                color: '#27ae60' },
+                { key: 'wcss',              divId: 'cluster-sweep-plot-wcss',            label: 'WCSS elbow ↓',          color: '#795548' },
             ];
 
             indices.forEach(({ key, divId, label, color }) => {
                 const ys = sweep.map(r => r[key]);
-                Plotly.newPlot(document.getElementById(divId), [{
+                const hasData = ys.some(v => v !== null && v !== undefined && isFinite(v));
+                const div = document.getElementById(divId);
+                if (!hasData) {
+                    div.innerHTML = `<div style="height:100%; display:flex; align-items:center; justify-content:center; color:#aaa; font-size:0.85em;">${label.replace(/ [↑↓]$/, '')} — N/A</div>`;
+                    return;
+                }
+                Plotly.newPlot(div, [{
                     type: 'scatter', mode: 'lines+markers',
                     x: ks, y: ys,
                     marker: { size: 7, color },
