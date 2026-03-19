@@ -498,7 +498,7 @@
         }
 
         .experiment-content.active {
-            max-height: 600px;
+            max-height: none;
         }
 
         .wells-grid-container {
@@ -506,6 +506,26 @@
             grid-template-columns: 1fr 1fr;
             gap: 20px;
             padding: 20px;
+        }
+
+        .channel-section {
+            border: 1px solid #c8d6e5;
+            border-radius: 6px;
+            margin: 12px 16px;
+            overflow: hidden;
+        }
+
+        .channel-section-header {
+            background: linear-gradient(135deg, #4a6fa5, #6c8ebf);
+            color: white;
+            font-weight: 600;
+            font-size: 13px;
+            padding: 8px 14px;
+            letter-spacing: 0.03em;
+        }
+
+        .channel-section .wells-grid-container {
+            padding: 12px;
         }
 
         .wells-column {
@@ -1704,6 +1724,35 @@
                                     </div>
                                 </div>
 
+                                <!-- Blank subtraction -->
+                                <div style="display:flex; flex-direction:column; gap:6px; border-left:2px solid #dee2e6; padding-left:12px;">
+                                    <label style="font-weight:600;">Blank subtraction</label>
+                                    <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                                        <input type="checkbox" id="cluster-subtract-blank" onchange="onClusterBlankChange()">
+                                        Subtract blank
+                                    </label>
+                                    <div id="cluster-blank-method-row" style="display:none; flex-direction:column; gap:8px;">
+                                        <div style="display:flex; flex-direction:column; gap:4px;">
+                                            <label>Method</label>
+                                            <select id="cluster-blank-method" style="padding:4px 8px;">
+                                                <option value="pointbypoint" selected>Point-by-point</option>
+                                                <option value="shift">Shift minimum</option>
+                                                <option value="clip">Clip to zero</option>
+                                            </select>
+                                        </div>
+                                        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                                            <div style="display:flex; flex-direction:column; gap:4px;">
+                                                <label title="A well is considered flat if its OD range (max−min) is below this value">Max OD range <span style="color:#6c757d;">(?)</span></label>
+                                                <input type="number" id="cluster-blank-range-thr" value="0.005" min="0.001" max="0.1" step="0.001" style="width:90px; padding:4px 6px;">
+                                            </div>
+                                            <div style="display:flex; flex-direction:column; gap:4px;">
+                                                <label title="Only wells whose mean OD is below this percentile of all wells are considered blank candidates">OD percentile <span style="color:#6c757d;">(?)</span></label>
+                                                <input type="number" id="cluster-blank-od-pct" value="0.10" min="0.01" max="0.5" step="0.01" style="width:90px; padding:4px 6px;">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <!-- maxiter / tol (kmeans + kmedoids) -->
                                 <div id="cluster-iter-params" style="display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end;">
                                     <div style="display:flex; flex-direction:column; gap:4px;">
@@ -1830,9 +1879,12 @@
 
             <!-- Clustering Grid Container -->
             <div id="cluster-grid-container" style="display: none; padding: 20px;">
-                <div style="display:flex; justify-content:flex-end; gap:8px; margin-bottom:12px;">
-                    <button class="btn" onclick="exportAllClustersCSV()">📥 Export all (CSV)</button>
-                    <button class="btn" onclick="exportAllClustersPNG()">🖼 Export all (PNG)</button>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+                    <div id="cluster-blank-notice" style="display:none; font-size:0.875em; padding:6px 12px; border-radius:6px; background:rgba(74,144,226,0.1); border:1px solid #4a90e2; color:#2c5f8a;"></div>
+                    <div style="display:flex; gap:8px; margin-left:auto;">
+                        <button class="btn" onclick="exportAllClustersCSV()">📥 Export all (CSV)</button>
+                        <button class="btn" onclick="exportAllClustersPNG()">🖼 Export all (PNG)</button>
+                    </div>
                 </div>
                 <div id="cluster-grid" class="cluster-grid"></div>
             </div>
@@ -2015,6 +2067,14 @@
             const statsContainer = document.getElementById('stats-container');
             
             const clusterGridContainer = document.getElementById('cluster-grid-container');
+            // Always hide clustering panels when leaving that tab
+            if (tabName !== 'clustering') {
+                if (clusterGridContainer) clusterGridContainer.style.display = 'none';
+                document.getElementById('cluster-quality-panel').style.display = 'none';
+                document.getElementById('cluster-sweep-panel').style.display   = 'none';
+                document.getElementById('cluster-compare-panel').style.display = 'none';
+            }
+
             if (tabName === 'plot-growth') {
                 // Show growth plot if it has been created (check if plot div has data)
                 const growthPlotDiv = document.getElementById('plot-growth');
@@ -2024,7 +2084,6 @@
                     growthContainer.style.display = 'none';
                 }
                 fittingContainer.style.display = 'none';
-                if (clusterGridContainer) clusterGridContainer.style.display = 'none';
 
                 // Show stats if they exist for growth plot
                 if (statsContainer.querySelector('#stats-table') && statsContainer.querySelector('#stats-table').innerHTML.trim()) {
@@ -2061,6 +2120,16 @@
                     const hasResults = document.getElementById('cluster-grid').innerHTML.trim();
                     clusterGridContainer.style.display = hasResults ? 'block' : 'none';
                 }
+                // Restore clustering analysis panels if they have content
+                const qualityPanel = document.getElementById('cluster-quality-panel');
+                if (qualityPanel && document.getElementById('cluster-quality-table').innerHTML.trim())
+                    qualityPanel.style.display = 'block';
+                const sweepPanel = document.getElementById('cluster-sweep-panel');
+                if (sweepPanel && document.getElementById('cluster-sweep-plot-silhouette').innerHTML.trim())
+                    sweepPanel.style.display = 'block';
+                const comparePanel = document.getElementById('cluster-compare-panel');
+                if (comparePanel && _savedClusterings.length)
+                    comparePanel.style.display = 'block';
             }
         }
 
@@ -2370,6 +2439,13 @@
         }
 
         // Toggle individual well selection
+        function _wellColumnId(experiment, channel, type) {
+            // Returns the DOM id of the selected/available column for a well.
+            // type: 'selected' | 'available'
+            const chSuffix = document.getElementById(`${type}-${experiment}-ch${channel}`) ? `-ch${channel}` : '';
+            return `${type}-${experiment}${chSuffix}`;
+        }
+
         function toggleWell(wellId) {
             const wellItem = document.querySelector(`[data-well-id="${wellId}"]`);
             const experiment = wellItem.dataset.experiment;
@@ -2416,6 +2492,7 @@
                 const nChannels = expWells.length > 0 ? (expWells[0].n_channels || 1) : 1;
 
                 const header = document.querySelector(`[onclick="toggleExperiment('${experiment}')"]`);
+                if (!header) return;
                 const infoDiv = header.querySelector('.experiment-info');
                 infoDiv.innerHTML = `
                     <span>${expWells.length} wells total</span>
@@ -2424,6 +2501,7 @@
                 `;
 
                 if (nChannels > 1) {
+<<<<<<< fix/multi-channel-plot
                     for (let ch = 1; ch <= nChannels; ch++) {
                         const chWells = expWells.filter(w => (w.channel || 1) === ch);
                         const chSelected = chWells.filter(w => selectedWellIds.has(w.well_id));
@@ -2437,6 +2515,23 @@
                     const avlEl = document.querySelector(`#available-${experiment}`);
                     if (selEl) selEl.previousElementSibling.textContent = `Selected Wells (${selectedWells.length})`;
                     if (avlEl) avlEl.previousElementSibling.textContent = `Available Wells (${expWells.length - selectedWells.length})`;
+=======
+                    // Update per-channel column headers
+                    for (let ch = 1; ch <= nChannels; ch++) {
+                        const chWells = expWells.filter(w => (w.channel || 1) === ch);
+                        const chSelected = chWells.filter(w => selectedWellIds.has(w.well_id));
+                        const selEl = document.getElementById(`selected-${experiment}-ch${ch}`);
+                        const avEl  = document.getElementById(`available-${experiment}-ch${ch}`);
+                        if (selEl) selEl.previousElementSibling.textContent = `Selected Wells (${chSelected.length})`;
+                        if (avEl)  avEl.previousElementSibling.textContent  = `Available Wells (${chWells.length - chSelected.length})`;
+                    }
+                } else {
+                    // Update column headers for single-channel
+                    const selectedHeader = document.querySelector(`#selected-${experiment}`);
+                    const availableHeader = document.querySelector(`#available-${experiment}`);
+                    if (selectedHeader) selectedHeader.previousElementSibling.textContent = `Selected Wells (${selectedWells.length})`;
+                    if (availableHeader) availableHeader.previousElementSibling.textContent = `Available Wells (${expWells.length - selectedWells.length})`;
+>>>>>>> main
                 }
             });
         }
@@ -2462,10 +2557,10 @@
         function clearAllSelectedWells() {
             // Get a copy of all currently selected well IDs
             const selectedWells = Array.from(selectedWellIds);
-            
+
             // Clear the selected wells set first
             selectedWellIds.clear();
-            
+
             // Move all wells back to available columns and remove selected styling
             selectedWells.forEach(wellId => {
                 const wellItem = document.querySelector(`[data-well-id="${wellId}"]`);
@@ -2604,7 +2699,15 @@
             try {
                 const wellSelections = Array.from(selectedWellIds).map(wellId => {
                     const wellInfo = allWells.find(w => w.well_id === wellId);
+<<<<<<< fix/multi-channel-plot
                     return { experiment: wellInfo.experiment, well: wellInfo.well, channel: wellInfo.channel || 1 };
+=======
+                    return {
+                        experiment: wellInfo.experiment,
+                        well: wellInfo.well,
+                        channel: wellInfo.channel || 1
+                    };
+>>>>>>> main
                 });
 
                 const response = await fetch(`${API_BASE}/api/plot-data`, {
@@ -2612,7 +2715,24 @@
                     body: JSON.stringify({ well_selections: wellSelections })
                 });
                 const data = await response.json();
+<<<<<<< fix/multi-channel-plot
                 _lastGrowthData = data;
+=======
+                
+                // Prepare Plotly traces with experiment info
+                const traces = data.traces.map((trace, index) => {
+                    const wellName = trace.well_name || trace.well.split('_').slice(1).join('_');
+                    const chLabel = (trace.channel && trace.channel > 1) ? ` [Ch ${trace.channel}]` : '';
+                    return {
+                        x: trace.x,
+                        y: trace.y,
+                        mode: 'lines+markers',
+                        name: `${trace.experiment}: ${wellName}${chLabel} (${trace.condition})`,
+                        line: { width: 2 },
+                        marker: { size: 4 }
+                    };
+                });
+>>>>>>> main
 
                 const channelList = [...new Set(data.traces.map(t => t.channel || 1))].sort((a, b) => a - b);
                 const multi = channelList.length > 1;
@@ -2938,7 +3058,7 @@
                     const rep = allReplicates[key];
                     replicateWellMap[key] = [];
                     rep.wells.forEach(wellInfo => {
-                        allWellSelections.push({ experiment: wellInfo.experiment, well: wellInfo.well });
+                        allWellSelections.push({ experiment: wellInfo.experiment, well: wellInfo.well, channel: wellInfo.channel || 1 });
                         replicateWellMap[key].push(`${wellInfo.experiment}_${wellInfo.well}`);
                     });
                 });
@@ -3691,6 +3811,28 @@
             renderBlankAnalysisCard(window._lastBlankAnalysis);
         }
 
+        // Called when user accepts auto-detected blank wells.
+        // Injects them into _lastBlankAnalysis so the full card renders.
+        async function useAutoDetectedBlanks(wells) {
+            if (!wells || !wells.length) return;
+            const experiment = document.getElementById('fitting-experiment').value;
+            const well       = document.getElementById('fitting-well').value;
+            if (!experiment || !well) return;
+            try {
+                const resp = await fetch(`${API_BASE}/api/blank-analysis`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ experiment, well, override_blank_wells: wells }),
+                });
+                if (!resp.ok) return;
+                const data = await resp.json();
+                window._lastBlankAnalysis = data;
+                renderBlankAnalysisCard(data);
+            } catch (e) {
+                console.error('useAutoDetectedBlanks failed:', e);
+            }
+        }
+
         async function runBlankAnalysis() {
             const experiment = document.getElementById('fitting-experiment').value;
             const well = document.getElementById('fitting-well').value;
@@ -3717,10 +3859,22 @@
 
             if (!data.has_blank_wells) {
                 card.className = 'blank-analysis-card';
-                card.style.borderLeftColor = '#ff9800';
-                card.style.background = 'rgba(255,152,0,0.07)';
-                card.innerHTML = `<div class="ba-title">⚠ No blank wells found</div>
-                    <div>${data.message}</div>`;
+                const hasAuto = data.auto_detected_wells && data.auto_detected_wells.length > 0;
+                card.style.borderLeftColor = hasAuto ? '#4a90e2' : '#ff9800';
+                card.style.background      = hasAuto ? 'rgba(74,144,226,0.07)' : 'rgba(255,152,0,0.07)';
+                card.innerHTML = hasAuto
+                    ? `<div class="ba-title">🔍 No blank wells annotated — auto-detected candidates</div>
+                       <div style="margin-bottom:8px;">${data.message}</div>
+                       <button class="btn" style="padding:4px 14px; font-size:0.85em;"
+                           onclick="useAutoDetectedBlanks(${JSON.stringify(data.auto_detected_wells)})">
+                           Use these as blanks
+                       </button>
+                       <button class="btn" style="padding:4px 10px; font-size:0.85em; margin-left:6px; color:#6c757d;"
+                           onclick="document.getElementById('blank-analysis-card').style.display='none'">
+                           Dismiss
+                       </button>`
+                    : `<div class="ba-title">⚠ No blank wells found</div>
+                       <div>${data.message}</div>`;
                 card.style.display = '';
                 return;
             }
@@ -4045,6 +4199,20 @@
             updateClusteringRunBtn();
         }
 
+        function renderClusterBlankNotice(data) {
+            const notice = document.getElementById('cluster-blank-notice');
+            if (!data.blank_subtracted) { notice.style.display = 'none'; return; }
+            const src   = data.blank_source === 'auto' ? 'Auto-detected' : 'Annotated';
+            const wells = (data.blank_wells_used || []).join(', ') || '—';
+            notice.textContent = `🧪 Blank subtraction applied — ${src} blank wells: ${wells}`;
+            notice.style.display = 'block';
+        }
+
+        function onClusterBlankChange() {
+            const checked = document.getElementById('cluster-subtract-blank').checked;
+            document.getElementById('cluster-blank-method-row').style.display = checked ? 'flex' : 'none';
+        }
+
         function updateClusteringRunBtn() {
             const hasData = currentClusteringMode === 'file'
                 ? !!document.getElementById('clustering-file').files[0]
@@ -4139,6 +4307,10 @@
                 hclust_linkage: hLinkage,
                 dbscan_eps: dbscanEps,
                 dbscan_min_pts: dbscanMin,
+                subtract_blank:       document.getElementById('cluster-subtract-blank').checked,
+                blank_method:         document.getElementById('cluster-blank-method').value,
+                blank_range_thr:      parseFloat(document.getElementById('cluster-blank-range-thr').value),
+                blank_od_percentile:  parseFloat(document.getElementById('cluster-blank-od-pct').value),
             });
 
             document.getElementById('loading').style.display = 'flex';
@@ -4159,6 +4331,7 @@
                 _lastClusterData = data;
                 renderClusterGrid(data);
                 renderQualityPanel(data);
+                renderClusterBlankNotice(data);
                 // Reset panels that depend on a new run
                 document.getElementById('cluster-sweep-panel').style.display = 'none';
                 document.getElementById('cluster-compare-panel').style.display = _savedClusterings.length ? 'block' : 'none';
