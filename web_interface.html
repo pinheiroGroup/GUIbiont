@@ -2501,7 +2501,6 @@
                 `;
 
                 if (nChannels > 1) {
-<<<<<<< fix/multi-channel-plot
                     for (let ch = 1; ch <= nChannels; ch++) {
                         const chWells = expWells.filter(w => (w.channel || 1) === ch);
                         const chSelected = chWells.filter(w => selectedWellIds.has(w.well_id));
@@ -2515,23 +2514,6 @@
                     const avlEl = document.querySelector(`#available-${experiment}`);
                     if (selEl) selEl.previousElementSibling.textContent = `Selected Wells (${selectedWells.length})`;
                     if (avlEl) avlEl.previousElementSibling.textContent = `Available Wells (${expWells.length - selectedWells.length})`;
-=======
-                    // Update per-channel column headers
-                    for (let ch = 1; ch <= nChannels; ch++) {
-                        const chWells = expWells.filter(w => (w.channel || 1) === ch);
-                        const chSelected = chWells.filter(w => selectedWellIds.has(w.well_id));
-                        const selEl = document.getElementById(`selected-${experiment}-ch${ch}`);
-                        const avEl  = document.getElementById(`available-${experiment}-ch${ch}`);
-                        if (selEl) selEl.previousElementSibling.textContent = `Selected Wells (${chSelected.length})`;
-                        if (avEl)  avEl.previousElementSibling.textContent  = `Available Wells (${chWells.length - chSelected.length})`;
-                    }
-                } else {
-                    // Update column headers for single-channel
-                    const selectedHeader = document.querySelector(`#selected-${experiment}`);
-                    const availableHeader = document.querySelector(`#available-${experiment}`);
-                    if (selectedHeader) selectedHeader.previousElementSibling.textContent = `Selected Wells (${selectedWells.length})`;
-                    if (availableHeader) availableHeader.previousElementSibling.textContent = `Available Wells (${expWells.length - selectedWells.length})`;
->>>>>>> main
                 }
             });
         }
@@ -2699,15 +2681,7 @@
             try {
                 const wellSelections = Array.from(selectedWellIds).map(wellId => {
                     const wellInfo = allWells.find(w => w.well_id === wellId);
-<<<<<<< fix/multi-channel-plot
                     return { experiment: wellInfo.experiment, well: wellInfo.well, channel: wellInfo.channel || 1 };
-=======
-                    return {
-                        experiment: wellInfo.experiment,
-                        well: wellInfo.well,
-                        channel: wellInfo.channel || 1
-                    };
->>>>>>> main
                 });
 
                 const response = await fetch(`${API_BASE}/api/plot-data`, {
@@ -2715,25 +2689,7 @@
                     body: JSON.stringify({ well_selections: wellSelections })
                 });
                 const data = await response.json();
-<<<<<<< fix/multi-channel-plot
                 _lastGrowthData = data;
-=======
-                
-                // Prepare Plotly traces with experiment info
-                const traces = data.traces.map((trace, index) => {
-                    const wellName = trace.well_name || trace.well.split('_').slice(1).join('_');
-                    const chLabel = (trace.channel && trace.channel > 1) ? ` [Ch ${trace.channel}]` : '';
-                    return {
-                        x: trace.x,
-                        y: trace.y,
-                        mode: 'lines+markers',
-                        name: `${trace.experiment}: ${wellName}${chLabel} (${trace.condition})`,
-                        line: { width: 2 },
-                        marker: { size: 4 }
-                    };
-                });
->>>>>>> main
-
                 const channelList = [...new Set(data.traces.map(t => t.channel || 1))].sort((a, b) => a - b);
                 const multi = channelList.length > 1;
 
