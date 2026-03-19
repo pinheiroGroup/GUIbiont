@@ -556,6 +556,26 @@
             background: white;
         }
 
+        .channel-section {
+            border: 1px solid #c8d6e5;
+            border-radius: 6px;
+            margin: 12px 16px;
+            overflow: hidden;
+        }
+
+        .channel-section-header {
+            background: linear-gradient(135deg, #4a6fa5, #6c8ebf);
+            color: white;
+            font-weight: 600;
+            font-size: 13px;
+            padding: 8px 14px;
+            letter-spacing: 0.03em;
+        }
+
+        .channel-section .wells-grid-container {
+            padding: 12px;
+        }
+
         .well-item {
             padding: 8px 12px;
             border-bottom: 1px solid #f1f3f4;
@@ -1793,12 +1813,14 @@
                             <option value="16">16</option>
                             <option value="18">18</option>
                         </select>
+                        <button class="btn" id="split-channels-btn" onclick="toggleSplitChannels()" style="display:none;">📊 Split by Channel</button>
                         <button class="btn" onclick="toggleFullscreen('plot-growth')" id="fullscreen-growth-btn">🔍 Fullscreen</button>
                         <button class="btn" onclick="exportPlot('plot-growth')">💾 Export PNG</button>
                         <button class="btn" onclick="exportPlotSVG('plot-growth')">📊 Export SVG</button>
                     </div>
                 </div>
                 <div id="plot-growth" style="width: 100%; height: 700px;"></div>
+                <div id="plot-growth-split" style="display:none;"></div>
             </div>
 
             <!-- Fit Curve Tab Plot Container -->
@@ -1938,6 +1960,10 @@
         let allReplicates = {};
         let lastFitData = null;
         let lastReplicateTraces = [];
+        let _lastGrowthData = null;   // cached for split-by-channel view
+
+        // Per-channel colours for axis labels and trace tinting
+        const CHANNEL_AXIS_COLORS = { 1: '#2563eb', 2: '#dc2626', 3: '#16a34a' };
         let legendFontSize = parseInt(localStorage.getItem('legendFontSize') || '14');
         let axisTitleFontSize = parseInt(localStorage.getItem('axisTitleFontSize') || '14');
         let axisTickFontSize = parseInt(localStorage.getItem('axisTickFontSize') || '12');
@@ -2244,17 +2270,17 @@
         function displayWells(wells) {
             console.log('displayWells called with', wells.length, 'wells');
             console.log('Current selectedWellIds:', Array.from(selectedWellIds));
-            
+
             const wellsAccordion = document.getElementById('wells-accordion');
             const wellsGroup = document.getElementById('wells-group');
-            
+
             // Store which experiments are currently expanded
             const expandedExperiments = new Set();
             document.querySelectorAll('.experiment-header.active').forEach(header => {
                 const experimentTitle = header.querySelector('.experiment-title').textContent;
                 expandedExperiments.add(experimentTitle);
             });
-            
+
             // Group wells by experiment
             const experimentWells = {};
             wells.forEach(wellInfo => {
@@ -2263,10 +2289,10 @@
                 }
                 experimentWells[wellInfo.experiment].push(wellInfo);
             });
-            
+
             // Clear existing accordion
             wellsAccordion.innerHTML = '';
-            
+
             // Create accordion for each experiment
             Object.keys(experimentWells).forEach((experiment, index) => {
                 const expWells = experimentWells[experiment];
@@ -2356,7 +2382,7 @@
                     setTimeout(() => toggleExperiment(experiment), 100);
                 }
             });
-            
+
             wellsGroup.style.display = 'block';
             updateSelectedCount();
             buildReplicateList(wells);
@@ -2365,12 +2391,12 @@
             setTimeout(() => {
                 filterWellsAccordion();
             }, 150);
-            
+
             const experimentNames = Array.from(selectedExperiments).join(', ');
             document.getElementById('info').innerHTML = `📊 Experiments loaded: <strong>${experimentNames}</strong><br>Found ${wells.length} wells total. Click on experiment headers to expand/collapse. Click wells to select/deselect them.`;
             document.getElementById('info').className = 'info';
         }
-        
+
         function createWellItem(wellInfo, isSelected) {
             const channel = wellInfo.channel || 1;
             const nChannels = wellInfo.n_channels || 1;
@@ -2394,7 +2420,7 @@
             const header = document.querySelector(`[onclick="toggleExperiment('${experiment}')"]`);
             const content = document.getElementById(`content-${experiment}`);
             const icon = header.querySelector('.accordion-icon');
-            
+
             if (content.classList.contains('active')) {
                 content.classList.remove('active');
                 header.classList.remove('active');
@@ -2405,7 +2431,13 @@
                 icon.textContent = '▲';
             }
         }
-        
+
+        // Returns the DOM id of the selected/available well-list for a given experiment+channel.
+        function _wellColumnId(experiment, channel, type) {
+            const chEl = document.getElementById(`${type}-${experiment}-ch${channel}`);
+            return chEl ? `${type}-${experiment}-ch${channel}` : `${type}-${experiment}`;
+        }
+
         // Toggle individual well selection
         function _wellColumnId(experiment, channel, type) {
             // Returns the DOM id of the selected/available column for a well.
@@ -2436,11 +2468,11 @@
                 const selectedColumn = document.getElementById(_wellColumnId(experiment, channel, 'selected'));
                 selectedColumn.appendChild(wellItem);
             }
-            
+
             // Update headers and counts
             updateExperimentHeaders();
             updateSelectedCount();
-            
+
             // Update plot
             if (selectedWellIds.size > 0) {
                 plotGrowthCurves();
@@ -2448,7 +2480,7 @@
                 hidePlotAndStats();
             }
         }
-        
+
         // Update experiment headers with current counts
         function updateExperimentHeaders() {
             Object.keys(experimentInfo.wells.reduce((acc, well) => {
@@ -2469,21 +2501,19 @@
                 `;
 
                 if (nChannels > 1) {
-                    // Update per-channel column headers
                     for (let ch = 1; ch <= nChannels; ch++) {
                         const chWells = expWells.filter(w => (w.channel || 1) === ch);
                         const chSelected = chWells.filter(w => selectedWellIds.has(w.well_id));
-                        const selEl = document.getElementById(`selected-${experiment}-ch${ch}`);
-                        const avEl  = document.getElementById(`available-${experiment}-ch${ch}`);
-                        if (selEl) selEl.previousElementSibling.textContent = `Selected Wells (${chSelected.length})`;
-                        if (avEl)  avEl.previousElementSibling.textContent  = `Available Wells (${chWells.length - chSelected.length})`;
+                        const selList = document.getElementById(`selected-${experiment}-ch${ch}`);
+                        const avlList = document.getElementById(`available-${experiment}-ch${ch}`);
+                        if (selList) selList.previousElementSibling.textContent = `Selected Wells (${chSelected.length})`;
+                        if (avlList) avlList.previousElementSibling.textContent = `Available Wells (${chWells.length - chSelected.length})`;
                     }
                 } else {
-                    // Update column headers for single-channel
-                    const selectedHeader = document.querySelector(`#selected-${experiment}`);
-                    const availableHeader = document.querySelector(`#available-${experiment}`);
-                    if (selectedHeader) selectedHeader.previousElementSibling.textContent = `Selected Wells (${selectedWells.length})`;
-                    if (availableHeader) availableHeader.previousElementSibling.textContent = `Available Wells (${expWells.length - selectedWells.length})`;
+                    const selEl = document.querySelector(`#selected-${experiment}`);
+                    const avlEl = document.querySelector(`#available-${experiment}`);
+                    if (selEl) selEl.previousElementSibling.textContent = `Selected Wells (${selectedWells.length})`;
+                    if (avlEl) avlEl.previousElementSibling.textContent = `Available Wells (${expWells.length - selectedWells.length})`;
                 }
             });
         }
@@ -2595,103 +2625,177 @@
         }
 
         // Plot growth curves
+        // Build a Plotly layout with one y-axis per channel (up to 3).
+        // channelList: sorted array of channel numbers present in the data.
+        function buildMultiChannelLayout(channelList, title) {
+            const multi = channelList.length > 1;
+            const threeChannels = channelList.length >= 3;
+            const xDomainEnd = threeChannels ? 0.78 : 1.0;
+            const layout = {
+                title: { text: title, font: { size: 20, color: '#495057' } },
+                xaxis: {
+                    title: { text: 'Time (hours)', font: { size: axisTitleFontSize } },
+                    tickfont: { size: axisTickFontSize },
+                    gridcolor: '#e9ecef',
+                    domain: threeChannels ? [0, xDomainEnd] : [0, 1]
+                },
+                hovermode: 'x unified',
+                template: 'plotly_white',
+                legend: { orientation: 'h', xanchor: 'center', x: 0.5, y: -0.2, font: { size: legendFontSize } },
+                margin: { l: 70, r: multi ? (threeChannels ? 160 : 90) : 30, t: 80, b: 120 },
+                autosize: true
+            };
+            channelList.forEach((ch, i) => {
+                const axKey = i === 0 ? 'yaxis' : `yaxis${i + 1}`;
+                const color = CHANNEL_AXIS_COLORS[ch] || '#333';
+                layout[axKey] = {
+                    title: { text: `Ch ${ch} — OD`, font: { size: axisTitleFontSize, color } },
+                    tickfont: { size: axisTickFontSize, color },
+                    gridcolor: '#e9ecef',
+                };
+                if (i === 1) {
+                    layout[axKey].overlaying = 'y';
+                    layout[axKey].side = 'right';
+                    layout[axKey].anchor = 'x';
+                } else if (i === 2) {
+                    layout[axKey].overlaying = 'y';
+                    layout[axKey].side = 'right';
+                    layout[axKey].anchor = 'free';
+                    layout[axKey].position = xDomainEnd + 0.08;  // just outside the plot domain
+                }
+            });
+            if (!multi) layout.yaxis.title.text = 'Optical Density (OD)';
+            return layout;
+        }
+
+        // Return the Plotly yaxis ref ('y', 'y2', 'y3') for a channel given the ordered channel list.
+        function channelToYAxis(ch, channelList) {
+            const idx = channelList.indexOf(ch);
+            return idx === 0 ? 'y' : `y${idx + 1}`;
+        }
+
         async function plotGrowthCurves() {
             if (selectedWellIds.size === 0) return;
-
             showLoading();
-            
+
             try {
-                // Create well selections array
                 const wellSelections = Array.from(selectedWellIds).map(wellId => {
                     const wellInfo = allWells.find(w => w.well_id === wellId);
-                    return {
-                        experiment: wellInfo.experiment,
-                        well: wellInfo.well,
-                        channel: wellInfo.channel || 1
-                    };
+                    return { experiment: wellInfo.experiment, well: wellInfo.well, channel: wellInfo.channel || 1 };
                 });
-                
+
                 const response = await fetch(`${API_BASE}/api/plot-data`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        well_selections: wellSelections
-                    })
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ well_selections: wellSelections })
                 });
-                
                 const data = await response.json();
-                
-                // Prepare Plotly traces with experiment info
-                const traces = data.traces.map((trace, index) => {
+                _lastGrowthData = data;
+                const channelList = [...new Set(data.traces.map(t => t.channel || 1))].sort((a, b) => a - b);
+                const multi = channelList.length > 1;
+
+                const traces = data.traces.map(trace => {
+                    const ch = trace.channel || 1;
                     const wellName = trace.well_name || trace.well.split('_').slice(1).join('_');
-                    const chLabel = (trace.channel && trace.channel > 1) ? ` [Ch ${trace.channel}]` : '';
+                    const chLabel = multi ? ` [Ch ${ch}]` : '';
+                    const color = multi ? (CHANNEL_AXIS_COLORS[ch] || undefined) : undefined;
                     return {
-                        x: trace.x,
-                        y: trace.y,
+                        x: trace.x, y: trace.y,
                         mode: 'lines+markers',
                         name: `${trace.experiment}: ${wellName}${chLabel} (${trace.condition})`,
-                        line: { width: 2 },
-                        marker: { size: 4 }
+                        yaxis: channelToYAxis(ch, channelList),
+                        line: { width: 2, color },
+                        marker: { size: 4, color }
                     };
                 });
 
-                // Plot configuration
                 const experimentNames = Array.from(selectedExperiments).join(', ');
-                const layout = {
-                    title: {
-                        text: `Growth Curves - ${experimentNames} (${selectedWellIds.size} wells)`,
-                        font: { size: 20, color: '#495057' }
-                    },
-                    xaxis: {
-                        title: { text: 'Time (hours)', font: { size: axisTitleFontSize } },
-                        tickfont: { size: axisTickFontSize },
-                        gridcolor: '#e9ecef'
-                    },
-                    yaxis: {
-                        title: { text: 'Optical Density (OD)', font: { size: axisTitleFontSize } },
-                        tickfont: { size: axisTickFontSize },
-                        gridcolor: '#e9ecef'
-                    },
-                    hovermode: 'x unified',
-                    template: 'plotly_white',
-                    legend: {
-                        orientation: 'h',
-                        xanchor: 'center',
-                        x: 0.5,
-                        y: -0.2,
-                        font: { size: legendFontSize }
-                    },
-                    margin: { l: 60, r: 30, t: 80, b: 120 },
-                    autosize: true
-                };
+                const layout = buildMultiChannelLayout(
+                    channelList,
+                    `Growth Curves — ${experimentNames} (${selectedWellIds.size} wells)`
+                );
+                const config = { responsive: true, displayModeBar: true, modeBarButtonsToRemove: ['lasso2d', 'select2d'] };
 
-                const config = {
-                    responsive: true,
-                    displayModeBar: true,
-                    modeBarButtonsToRemove: ['lasso2d', 'select2d']
-                };
-
-                // Show containers and create plot
                 document.getElementById('plot-growth-container').style.display = 'block';
                 document.getElementById('stats-container').style.display = 'block';
-                
-                // Clear any existing plot and create new one
+                // Reset split view
+                document.getElementById('plot-growth').style.display = '';
+                document.getElementById('plot-growth-split').style.display = 'none';
+                const splitBtn = document.getElementById('split-channels-btn');
+                splitBtn.style.display = multi ? '' : 'none';
+                splitBtn.textContent = '📊 Split by Channel';
+
                 const plotDiv = document.getElementById('plot-growth');
                 Plotly.purge(plotDiv);
                 await Plotly.newPlot(plotDiv, traces, layout, config);
-                
-                // Display statistics
                 displayStats(data.stats);
-                
                 hideLoading();
-                
             } catch (error) {
                 console.error('Error plotting data:', error);
                 hideLoading();
                 showError('Error loading plot data');
             }
+        }
+
+        let _splitChannelsActive = false;
+
+        function toggleSplitChannels() {
+            _splitChannelsActive = !_splitChannelsActive;
+            const btn = document.getElementById('split-channels-btn');
+            if (_splitChannelsActive) {
+                btn.textContent = '📈 Combined View';
+                document.getElementById('plot-growth').style.display = 'none';
+                renderSplitChannels(_lastGrowthData);
+            } else {
+                btn.textContent = '📊 Split by Channel';
+                document.getElementById('plot-growth').style.display = '';
+                document.getElementById('plot-growth-split').style.display = 'none';
+            }
+        }
+
+        function renderSplitChannels(data) {
+            if (!data) return;
+            const splitDiv = document.getElementById('plot-growth-split');
+            splitDiv.innerHTML = '';
+            splitDiv.style.display = 'block';
+
+            const byChannel = {};
+            data.traces.forEach(trace => {
+                const ch = trace.channel || 1;
+                if (!byChannel[ch]) byChannel[ch] = [];
+                byChannel[ch].push(trace);
+            });
+
+            const config = { responsive: true, displayModeBar: true, modeBarButtonsToRemove: ['lasso2d', 'select2d'] };
+
+            Object.keys(byChannel).sort().forEach(ch => {
+                ch = parseInt(ch);
+                const color = CHANNEL_AXIS_COLORS[ch] || '#333';
+                const container = document.createElement('div');
+                container.style.cssText = `border-top: 3px solid ${color}; margin-top: 8px;`;
+                const plotEl = document.createElement('div');
+                plotEl.style.cssText = 'width:100%; height:500px;';
+                container.appendChild(plotEl);
+                splitDiv.appendChild(container);
+
+                const traces = byChannel[ch].map(trace => {
+                    const wellName = trace.well_name || trace.well.split('_').slice(1).join('_');
+                    return {
+                        x: trace.x, y: trace.y,
+                        mode: 'lines+markers',
+                        name: `${trace.experiment}: ${wellName} (${trace.condition})`,
+                        line: { width: 2 }, marker: { size: 4 }
+                    };
+                });
+                const layout = {
+                    title: { text: `Channel ${ch}`, font: { size: 16, color } },
+                    xaxis: { title: { text: 'Time (hours)', font: { size: axisTitleFontSize } }, tickfont: { size: axisTickFontSize }, gridcolor: '#e9ecef' },
+                    yaxis: { title: { text: `Ch ${ch} — OD`, font: { size: axisTitleFontSize, color } }, tickfont: { size: axisTickFontSize, color }, gridcolor: '#e9ecef' },
+                    hovermode: 'x unified', template: 'plotly_white',
+                    legend: { orientation: 'h', xanchor: 'center', x: 0.5, y: -0.25, font: { size: legendFontSize } },
+                    margin: { l: 70, r: 30, t: 50, b: 100 }, autosize: true
+                };
+                Plotly.newPlot(plotEl, traces, layout, config);
+            });
         }
 
         // Display statistics table
@@ -2787,9 +2891,10 @@
         function buildReplicateList(wells) {
             allReplicates = {};
             wells.forEach(wellInfo => {
-                const key = `${wellInfo.condition}|||${wellInfo.antibiotic}`;
+                const ch = wellInfo.channel || 1;
+                const key = `${wellInfo.condition}|||${wellInfo.antibiotic}|||ch${ch}`;
                 if (!allReplicates[key]) {
-                    allReplicates[key] = { label: `${wellInfo.condition} | ${wellInfo.antibiotic}`, wells: [] };
+                    allReplicates[key] = { label: `${wellInfo.condition} | ${wellInfo.antibiotic} | Ch${ch}`, wells: [], channel: ch };
                 }
                 allReplicates[key].wells.push(wellInfo);
             });
@@ -2927,15 +3032,22 @@
                 const showIndividual = document.getElementById('show-individual-wells').checked;
                 const plotTraces = [];
                 const stats = [];
-                const colors = ['#4facfe', '#e74c3c', '#2ecc71', '#e67e22', '#9b59b6', '#1abc9c', '#f39c12', '#3498db'];
+                const GROUP_COLORS = ['#4facfe', '#e74c3c', '#2ecc71', '#e67e22', '#9b59b6', '#1abc9c', '#f39c12', '#3498db'];
                 let colorIdx = 0;
+
+                // Collect unique channels across selected replicate groups for multi-axis
+                const repChannelList = [...new Set(
+                    [...selectedReplicateKeys].map(k => allReplicates[k].channel || 1)
+                )].sort((a, b) => a - b);
 
                 selectedReplicateKeys.forEach(key => {
                     const rep = allReplicates[key];
                     const groupTraces = replicateWellMap[key].map(id => traceMap[id]).filter(Boolean);
                     if (groupTraces.length === 0) return;
 
-                    const color = colors[colorIdx % colors.length];
+                    const repCh = rep.channel || 1;
+                    const yax = channelToYAxis(repCh, repChannelList);
+                    const color = GROUP_COLORS[colorIdx % GROUP_COLORS.length];
                     colorIdx++;
 
                     const avg = computeReplicateAverage(groupTraces);
@@ -2943,6 +3055,7 @@
                         x: avg.x, y: avg.y,
                         mode: 'lines+markers',
                         name: `${rep.label} (avg, n=${groupTraces.length})`,
+                        yaxis: yax,
                         line: { width: 3, color },
                         marker: { size: 5, color }
                     });
@@ -2963,6 +3076,7 @@
                                 x: trace.x, y: trace.y,
                                 mode: 'lines',
                                 name: trace.well,
+                                yaxis: yax,
                                 line: { width: 1, color, dash: 'dot' },
                                 opacity: 0.5
                             });
@@ -2970,22 +3084,7 @@
                     }
                 });
 
-                const layout = {
-                    title: { text: 'Growth Curves - Replicates', font: { size: 20, color: '#495057' } },
-                    xaxis: { title: { text: 'Time (hours)', font: { size: axisTitleFontSize } }, tickfont: { size: axisTickFontSize }, gridcolor: '#e9ecef' },
-                    yaxis: { title: { text: 'Optical Density (OD)', font: { size: axisTitleFontSize } }, tickfont: { size: axisTickFontSize }, gridcolor: '#e9ecef' },
-                    hovermode: 'x unified',
-                    template: 'plotly_white',
-                    legend: {
-                        orientation: 'h',
-                        xanchor: 'center',
-                        x: 0.5,
-                        y: -0.2,
-                        font: { size: legendFontSize }
-                    },
-                    margin: { l: 60, r: 30, t: 80, b: 120 },
-                    autosize: true
-                };
+                const layout = buildMultiChannelLayout(repChannelList, 'Growth Curves — Replicates');
                 const config = { responsive: true, displayModeBar: true, modeBarButtonsToRemove: ['lasso2d', 'select2d'] };
 
                 document.getElementById('plot-growth-container').style.display = 'block';
@@ -3624,11 +3723,12 @@
                 if (expInfo.wells) {
                     const repMap = {};
                     expInfo.wells.forEach(wellInfo => {
-                        const key = `${wellInfo.condition}|||${wellInfo.antibiotic}`;
+                        const ch = wellInfo.channel || 1;
+                        const key = `${wellInfo.condition}|||${wellInfo.antibiotic}|||ch${ch}`;
                         if (!repMap[key]) {
-                            repMap[key] = { label: `${wellInfo.condition} | ${wellInfo.antibiotic}`, wells: [] };
+                            repMap[key] = { label: `${wellInfo.condition} | ${wellInfo.antibiotic} | Ch${ch}`, wells: [] };
                         }
-                        repMap[key].wells.push({ experiment: selectedExperiment, well: wellInfo.well });
+                        repMap[key].wells.push({ experiment: selectedExperiment, well: wellInfo.well, channel: ch });
                     });
                     Object.entries(repMap)
                         .filter(([, rep]) => rep.wells.length >= 2)

@@ -340,6 +340,25 @@ function read_annotation_file(annotation_file::String)::DataFrame
     return annotations
 end
 
+function find_annotation_file(exp_dir::String, channel::Int)::Union{String, Nothing}
+    all_files = try readdir(exp_dir) catch; String[] end
+
+    # Look for annotation_channel_N_*.csv for this specific channel
+    prefix = "annotation_channel_$(channel)_"
+    candidates = filter(f -> startswith(f, prefix) && endswith(f, ".csv"), all_files)
+    isempty(candidates) || return joinpath(exp_dir, first(sort(candidates)))
+
+    # Only fall back to annotation_clean.csv when the experiment has NO
+    # channel-specific annotation files at all (single-channel experiment).
+    has_any_channel_ann = any(f -> occursin(r"^annotation_channel_\d+_", f), all_files)
+    if !has_any_channel_ann
+        fallback = joinpath(exp_dir, "annotation_clean.csv")
+        isfile(fallback) && return fallback
+    end
+
+    return nothing
+end
+
 # Return the set of well names marked as blank ("b") or excluded ("X"/"x")
 function get_blank_wells(annotations::DataFrame)
     blank_wells = Set{String}()
@@ -897,10 +916,10 @@ function router(req)
             body = String(req.body)
             request_data = JSON3.read(body)
             experiments = request_data.experiments
-            
+
             combined_wells = []
             combined_info = Dict("experiments" => experiments, "wells" => combined_wells)
-            
+
             for experiment in experiments
                 exp_dir = joinpath(CLEAN_DATA_PATH, experiment)
 
@@ -986,7 +1005,7 @@ function router(req)
                     println("Error loading experiment $experiment for multi-select: $e")
                 end
             end
-            
+
             return HTTP.Response(200, headers, JSON3.write(combined_info))
             
         elseif path == "/api/global-search" && HTTP.method(req) == "POST"
@@ -1360,21 +1379,17 @@ function router(req)
             calibration_file = "./cal_curve_avg.csv"
 
             try
-                # Group selections by experiment to load each file only once
-                exp_wells = Dict{String, Vector{String}}()
-                for sel in well_selections
-                    exp  = string(sel.experiment)
-                    well = string(sel.well)
-                    push!(get!(exp_wells, exp, String[]), well)
-                end
-
                 all_od_data   = Vector{Vector{Float64}}()
                 all_time_data = Vector{Vector{Float64}}()
 
-                for (exp, wells) in exp_wells
-                    data_file       = joinpath(CLEAN_DATA_PATH, exp, "data_channel_1.csv")
-                    annotation_file = joinpath(CLEAN_DATA_PATH, exp, "annotation_clean.csv")
-                    isfile(data_file) && isfile(annotation_file) || continue
+                for sel in well_selections
+                    exp     = string(sel.experiment)
+                    well    = string(sel.well)
+                    channel = Int(get(sel, :channel, 1))
+
+                    data_file       = joinpath(CLEAN_DATA_PATH, exp, "data_channel_$(channel).csv")
+                    annotation_file = find_annotation_file(joinpath(CLEAN_DATA_PATH, exp), channel)
+                    isfile(data_file) && annotation_file !== nothing || continue
 
                     growth_data   = CSV.read(data_file, DataFrame, header=1, silencewarnings=true)
                     annotations   = read_annotation_file(annotation_file)
@@ -1382,13 +1397,11 @@ function router(req)
                     blank_value   = compute_blank_value(growth_data, annotations)
                     col_names_str = string.(names(growth_data))
 
-                    for well in wells
-                        well in col_names_str || continue
-                        od = parse_od_column(growth_data, Symbol(well))
-                        od = max.(od .- blank_value, 0.01)
-                        push!(all_od_data, od)
-                        push!(all_time_data, time_numeric)
-                    end
+                    well in col_names_str || continue
+                    od = parse_od_column(growth_data, Symbol(well))
+                    od = max.(od .- blank_value, 0.01)
+                    push!(all_od_data, od)
+                    push!(all_time_data, time_numeric)
                 end
 
                 if isempty(all_od_data)
@@ -1433,7 +1446,7 @@ function router(req)
                     well       = selection.well
                     channel    = Int(get(selection, :channel, 1))
 
-                    data_file = joinpath(CLEAN_DATA_PATH, experiment, "data_channel_$(channel).csv")
+                    data_file       = joinpath(CLEAN_DATA_PATH, experiment, "data_channel_$(channel).csv")
                     annotation_file = find_annotation_file(joinpath(CLEAN_DATA_PATH, experiment), channel)
 
                     if isfile(data_file) && annotation_file !== nothing
@@ -1505,9 +1518,9 @@ function router(req)
                                         antibiotic = string(row.antibiotic)
                                     end
                                 end
-                                
+
                                 condition = join(condition_parts, " | ")
-                                
+
                                 # Calculate statistics
                                 valid_od = filter(!isnan, od_data)
                                 max_od = isempty(valid_od) ? 0.0 : maximum(valid_od)
@@ -1525,10 +1538,10 @@ function router(req)
                                 end
                                 
                                 push!(traces, Dict(
-                                    "well" => "$(experiment)_$(well)",
-                                    "experiment" => experiment,
+                                    "well"      => "$(experiment)_$(well)",
                                     "well_name" => well,
-                                    "channel" => channel,
+                                    "experiment" => experiment,
+                                    "channel"   => channel,
                                     "condition" => condition,
                                     "antibiotic" => antibiotic,
                                     "x" => time_numeric,
