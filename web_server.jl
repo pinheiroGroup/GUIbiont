@@ -680,82 +680,96 @@ function router(req)
             body = String(req.body)
             request_data = JSON3.read(body)
             experiments = request_data.experiments
-            
+
             combined_wells = []
             combined_info = Dict("experiments" => experiments, "wells" => combined_wells)
-            
+
             for experiment in experiments
-                data_file = joinpath(CLEAN_DATA_PATH, experiment, "data_channel_1.csv")
-                annotation_file = joinpath(CLEAN_DATA_PATH, experiment, "annotation_clean.csv")
-                
-                if isfile(data_file) && isfile(annotation_file)
-                    try
-                        growth_data = CSV.read(data_file, DataFrame, header=1, silencewarnings=true)
-                        annotations = CSV.read(annotation_file, DataFrame, header=false, silencewarnings=true, stringtype=String)
-                        
-                        # Rename columns - 5th column (index 5) should be antibiotic
-                        col_names = names(annotations)
-                        new_names = Symbol[]
-                        for i in 1:length(col_names)
-                            if i == 1
-                                push!(new_names, :well)
-                            elseif i == 2
-                                push!(new_names, :condition)
-                            elseif i == 5
-                                push!(new_names, :antibiotic)
-                            else
-                                push!(new_names, Symbol("col_$i"))
-                            end
-                        end
-                        rename!(annotations, new_names)
-                        
-                        # Filter wells
-                        all_well_columns = names(growth_data)[2:end]
-                        blank_wells = get_blank_wells(annotations)
-                        well_columns = filter(well -> !(string(well) in blank_wells), all_well_columns)
-                        
-                        # Add wells with experiment prefix
-                        for well in well_columns
-                            condition_parts = ["Unknown"]
-                            antibiotic = "Unknown"
-                            well_annotation = filter(row -> row.well == well, annotations)
-                            if nrow(well_annotation) > 0
-                                row = well_annotation[1, :]
-                                condition_parts = [string(row.condition)]
-                                
-                                # Add columns 3 and 4 if they exist and have values
-                                if "col_3" in names(annotations) && !ismissing(row.col_3) && string(row.col_3) != ""
-                                    push!(condition_parts, string(row.col_3))
-                                end
-                                if "col_4" in names(annotations) && !ismissing(row.col_4) && string(row.col_4) != ""
-                                    push!(condition_parts, string(row.col_4))
-                                end
-                                
-                                # Add antibiotic from column 5
-                                if !ismissing(row.antibiotic) && string(row.antibiotic) != ""
-                                    antibiotic = string(row.antibiotic)
-                                else
-                                    antibiotic = "None"
+                exp_dir = joinpath(CLEAN_DATA_PATH, experiment)
+
+                # Discover all channel files (data_channel_1.csv, data_channel_2.csv, ...)
+                channel_files = sort(filter(
+                    f -> occursin(r"^data_channel_\d+\.csv$", basename(f)) && isfile(f),
+                    [joinpath(exp_dir, "data_channel_$(ch).csv") for ch in 1:10]
+                ))
+                isempty(channel_files) && continue
+
+                n_channels = length(channel_files)
+
+                try
+                    for (ch_idx, ch_file) in enumerate(channel_files)
+                        ch_num = ch_idx   # 1-based channel number
+
+                        # Per-channel annotation (annotation_channel_N_*.csv) with fallback
+                        ann_file = find_annotation_file(exp_dir, ch_num)
+                        ann_file === nothing && continue   # skip channel if no annotation at all
+
+                        try
+                            annotations = CSV.read(ann_file, DataFrame, header=false, silencewarnings=true, stringtype=String)
+                            col_names = names(annotations)
+                            new_names = Symbol[]
+                            for i in 1:length(col_names)
+                                if i == 1;     push!(new_names, :well)
+                                elseif i == 2; push!(new_names, :condition)
+                                elseif i == 5; push!(new_names, :antibiotic)
+                                else;          push!(new_names, Symbol("col_$i"))
                                 end
                             end
-                            
-                            condition = join(condition_parts, " | ")
-                            
-                            push!(combined_wells, Dict(
-                                "experiment" => experiment,
-                                "well" => well,
-                                "well_id" => "$(experiment)_$(well)",
-                                "condition" => condition,
-                                "antibiotic" => antibiotic,
-                                "display_name" => "$(experiment): $(well) ($(condition)) [$(antibiotic)]"
-                            ))
+                            rename!(annotations, new_names)
+                            blank_wells = get_blank_wells(annotations)
+
+                            growth_data  = CSV.read(ch_file, DataFrame, header=1, silencewarnings=true)
+                            well_columns = filter(well -> !(string(well) in blank_wells),
+                                                  names(growth_data)[2:end])
+
+                            for well in well_columns
+                                condition_parts = ["Unknown"]
+                                antibiotic = "Unknown"
+                                well_annotation = filter(row -> row.well == well, annotations)
+                                if nrow(well_annotation) > 0
+                                    row = well_annotation[1, :]
+                                    condition_parts = [string(row.condition)]
+                                    if "col_3" in names(annotations) && !ismissing(row.col_3) && string(row.col_3) != ""
+                                        push!(condition_parts, string(row.col_3))
+                                    end
+                                    if "col_4" in names(annotations) && !ismissing(row.col_4) && string(row.col_4) != ""
+                                        push!(condition_parts, string(row.col_4))
+                                    end
+                                    if "antibiotic" in names(annotations) && !ismissing(row.antibiotic) && string(row.antibiotic) != ""
+                                        antibiotic = string(row.antibiotic)
+                                    else
+                                        antibiotic = "None"
+                                    end
+                                end
+                                condition = join(condition_parts, " | ")
+                                # well_id encodes channel so same well from different channels
+                                # can both be selected simultaneously
+                                well_id = n_channels > 1 ?
+                                    "$(experiment)_ch$(ch_num)_$(well)" :
+                                    "$(experiment)_$(well)"
+
+                                push!(combined_wells, Dict(
+                                    "experiment"  => experiment,
+                                    "well"        => well,
+                                    "channel"     => ch_num,
+                                    "n_channels"  => n_channels,
+                                    "well_id"     => well_id,
+                                    "condition"   => condition,
+                                    "antibiotic"  => antibiotic,
+                                    "display_name" => n_channels > 1 ?
+                                        "$(experiment): $(well) Ch$(ch_num) ($(condition)) [$(antibiotic)]" :
+                                        "$(experiment): $(well) ($(condition)) [$(antibiotic)]"
+                                ))
+                            end
+                        catch e
+                            println("Error loading channel $ch_num of $experiment: $e")
                         end
-                    catch e
-                        println("Error loading experiment $experiment for multi-select: $e")
                     end
+                catch e
+                    println("Error loading experiment $experiment for multi-select: $e")
                 end
             end
-            
+
             return HTTP.Response(200, headers, JSON3.write(combined_info))
             
         elseif path == "/api/global-search" && HTTP.method(req) == "POST"
