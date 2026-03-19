@@ -153,6 +153,25 @@ function read_annotation_file(annotation_file::String)::DataFrame
     return annotations
 end
 
+function find_annotation_file(exp_dir::String, channel::Int)::Union{String, Nothing}
+    all_files = try readdir(exp_dir) catch; String[] end
+
+    # Look for annotation_channel_N_*.csv for this specific channel
+    prefix = "annotation_channel_$(channel)_"
+    candidates = filter(f -> startswith(f, prefix) && endswith(f, ".csv"), all_files)
+    isempty(candidates) || return joinpath(exp_dir, first(sort(candidates)))
+
+    # Only fall back to annotation_clean.csv when the experiment has NO
+    # channel-specific annotation files at all (single-channel experiment).
+    has_any_channel_ann = any(f -> occursin(r"^annotation_channel_\d+_", f), all_files)
+    if !has_any_channel_ann
+        fallback = joinpath(exp_dir, "annotation_clean.csv")
+        isfile(fallback) && return fallback
+    end
+
+    return nothing
+end
+
 # Return the set of well names marked as blank ("b") or excluded ("X"/"x")
 function get_blank_wells(annotations::DataFrame)
     blank_wells = Set{String}()
@@ -1191,12 +1210,13 @@ function router(req)
                 
                 for selection in well_selections
                     experiment = selection.experiment
-                    well = selection.well
-                    
-                    data_file = joinpath(CLEAN_DATA_PATH, experiment, "data_channel_1.csv")
-                    annotation_file = joinpath(CLEAN_DATA_PATH, experiment, "annotation_clean.csv")
-                    
-                    if isfile(data_file) && isfile(annotation_file)
+                    well       = selection.well
+                    channel    = Int(get(selection, :channel, 1))
+
+                    data_file       = joinpath(CLEAN_DATA_PATH, experiment, "data_channel_$(channel).csv")
+                    annotation_file = find_annotation_file(joinpath(CLEAN_DATA_PATH, experiment), channel)
+
+                    if isfile(data_file) && annotation_file !== nothing
                         try
                             growth_data = CSV.read(data_file, DataFrame, header=1, silencewarnings=true)
                             annotations = CSV.read(annotation_file, DataFrame, header=false, silencewarnings=true, stringtype=String)
@@ -1260,14 +1280,14 @@ function router(req)
                                         push!(condition_parts, string(row[col_names[4]]))
                                     end
                                     
-                                    # Add antibiotic from column 5
-                                    if !ismissing(row.antibiotic) && string(row.antibiotic) != ""
+                                    # Add antibiotic from column 5 (only present in 7-column annotation_clean.csv)
+                                    if "antibiotic" in names(annotations) && !ismissing(row.antibiotic) && string(row.antibiotic) != ""
                                         antibiotic = string(row.antibiotic)
                                     end
                                 end
-                                
+
                                 condition = join(condition_parts, " | ")
-                                
+
                                 # Calculate statistics
                                 valid_od = filter(!isnan, od_data)
                                 max_od = isempty(valid_od) ? 0.0 : maximum(valid_od)
@@ -1285,8 +1305,10 @@ function router(req)
                                 end
                                 
                                 push!(traces, Dict(
-                                    "well" => "$(experiment)_$(well)",
+                                    "well"      => "$(experiment)_$(well)",
+                                    "well_name" => well,
                                     "experiment" => experiment,
+                                    "channel"   => channel,
                                     "condition" => condition,
                                     "antibiotic" => antibiotic,
                                     "x" => time_numeric,
