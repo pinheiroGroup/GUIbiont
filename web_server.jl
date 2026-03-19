@@ -1113,21 +1113,17 @@ function router(req)
             calibration_file = "./cal_curve_avg.csv"
 
             try
-                # Group selections by experiment to load each file only once
-                exp_wells = Dict{String, Vector{String}}()
-                for sel in well_selections
-                    exp  = string(sel.experiment)
-                    well = string(sel.well)
-                    push!(get!(exp_wells, exp, String[]), well)
-                end
-
                 all_od_data   = Vector{Vector{Float64}}()
                 all_time_data = Vector{Vector{Float64}}()
 
-                for (exp, wells) in exp_wells
-                    data_file       = joinpath(CLEAN_DATA_PATH, exp, "data_channel_1.csv")
-                    annotation_file = joinpath(CLEAN_DATA_PATH, exp, "annotation_clean.csv")
-                    isfile(data_file) && isfile(annotation_file) || continue
+                for sel in well_selections
+                    exp     = string(sel.experiment)
+                    well    = string(sel.well)
+                    channel = Int(get(sel, :channel, 1))
+
+                    data_file       = joinpath(CLEAN_DATA_PATH, exp, "data_channel_$(channel).csv")
+                    annotation_file = find_annotation_file(joinpath(CLEAN_DATA_PATH, exp), channel)
+                    isfile(data_file) && annotation_file !== nothing || continue
 
                     growth_data   = CSV.read(data_file, DataFrame, header=1, silencewarnings=true)
                     annotations   = read_annotation_file(annotation_file)
@@ -1135,13 +1131,11 @@ function router(req)
                     blank_value   = compute_blank_value(growth_data, annotations)
                     col_names_str = string.(names(growth_data))
 
-                    for well in wells
-                        well in col_names_str || continue
-                        od = parse_od_column(growth_data, Symbol(well))
-                        od = max.(od .- blank_value, 0.01)
-                        push!(all_od_data, od)
-                        push!(all_time_data, time_numeric)
-                    end
+                    well in col_names_str || continue
+                    od = parse_od_column(growth_data, Symbol(well))
+                    od = max.(od .- blank_value, 0.01)
+                    push!(all_od_data, od)
+                    push!(all_time_data, time_numeric)
                 end
 
                 if isempty(all_od_data)
