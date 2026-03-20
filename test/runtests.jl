@@ -8,11 +8,15 @@ using JSON3
 include(joinpath(@__DIR__, "..", "function_clean_synergy.jl"))
 
 # ---------------------------------------------------------------------------
-# Paths to real fixtures (raw input) and golden outputs (Clean_data)
+# Paths to fixtures — prefer committed test/fixtures, fall back to local data
 # ---------------------------------------------------------------------------
 
-const RAW_LG281    = joinpath(@__DIR__, "..", "raw_data", "LG281")
-const GOLDEN_LG281 = joinpath(@__DIR__, "..", "Clean_data", "LG281")
+const RAW_LG281 = let p = joinpath(@__DIR__, "fixtures", "raw", "LG281")
+    isdir(p) ? p : joinpath(@__DIR__, "..", "raw_data", "LG281")
+end
+const GOLDEN_LG281 = let p = joinpath(@__DIR__, "fixtures", "clean", "LG281")
+    isdir(p) ? p : joinpath(@__DIR__, "..", "Clean_data", "LG281")
+end
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -185,6 +189,15 @@ end
 
 const BASE_URL = get(ENV, "SERVER_URL", "http://localhost:9090")
 
+function server_available()
+    try
+        HTTP.get("$BASE_URL/"; connect_timeout=2, readtimeout=2, status_exception=false)
+        return true
+    catch
+        return false
+    end
+end
+
 function get_json(path)
     r = HTTP.get("$BASE_URL$path"; status_exception=false)
     return r.status, JSON3.read(String(r.body))
@@ -204,6 +217,10 @@ const SINGLE_CH_EXP  = "LG166"
 const SINGLE_CH_WELL = "A3"
 const MULTI_CH_EXP   = "LG298"
 const MULTI_CH_WELLS = Dict(1 => "A1", 2 => "C1", 3 => "E1")
+
+if !server_available()
+    @info "Server not reachable at $BASE_URL — skipping API tests. Start the server to run them."
+else
 
 @testset "web_server.jl API" begin
 
@@ -293,4 +310,5 @@ const MULTI_CH_WELLS = Dict(1 => "A1", 2 => "C1", 3 => "E1")
         @test occursin("<html", lowercase(String(r.body)))
     end
 
-end
+end # @testset "web_server.jl API"
+end # if server_available()
