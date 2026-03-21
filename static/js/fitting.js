@@ -83,38 +83,6 @@ async function fitReplicateAverage() {
     }
 }
 
-// Initialize the app when page loads
-window.addEventListener('load', init);
-
-// Handle window resize
-window.addEventListener('resize', () => {
-    if (isFullscreen) {
-        // In fullscreen mode, find the currently active plot and resize it
-        const growthContainer = document.getElementById('plot-growth-container');
-        const fittingContainer = document.getElementById('plot-fitting-container');
-        
-        let activePlotDiv = null;
-        if (growthContainer && growthContainer.classList.contains('fullscreen-plot')) {
-            activePlotDiv = document.getElementById('plot-growth');
-        } else if (fittingContainer && fittingContainer.classList.contains('fullscreen-plot')) {
-            activePlotDiv = document.getElementById('plot-fitting');
-        }
-        
-        if (activePlotDiv && typeof Plotly !== 'undefined') {
-            const newWidth = window.innerWidth;
-            const newHeight = window.innerHeight - 80;
-            
-            Plotly.relayout(activePlotDiv, {
-                width: newWidth,
-                height: newHeight
-            });
-        }
-    } else {
-        resizePlot();
-    }
-});
-
-// Fullscreen functionality
 function loadFittingExperiments() {
     const experimentSelect = document.getElementById('fitting-experiment');
     

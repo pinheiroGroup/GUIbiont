@@ -245,5 +245,26 @@ Object.assign(window, {
     runClusterComparison, renderComparisonResult, hexToRgba,
 });
 
+// Handle window resize — fullscreen plots need manual relayout, others use resizePlot
+window.addEventListener('resize', () => {
+    if (state.isFullscreen) {
+        const growthContainer   = document.getElementById('plot-growth-container');
+        const fittingContainer  = document.getElementById('plot-fitting-container');
+        let activePlotDiv = null;
+        if (growthContainer  && growthContainer.classList.contains('fullscreen-plot'))
+            activePlotDiv = document.getElementById('plot-growth');
+        else if (fittingContainer && fittingContainer.classList.contains('fullscreen-plot'))
+            activePlotDiv = document.getElementById('plot-fitting');
+        if (activePlotDiv && typeof Plotly !== 'undefined') {
+            Plotly.relayout(activePlotDiv, {
+                width:  window.innerWidth,
+                height: window.innerHeight - 80,
+            });
+        }
+    } else {
+        resizePlot();
+    }
+});
+
 // Start the application
 window.addEventListener('load', init);
