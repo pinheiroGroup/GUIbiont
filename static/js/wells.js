@@ -167,12 +167,6 @@ function toggleExperiment(experiment) {
     }
 }
 
-// Returns the DOM id of the selected/available well-list for a given experiment+channel.
-function _wellColumnId(experiment, channel, type) {
-    const chEl = document.getElementById(`${type}-${experiment}-ch${channel}`);
-    return chEl ? `${type}-${experiment}-ch${channel}` : `${type}-${experiment}`;
-}
-
 // Toggle individual well selection
 function _wellColumnId(experiment, channel, type) {
     // Returns the DOM id of the selected/available column for a well.
@@ -311,8 +305,8 @@ function filterWellsAccordion() {
     let matchingCount = 0;
     
     // Show/hide wells based on filters
-    const state.allWells = document.querySelectorAll('.well-item');
-    state.allWells.forEach(wellItem => {
+    const allWellItems = document.querySelectorAll('.well-item');
+    allWellItems.forEach(wellItem => {
         const conditionText = wellItem.dataset.condition;
         const antibioticText = wellItem.dataset.antibiotic;
         
