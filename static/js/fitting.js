@@ -189,7 +189,7 @@ function onFittingModelChange() {
         ${desc  ? `<div class="mi-description">${desc}</div>` : ''}
         ${refHtml}
     `;
-    card.style.display = '';
+    card.style.display = 'block';
 }
 
 function loadFittingExperiments() {
