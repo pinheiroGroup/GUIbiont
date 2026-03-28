@@ -1,5 +1,10 @@
 import { state, API_BASE } from './state.js';
 
+// Models pre-checked in "compare" mode by default
+const DEFAULT_COMPARE_MODELS = new Set([
+    'aHPM', 'logistic', 'gompertz', 'baranyi_richards', 'NL_Gompertz', 'NL_logistic'
+]);
+
 // ---------------------------------------------------------------------------
 // Batch fit tab — experiment / well selection
 // ---------------------------------------------------------------------------
@@ -10,12 +15,14 @@ async function initBatchFitTab() {
 }
 
 async function loadBatchFitModels() {
-    const sel = document.getElementById('batch-fit-model');
     try {
         const r = await fetch(`${API_BASE}/api/models`);
         if (!r.ok) return;
         const models = await r.json();
-        sel.innerHTML = '<option value="auto">Auto — best model by AICc</option>';
+
+        // Single-model dropdown
+        const sel = document.getElementById('batch-fit-model');
+        sel.innerHTML = '';
         models.forEach(m => {
             const opt = document.createElement('option');
             opt.value = m.name;
@@ -23,9 +30,37 @@ async function loadBatchFitModels() {
             if (m.name === 'aHPM') opt.selected = true;
             sel.appendChild(opt);
         });
+
+        // Multi-model checklist
+        const grid = document.getElementById('batch-model-checkboxes');
+        grid.innerHTML = '';
+        models.forEach(m => {
+            const label = document.createElement('label');
+            label.className = 'batch-model-cb-label';
+            const checked = DEFAULT_COMPARE_MODELS.has(m.name) ? 'checked' : '';
+            label.innerHTML = `
+                <input type="checkbox" class="batch-model-cb" value="${m.name}" ${checked}>
+                <span>${m.name}</span><span class="batch-model-nparams">${m.param_names.length}p</span>
+            `;
+            grid.appendChild(label);
+        });
     } catch (e) {
         console.error('Failed to load models for batch fit:', e);
     }
+}
+
+function onBatchModeChange() {
+    const mode = document.querySelector('input[name="batch-fit-mode"]:checked').value;
+    document.getElementById('batch-single-model-wrap').style.display = mode === 'single' ? 'block' : 'none';
+    document.getElementById('batch-multi-model-wrap').style.display  = mode === 'multi'  ? 'block' : 'none';
+}
+
+function selectAllBatchModels() {
+    document.querySelectorAll('.batch-model-cb').forEach(cb => cb.checked = true);
+}
+
+function clearAllBatchModels() {
+    document.querySelectorAll('.batch-model-cb').forEach(cb => cb.checked = false);
 }
 
 async function loadBatchFitExperiments() {
@@ -104,7 +139,7 @@ function clearAllBatchWells() {
 
 async function runBatchFit() {
     const experiment = document.getElementById('batch-fit-experiment').value;
-    const model_name = document.getElementById('batch-fit-model').value || 'aHPM';
+    const mode = document.querySelector('input[name="batch-fit-mode"]:checked').value;
     const wells = Array.from(document.querySelectorAll('.batch-well-cb:checked')).map(cb => cb.value);
     const runBtn = document.getElementById('batch-fit-run-btn');
     const progressEl = document.getElementById('batch-fit-progress');
@@ -112,6 +147,20 @@ async function runBatchFit() {
     if (!experiment || wells.length === 0) {
         alert('Please select an experiment and at least one well.');
         return;
+    }
+
+    // Build model payload depending on mode
+    let modelPayload = {};
+    if (mode === 'single') {
+        modelPayload.model_name = document.getElementById('batch-fit-model').value || 'aHPM';
+    } else {
+        const selected = Array.from(document.querySelectorAll('.batch-model-cb:checked')).map(cb => cb.value);
+        if (selected.length === 0) { alert('Select at least one model to compare.'); return; }
+        if (selected.length === 1) {
+            modelPayload.model_name = selected[0];
+        } else {
+            modelPayload.model_names = selected;
+        }
     }
 
     runBtn.disabled = true;
@@ -127,7 +176,7 @@ async function runBatchFit() {
             body: JSON.stringify({
                 experiment,
                 wells,
-                model_name,
+                ...modelPayload,
                 blank_subtraction: document.getElementById('batch-fit-blank-subtraction').checked,
                 blank_method: document.getElementById('batch-fit-blank-method').value,
             }),
@@ -158,13 +207,16 @@ async function runBatchFit() {
 
 function displayBatchResults(data) {
     const resultsDiv = document.getElementById('batch-fit-results');
-    const { experiment, model, summary, results } = data;
+    const { experiment, model, model_names, summary, results } = data;
+    const modelLabel = model === 'multi'
+        ? `AICc from: ${(model_names || []).join(', ')}`
+        : model;
 
     // Summary bar
     const summaryHtml = `
         <div class="batch-summary-bar">
             <span><strong>Experiment:</strong> ${experiment}</span>
-            <span><strong>Model:</strong> ${model === 'auto' ? 'Auto (AICc)' : model}</span>
+            <span><strong>Model:</strong> ${modelLabel}</span>
             <span class="batch-stat-ok">✓ ${summary.success} fitted</span>
             ${summary.failed > 0 ? `<span class="batch-stat-err">✗ ${summary.failed} failed</span>` : ''}
             <button class="btn" style="margin-left:auto;" onclick="downloadBatchCSV()">📥 Download CSV</button>
@@ -276,5 +328,6 @@ export {
     initBatchFitTab, loadBatchFitModels, loadBatchFitExperiments,
     onBatchExperimentChange, updateBatchWellCount,
     selectAllBatchWells, clearAllBatchWells,
+    onBatchModeChange, selectAllBatchModels, clearAllBatchModels,
     runBatchFit, displayBatchResults, downloadBatchCSV,
 };

@@ -852,14 +852,24 @@ function router(req)
 
             experiment     = string(request_data.experiment)
             model_name     = string(get(request_data, :model_name, "aHPM"))
+            # model_names: non-empty array triggers multi-model AICc comparison
+            model_names_req = haskey(request_data, :model_names) ?
+                String[string(m) for m in request_data.model_names] : String[]
             subtract_blank = Bool(get(request_data, :blank_subtraction, false))
             blank_method   = string(get(request_data, :blank_method, "pointbypoint"))
             # "wells" is optional — if omitted, fit all non-blank wells
             requested_wells = haskey(request_data, :wells) ?
                 String[string(w) for w in request_data.wells] : nothing
 
-            if model_name != "auto" && !haskey(MODEL_REGISTRY, model_name)
-                return HTTP.Response(400, headers, JSON3.write(Dict("error" => "Unknown model: $model_name")))
+            if isempty(model_names_req)
+                if !haskey(MODEL_REGISTRY, model_name)
+                    return HTTP.Response(400, headers, JSON3.write(Dict("error" => "Unknown model: $model_name")))
+                end
+            else
+                unknown = filter(m -> !haskey(MODEL_REGISTRY, m), model_names_req)
+                if !isempty(unknown)
+                    return HTTP.Response(400, headers, JSON3.write(Dict("error" => "Unknown models: $(join(unknown, ", "))")))
+                end
             end
 
             try
@@ -909,6 +919,7 @@ function router(req)
                             blank_timeseries = blank_ts_valid,
                             blank_well_names = blank_well_names,
                             model_name       = model_name,
+                            model_names      = model_names_req,
                         )
                         push!(results, fit_result)
                     catch e
@@ -917,8 +928,9 @@ function router(req)
                 end
 
                 return HTTP.Response(200, headers, JSON3.write(Dict(
-                    "experiment" => experiment,
-                    "model"      => model_name,
+                    "experiment"   => experiment,
+                    "model"        => isempty(model_names_req) ? model_name : "multi",
+                    "model_names"  => isempty(model_names_req) ? [model_name] : model_names_req,
                     "results"    => results,
                     "summary"    => Dict(
                         "total"   => length(wells_to_fit),

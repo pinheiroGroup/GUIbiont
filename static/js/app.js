@@ -24,6 +24,7 @@ import { loadRawExperiments, cleanExperimentData } from './cleaning.js';
 import { initBatchFitTab, loadBatchFitModels, loadBatchFitExperiments,
          onBatchExperimentChange, updateBatchWellCount,
          selectAllBatchWells, clearAllBatchWells,
+         onBatchModeChange, selectAllBatchModels, clearAllBatchModels,
          runBatchFit, displayBatchResults, downloadBatchCSV } from './batch-fit.js';
 import { setClusteringMode, populateClusteringExperiments,
          selectAllClusteringExperiments, clearAllClusteringExperiments,
@@ -255,6 +256,7 @@ Object.assign(window, {
     initBatchFitTab, loadBatchFitModels, loadBatchFitExperiments,
     onBatchExperimentChange, updateBatchWellCount,
     selectAllBatchWells, clearAllBatchWells,
+    onBatchModeChange, selectAllBatchModels, clearAllBatchModels,
     runBatchFit, displayBatchResults, downloadBatchCSV,
 });
 

@@ -396,6 +396,20 @@ else
         @test Int(body[:summary][:success]) >= 1
     end
 
+    @testset "POST /api/batch-fit — multi-model AICc selection" begin
+        status, body = post_json("/api/batch-fit",
+                                 Dict("experiment"   => SINGLE_CH_EXP,
+                                      "wells"        => [SINGLE_CH_WELL],
+                                      "model_names"  => ["logistic", "gompertz"]))
+        @test status == 200
+        @test Int(body[:summary][:success]) >= 1
+        r = first(body[:results])
+        # best model should be one of the two candidates
+        @test string(r[:model]) in ["logistic", "gompertz"]
+        @test haskey(r, :aic)
+        @test string(body[:model]) == "multi"
+    end
+
     @testset "POST /api/batch-fit — unknown model returns 400" begin
         status, body = post_json("/api/batch-fit",
                                  Dict("experiment" => SINGLE_CH_EXP,

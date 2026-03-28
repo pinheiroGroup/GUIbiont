@@ -16,6 +16,7 @@ function fit_well_data(
     blank_timeseries::Vector{Float64} = Float64[],
     blank_well_names::Vector{String} = String[],
     model_name::String = "aHPM",
+    model_names::Vector{String} = String[],
 )
     if subtract_blank && blank_value > 0.0
         if blank_method == "pointbypoint" && length(blank_timeseries) == length(od_raw)
@@ -45,10 +46,9 @@ function fit_well_data(
 
     data = GrowthData(reshape(od_for_fit, 1, :), time_numeric, [label])
 
-    # "auto" tries a curated set of models; kinbiont_fit picks best by AICc.
-    if model_name == "auto"
-        _auto_candidates = ["aHPM", "logistic", "gompertz", "baranyi_richards", "NL_Gompertz", "NL_logistic"]
-        models = [MODEL_REGISTRY[m] for m in _auto_candidates if haskey(MODEL_REGISTRY, m)]
+    # Multi-model: compare a set of models and pick the best by AICc.
+    if !isempty(model_names)
+        models = [MODEL_REGISTRY[m] for m in model_names if haskey(MODEL_REGISTRY, m)]
         spec = ModelSpec(
             models,
             [fill(1.0, length(m.param_names)) for m in models];
