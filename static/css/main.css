@@ -1502,3 +1502,105 @@
                 font-size: 16px; /* Prevents zoom on iOS */
             }
         }
+
+        /* ------------------------------------------------------------------ */
+        /* Batch fitting                                                        */
+        /* ------------------------------------------------------------------ */
+
+        .batch-well-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            max-height: 220px;
+            overflow-y: auto;
+            padding: 8px;
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+        }
+
+        .batch-well-label {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 3px 8px;
+            background: white;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            font-size: 12.5px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .batch-well-label:hover { border-color: #4facfe; }
+
+        .batch-well-name { font-weight: 600; font-family: monospace; }
+
+        .batch-well-cond { color: #6c757d; font-size: 11px; }
+
+        .batch-summary-bar {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+            padding: 10px 14px;
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            margin-bottom: 12px;
+            font-size: 13.5px;
+        }
+
+        .batch-stat-ok  { color: #2f9e44; font-weight: 600; }
+        .batch-stat-err { color: #c92a2a; font-weight: 600; }
+
+        .batch-model-tag {
+            display: inline-block;
+            font-size: 11px;
+            background: #e7f5ff;
+            color: #1971c2;
+            border-radius: 3px;
+            padding: 1px 6px;
+            font-family: monospace;
+        }
+
+        .batch-table-wrap {
+            overflow-x: auto;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+        }
+
+        .batch-results-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        .batch-results-table th {
+            background: #f1f3f5;
+            padding: 8px 10px;
+            text-align: left;
+            font-weight: 600;
+            border-bottom: 2px solid #dee2e6;
+            white-space: nowrap;
+        }
+
+        .batch-results-table td {
+            padding: 6px 10px;
+            border-bottom: 1px solid #f1f3f5;
+            font-family: monospace;
+            font-size: 12.5px;
+        }
+
+        .batch-results-table tr:hover td { background: #f8f9fa; }
+
+        .batch-errors {
+            margin-top: 12px;
+            padding: 10px 13px;
+            background: rgba(201, 42, 42, 0.06);
+            border-left: 3px solid #c92a2a;
+            border-radius: 6px;
+            font-size: 12.5px;
+        }
+
+        .batch-errors ul { margin: 6px 0 0 16px; }

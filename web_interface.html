@@ -20,6 +20,7 @@
             <button class="tab-button" onclick="switchTab('plot-growth')">📊 Plot Growth</button>
             <button class="tab-button" onclick="switchTab('fit-curve')">🧮 Fit Curve</button>
             <button class="tab-button" onclick="switchTab('clustering')">🔵 Clustering</button>
+            <button class="tab-button" onclick="switchTab('batch-fit')">⚡ Batch Fit</button>
         </div>
 
         <div class="controls">
@@ -521,6 +522,64 @@
                     </div>
                     <div id="compare-result"></div>
                 </div>
+            </div>
+
+            <!-- Batch Fit Tab Content -->
+            <div id="batch-fit-content" class="tab-content">
+                <div class="control-group" id="batch-fitting-group">
+                    <label>⚡ Batch Fitting</label>
+                    <div class="fitting-container">
+                        <p class="fitting-description">Select an experiment and wells, choose a growth model, and fit all selected wells at once. Download results as a CSV table.</p>
+
+                        <div class="fitting-controls">
+                            <div class="fitting-selectors">
+                                <select id="batch-fit-experiment" class="fitting-select" onchange="onBatchExperimentChange()">
+                                    <option value="">Select Experiment</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="model-selector-row" style="margin-top:12px;">
+                            <label for="batch-fit-model" class="model-selector-label">Model:</label>
+                            <select id="batch-fit-model" class="fitting-select model-select">
+                                <option value="auto">Auto — best model by AICc</option>
+                                <option value="aHPM" selected>aHPM (4 params)</option>
+                            </select>
+                        </div>
+
+                        <div style="margin-top: 8px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
+                            <label style="display: flex; align-items: center; gap: 8px; font-size: 0.9em; cursor: pointer;">
+                                <input type="checkbox" id="batch-fit-blank-subtraction" onchange="document.getElementById('batch-fit-blank-method-wrap').style.display = this.checked ? 'flex' : 'none'">
+                                Blank subtraction
+                            </label>
+                            <div id="batch-fit-blank-method-wrap" style="display: none; align-items: center; gap: 6px; font-size: 0.9em;">
+                                <label for="batch-fit-blank-method">Method:</label>
+                                <select id="batch-fit-blank-method" style="font-size: 0.9em; padding: 2px 6px;">
+                                    <option value="pointbypoint" selected>Point-by-point</option>
+                                    <option value="shift">Shift minimum</option>
+                                    <option value="clip">Clip to zero</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div style="margin-top: 14px;">
+                            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+                                <span style="font-size: 0.9em; font-weight: 500; color: #495057;">Wells:</span>
+                                <button class="btn" style="padding: 3px 10px; font-size: 0.82em;" onclick="selectAllBatchWells()">Select all</button>
+                                <button class="btn" style="padding: 3px 10px; font-size: 0.82em;" onclick="clearAllBatchWells()">Clear</button>
+                                <span id="batch-fit-well-count" style="font-size: 0.85em; color: #6c757d;"></span>
+                            </div>
+                            <div id="batch-fit-wells" class="batch-well-grid"></div>
+                        </div>
+
+                        <div style="margin-top: 14px; display: flex; align-items: center; gap: 12px;">
+                            <button class="btn fit-btn" id="batch-fit-run-btn" onclick="runBatchFit()" disabled>⚡ Run Batch Fit</button>
+                            <span id="batch-fit-progress" style="display:none; font-size: 0.9em; color: #6c757d;"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="batch-fit-results" style="display: none; margin-top: 20px; padding: 0 5px;"></div>
             </div>
 
             <div id="loading" class="loading" style="display: none;">

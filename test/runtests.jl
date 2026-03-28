@@ -368,6 +368,49 @@ else
         @test haskey(body, :error)
     end
 
+    @testset "POST /api/batch-fit — explicit model" begin
+        status, body = post_json("/api/batch-fit",
+                                 Dict("experiment" => SINGLE_CH_EXP,
+                                      "wells"      => [SINGLE_CH_WELL, "A4"],
+                                      "model_name" => "logistic"))
+        @test status == 200
+        @test haskey(body, :results)
+        @test haskey(body, :summary)
+        @test Int(body[:summary][:total]) == 2
+        @test Int(body[:summary][:success]) >= 1
+        r = first(body[:results])
+        @test haskey(r, :well)
+        @test haskey(r, :parameters)
+        @test haskey(r, :param_names)
+        @test haskey(r, :model)
+        @test haskey(r, :stationary_phase_start)
+        @test string(r[:model]) == "logistic"
+    end
+
+    @testset "POST /api/batch-fit — all wells (no wells key)" begin
+        status, body = post_json("/api/batch-fit",
+                                 Dict("experiment" => SINGLE_CH_EXP,
+                                      "model_name" => "logistic"))
+        @test status == 200
+        @test Int(body[:summary][:total]) > 2
+        @test Int(body[:summary][:success]) >= 1
+    end
+
+    @testset "POST /api/batch-fit — unknown model returns 400" begin
+        status, body = post_json("/api/batch-fit",
+                                 Dict("experiment" => SINGLE_CH_EXP,
+                                      "model_name" => "not_a_real_model"))
+        @test status == 400
+        @test haskey(body, :error)
+    end
+
+    @testset "POST /api/batch-fit — unknown experiment returns 404" begin
+        status, body = post_json("/api/batch-fit",
+                                 Dict("experiment" => "DOES_NOT_EXIST_XYZ"))
+        @test status == 404
+        @test haskey(body, :error)
+    end
+
     @testset "GET / serves HTML" begin
         r = HTTP.get("$BASE_URL/"; status_exception=false)
         @test r.status == 200

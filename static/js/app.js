@@ -21,6 +21,10 @@ import { toggleFullscreen, handleEscapeKey, exportPlot, exportPlotSVG,
 import { debouncedGlobalSearch, globalSearchExperiments, displayGlobalSearchResults,
          selectFromSearch, clearGlobalSearch } from './search.js';
 import { loadRawExperiments, cleanExperimentData } from './cleaning.js';
+import { initBatchFitTab, loadBatchFitModels, loadBatchFitExperiments,
+         onBatchExperimentChange, updateBatchWellCount,
+         selectAllBatchWells, clearAllBatchWells,
+         runBatchFit, displayBatchResults, downloadBatchCSV } from './batch-fit.js';
 import { setClusteringMode, populateClusteringExperiments,
          selectAllClusteringExperiments, clearAllClusteringExperiments,
          onClusteringFileChange, updateClusteringRunBtn, toggleClusteringAdvanced,
@@ -44,6 +48,7 @@ async function init() {
     loadFittingExperiments();
     loadFittingModels();
     loadRawExperiments();
+    initBatchFitTab();
 }
 
 async function applyConfig() {
@@ -246,6 +251,11 @@ Object.assign(window, {
     renderQualityPanel, runClusterSweep, renderSweepPanel,
     saveCurrentClustering, clearSavedClusterings, refreshSavedClusteringSelects,
     runClusterComparison, renderComparisonResult, hexToRgba,
+    // Batch fitting
+    initBatchFitTab, loadBatchFitModels, loadBatchFitExperiments,
+    onBatchExperimentChange, updateBatchWellCount,
+    selectAllBatchWells, clearAllBatchWells,
+    runBatchFit, displayBatchResults, downloadBatchCSV,
 });
 
 // Handle window resize — fullscreen plots need manual relayout, others use resizePlot

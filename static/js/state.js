@@ -13,6 +13,7 @@ export const state = {
     allReplicates:         {},
     lastFitData:           null,
     lastReplicateTraces:   [],
+    lastBatchFitData:      null,
     _lastGrowthData:       null,
     _splitChannelsActive:  false,
     isFullscreen:          false,

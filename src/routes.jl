@@ -845,6 +845,94 @@ function router(req)
                 return HTTP.Response(500, headers, JSON3.write(Dict("error" => "Replicate fitting failed: $e")))
             end
 
+        elseif path == "/api/batch-fit" && HTTP.method(req) == "POST"
+            # POST /api/batch-fit - Fit multiple wells from a cleaned experiment
+            body = String(req.body)
+            request_data = JSON3.read(body)
+
+            experiment     = string(request_data.experiment)
+            model_name     = string(get(request_data, :model_name, "aHPM"))
+            subtract_blank = Bool(get(request_data, :blank_subtraction, false))
+            blank_method   = string(get(request_data, :blank_method, "pointbypoint"))
+            # "wells" is optional — if omitted, fit all non-blank wells
+            requested_wells = haskey(request_data, :wells) ?
+                String[string(w) for w in request_data.wells] : nothing
+
+            if model_name != "auto" && !haskey(MODEL_REGISTRY, model_name)
+                return HTTP.Response(400, headers, JSON3.write(Dict("error" => "Unknown model: $model_name")))
+            end
+
+            try
+                data_file        = joinpath(CLEAN_DATA_PATH, experiment, "data_channel_1.csv")
+                annotation_file  = joinpath(CLEAN_DATA_PATH, experiment, "annotation_clean.csv")
+                calibration_file = "./cal_curve_avg.csv"
+
+                if !isfile(data_file) || !isfile(annotation_file)
+                    return HTTP.Response(404, headers, JSON3.write(Dict("error" => "Data files not found for experiment '$experiment'")))
+                end
+
+                growth_data      = CSV.read(data_file, DataFrame, header=1, silencewarnings=true)
+                annotations      = read_annotation_file(annotation_file)
+                excluded_wells   = get_blank_wells(annotations)
+                blank_well_names = get_blank_well_names(annotations)
+                column_names_str = string.(names(growth_data))
+                time_numeric     = parse_time_column(growth_data)
+                blank_value      = compute_blank_value(growth_data, annotations)
+                blank_ts         = subtract_blank && blank_method == "pointbypoint" ?
+                    compute_blank_timeseries(growth_data, annotations) : Float64[]
+
+                wells_to_fit = requested_wells !== nothing ? requested_wells :
+                    filter(w -> w in column_names_str && !(w in excluded_wells), column_names_str[2:end])
+
+                results  = Dict{String, Any}[]
+                errors   = String[]
+
+                for well in wells_to_fit
+                    if !(well in column_names_str)
+                        push!(errors, "Well '$well' not found"); continue
+                    end
+                    if well in excluded_wells
+                        push!(errors, "Well '$well' is blank/excluded"); continue
+                    end
+                    try
+                        od_raw        = parse_od_column(growth_data, Symbol(well))
+                        valid_indices = findall(.!isnan.(od_raw))
+                        if length(valid_indices) < 10
+                            push!(errors, "Well '$well': insufficient data points"); continue
+                        end
+                        blank_ts_valid = isempty(blank_ts) ? Float64[] : blank_ts[valid_indices]
+                        fit_result = fit_well_data(
+                            time_numeric[valid_indices], od_raw[valid_indices],
+                            blank_value, calibration_file, well, experiment;
+                            subtract_blank   = subtract_blank,
+                            blank_method     = blank_method,
+                            blank_timeseries = blank_ts_valid,
+                            blank_well_names = blank_well_names,
+                            model_name       = model_name,
+                        )
+                        push!(results, fit_result)
+                    catch e
+                        push!(errors, "Well '$well': $(string(e))")
+                    end
+                end
+
+                return HTTP.Response(200, headers, JSON3.write(Dict(
+                    "experiment" => experiment,
+                    "model"      => model_name,
+                    "results"    => results,
+                    "summary"    => Dict(
+                        "total"   => length(wells_to_fit),
+                        "success" => length(results),
+                        "failed"  => length(errors),
+                        "errors"  => errors,
+                    ),
+                )))
+
+            catch e
+                println("Error in batch fitting: ", e)
+                return HTTP.Response(500, headers, JSON3.write(Dict("error" => "Batch fitting failed: $e")))
+            end
+
         elseif path == "/api/plot-data" && HTTP.method(req) == "POST"
             # POST /api/plot-data - Get plot data for specific wells (supports multi-experiment)
             body = String(req.body)

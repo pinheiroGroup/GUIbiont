@@ -1,0 +1,280 @@
+import { state, API_BASE } from './state.js';
+
+// ---------------------------------------------------------------------------
+// Batch fit tab — experiment / well selection
+// ---------------------------------------------------------------------------
+
+async function initBatchFitTab() {
+    await loadBatchFitModels();
+    await loadBatchFitExperiments();
+}
+
+async function loadBatchFitModels() {
+    const sel = document.getElementById('batch-fit-model');
+    try {
+        const r = await fetch(`${API_BASE}/api/models`);
+        if (!r.ok) return;
+        const models = await r.json();
+        sel.innerHTML = '<option value="auto">Auto — best model by AICc</option>';
+        models.forEach(m => {
+            const opt = document.createElement('option');
+            opt.value = m.name;
+            opt.textContent = `${m.name}  (${m.param_names.length} params)`;
+            if (m.name === 'aHPM') opt.selected = true;
+            sel.appendChild(opt);
+        });
+    } catch (e) {
+        console.error('Failed to load models for batch fit:', e);
+    }
+}
+
+async function loadBatchFitExperiments() {
+    const sel = document.getElementById('batch-fit-experiment');
+    if (!state.experimentInfo || state.experimentInfo.length === 0) return;
+    sel.innerHTML = '<option value="">Select Experiment</option>';
+    state.experimentInfo.forEach(exp => {
+        const opt = document.createElement('option');
+        opt.value = exp;
+        opt.textContent = exp;
+        sel.appendChild(opt);
+    });
+}
+
+async function onBatchExperimentChange() {
+    const experiment = document.getElementById('batch-fit-experiment').value;
+    const wellsDiv   = document.getElementById('batch-fit-wells');
+    const runBtn     = document.getElementById('batch-fit-run-btn');
+    const countEl    = document.getElementById('batch-fit-well-count');
+
+    wellsDiv.innerHTML = '';
+    runBtn.disabled = true;
+    countEl.textContent = '';
+
+    if (!experiment) return;
+
+    try {
+        const r = await fetch(`${API_BASE}/api/experiment/${experiment}/info`);
+        const info = await r.json();
+        if (!info.wells) return;
+
+        // Only non-blank wells
+        const wells = info.wells.filter(w => w.condition !== 'b' && w.condition !== 'X');
+        wells.forEach(w => {
+            const label = document.createElement('label');
+            label.className = 'batch-well-label';
+            label.innerHTML = `
+                <input type="checkbox" class="batch-well-cb" value="${w.well}" checked>
+                <span class="batch-well-name">${w.well}</span>
+                <span class="batch-well-cond">${w.condition || ''}</span>
+            `;
+            wellsDiv.appendChild(label);
+        });
+
+        updateBatchWellCount();
+        document.querySelectorAll('.batch-well-cb').forEach(cb =>
+            cb.addEventListener('change', updateBatchWellCount));
+        runBtn.disabled = false;
+
+    } catch (e) {
+        console.error('Error loading wells for batch fit:', e);
+    }
+}
+
+function updateBatchWellCount() {
+    const checked = document.querySelectorAll('.batch-well-cb:checked').length;
+    const total   = document.querySelectorAll('.batch-well-cb').length;
+    document.getElementById('batch-fit-well-count').textContent =
+        `${checked} / ${total} wells selected`;
+    document.getElementById('batch-fit-run-btn').disabled = checked === 0;
+}
+
+function selectAllBatchWells() {
+    document.querySelectorAll('.batch-well-cb').forEach(cb => cb.checked = true);
+    updateBatchWellCount();
+}
+
+function clearAllBatchWells() {
+    document.querySelectorAll('.batch-well-cb').forEach(cb => cb.checked = false);
+    updateBatchWellCount();
+}
+
+// ---------------------------------------------------------------------------
+// Run batch fit
+// ---------------------------------------------------------------------------
+
+async function runBatchFit() {
+    const experiment = document.getElementById('batch-fit-experiment').value;
+    const model_name = document.getElementById('batch-fit-model').value || 'aHPM';
+    const wells = Array.from(document.querySelectorAll('.batch-well-cb:checked')).map(cb => cb.value);
+    const runBtn = document.getElementById('batch-fit-run-btn');
+    const progressEl = document.getElementById('batch-fit-progress');
+
+    if (!experiment || wells.length === 0) {
+        alert('Please select an experiment and at least one well.');
+        return;
+    }
+
+    runBtn.disabled = true;
+    runBtn.textContent = '⏳ Fitting…';
+    progressEl.style.display = 'block';
+    progressEl.textContent = `Fitting ${wells.length} wells — this may take a moment…`;
+    document.getElementById('batch-fit-results').style.display = 'none';
+
+    try {
+        const response = await fetch(`${API_BASE}/api/batch-fit`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                experiment,
+                wells,
+                model_name,
+                blank_subtraction: document.getElementById('batch-fit-blank-subtraction').checked,
+                blank_method: document.getElementById('batch-fit-blank-method').value,
+            }),
+        });
+
+        if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.error || 'Batch fitting failed');
+        }
+
+        const data = await response.json();
+        state.lastBatchFitData = data;
+        displayBatchResults(data);
+
+    } catch (e) {
+        console.error('Batch fit error:', e);
+        alert(`Error: ${e.message}`);
+    } finally {
+        runBtn.disabled = false;
+        runBtn.textContent = '⚡ Run Batch Fit';
+        progressEl.style.display = 'none';
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Display results
+// ---------------------------------------------------------------------------
+
+function displayBatchResults(data) {
+    const resultsDiv = document.getElementById('batch-fit-results');
+    const { experiment, model, summary, results } = data;
+
+    // Summary bar
+    const summaryHtml = `
+        <div class="batch-summary-bar">
+            <span><strong>Experiment:</strong> ${experiment}</span>
+            <span><strong>Model:</strong> ${model === 'auto' ? 'Auto (AICc)' : model}</span>
+            <span class="batch-stat-ok">✓ ${summary.success} fitted</span>
+            ${summary.failed > 0 ? `<span class="batch-stat-err">✗ ${summary.failed} failed</span>` : ''}
+            <button class="btn" style="margin-left:auto;" onclick="downloadBatchCSV()">📥 Download CSV</button>
+        </div>
+    `;
+
+    // Collect all unique param names across results for table headers
+    const allParamNames = [];
+    results.forEach(r => {
+        (r.param_names || []).forEach(n => {
+            if (!allParamNames.includes(n)) allParamNames.push(n);
+        });
+    });
+
+    // Table header
+    const headerCells = ['Well', 'Model', ...allParamNames, 'Stationary phase start', 'AICc'];
+    const headerHtml = headerCells.map(h => `<th>${h}</th>`).join('');
+
+    // Table rows
+    const rowsHtml = results.map(r => {
+        const paramCells = allParamNames.map(name => {
+            const idx = (r.param_names || []).indexOf(name);
+            const val = idx >= 0 && r.parameters && r.parameters[idx] != null
+                ? Number(r.parameters[idx]).toFixed(4) : '—';
+            return `<td>${val}</td>`;
+        }).join('');
+        const statStart = r.stationary_phase_start != null
+            ? Number(r.stationary_phase_start).toFixed(2) : '—';
+        const aic = r.aic != null ? Number(r.aic).toFixed(2) : '—';
+        return `<tr>
+            <td>${r.well}</td>
+            <td><span class="batch-model-tag">${r.model || model}</span></td>
+            ${paramCells}
+            <td>${statStart}</td>
+            <td>${aic}</td>
+        </tr>`;
+    }).join('');
+
+    // Errors section
+    const errorsHtml = summary.errors && summary.errors.length > 0
+        ? `<div class="batch-errors">
+               <strong>⚠ ${summary.errors.length} well(s) failed:</strong>
+               <ul>${summary.errors.map(e => `<li>${e}</li>`).join('')}</ul>
+           </div>`
+        : '';
+
+    resultsDiv.innerHTML = `
+        ${summaryHtml}
+        <div class="batch-table-wrap">
+            <table class="batch-results-table">
+                <thead><tr>${headerHtml}</tr></thead>
+                <tbody>${rowsHtml}</tbody>
+            </table>
+        </div>
+        ${errorsHtml}
+    `;
+    resultsDiv.style.display = 'block';
+}
+
+// ---------------------------------------------------------------------------
+// CSV download (client-side)
+// ---------------------------------------------------------------------------
+
+function downloadBatchCSV() {
+    const data = state.lastBatchFitData;
+    if (!data || !data.results || data.results.length === 0) return;
+
+    const { experiment, model, results } = data;
+
+    // Collect all param names
+    const allParamNames = [];
+    results.forEach(r => {
+        (r.param_names || []).forEach(n => {
+            if (!allParamNames.includes(n)) allParamNames.push(n);
+        });
+    });
+
+    const headers = ['experiment', 'well', 'model', ...allParamNames, 'stationary_phase_start', 'aic'];
+    const rows = results.map(r => {
+        const paramVals = allParamNames.map(name => {
+            const idx = (r.param_names || []).indexOf(name);
+            return idx >= 0 && r.parameters && r.parameters[idx] != null
+                ? r.parameters[idx] : '';
+        });
+        return [
+            experiment,
+            r.well,
+            r.model || model,
+            ...paramVals,
+            r.stationary_phase_start != null ? r.stationary_phase_start : '',
+            r.aic != null ? r.aic : '',
+        ];
+    });
+
+    const csvContent = [headers, ...rows]
+        .map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
+        .join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `${experiment}_batch_fit.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+export {
+    initBatchFitTab, loadBatchFitModels, loadBatchFitExperiments,
+    onBatchExperimentChange, updateBatchWellCount,
+    selectAllBatchWells, clearAllBatchWells,
+    runBatchFit, displayBatchResults, downloadBatchCSV,
+};

@@ -45,15 +45,27 @@ function fit_well_data(
 
     data = GrowthData(reshape(od_for_fit, 1, :), time_numeric, [label])
 
-    model = MODEL_REGISTRY[model_name]
-    n_params = length(model.param_names)
-    p0 = fill(1.0, n_params)
-    spec = ModelSpec(
-        [model],
-        [p0];
-        lower = [fill(0.0, n_params)],
-        upper = [fill(50.0, n_params)],
-    )
+    # "auto" tries a curated set of models; kinbiont_fit picks best by AICc.
+    if model_name == "auto"
+        _auto_candidates = ["aHPM", "logistic", "gompertz", "baranyi_richards", "NL_Gompertz", "NL_logistic"]
+        models = [MODEL_REGISTRY[m] for m in _auto_candidates if haskey(MODEL_REGISTRY, m)]
+        spec = ModelSpec(
+            models,
+            [fill(1.0, length(m.param_names)) for m in models];
+            lower = [fill(0.0, length(m.param_names)) for m in models],
+            upper = [fill(50.0, length(m.param_names)) for m in models],
+        )
+    else
+        model = MODEL_REGISTRY[model_name]
+        n_params = length(model.param_names)
+        p0 = fill(1.0, n_params)
+        spec = ModelSpec(
+            [model],
+            [p0];
+            lower = [fill(0.0, n_params)],
+            upper = [fill(50.0, n_params)],
+        )
+    end
 
     opts = FitOptions(
         scattering_correction           = false,
@@ -98,7 +110,7 @@ function fit_well_data(
         "fit_time"               => fit_time_out,
         "fit_od"                 => fit_od_out,
         "parameters"             => r.best_params,
-        "param_names"            => model.param_names,
+        "param_names"            => r.best_model.param_names,
         "model"                  => r.best_model.name,
         "blank_value"            => blank_value,
         "blank_subtraction"      => subtract_blank,
