@@ -239,7 +239,7 @@ function  analysis_file(
         # plotting and save fit 
         println("Fitting of well ",string( well_name), " done")
         println(temp_results_1[2])
-        path_to_plot_ode = string(path_to_plot,"_ODE_fit_aHPM/")
+        path_to_plot_ode = string(path_to_plot,"_ODE_fit/")
 
         plot_ODE(label_exp,
             data,

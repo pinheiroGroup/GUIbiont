@@ -3,15 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Growth Curve Plotter</title>
+    <title>GUIbiont</title>
     <link rel="stylesheet" href="/static/css/main.css">
     <script src="/static/vendor/plotly-2.29.1.min.js"></script>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>🧫 Growth Curve Plotter</h1>
-            <p>Interactive bacterial growth analysis tool</p>
+            <h1>🧫 GUIbiont</h1>
+            <p>Interactive microbial growth curve analysis platform</p>
         </div>
 
         <!-- Tab Navigation -->
@@ -143,9 +143,9 @@
             <!-- Fit Curve Tab Content -->
             <div id="fit-curve-content" class="tab-content">
                 <div class="control-group" id="curve-fitting-group">
-                    <label>🧮 Curve Fitting (aHPM Model)</label>
+                    <label>🧮 Curve Fitting</label>
                     <div class="fitting-container">
-                        <p class="fitting-description">Select ONE experiment and ONE well or replicate to fit a growth curve using the aHPM model.</p>
+                        <p class="fitting-description">Select ONE experiment and ONE well or replicate to fit a growth curve.</p>
 
                         <div class="fit-mode-toggle">
                             <button class="mode-btn active" id="fit-mode-btn-well" onclick="setFitMode('well')">Fit Well</button>

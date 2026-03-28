@@ -1,12 +1,12 @@
-# aHPM Web Interface
+# GUIbiont
 
-A standalone web interface for bacterial growth curve analysis using the aHPM (adjusted Hyper-exponential Plateau Model).
+A web platform for large-scale microbial growth curve analysis, built on KinBiont.jl.
 
 ## Features
 
 - **Data Cleaning**: Process raw Synergy microplate reader data
-- **Growth Visualization**: Interactive plotting of bacterial growth curves
-- **Curve Fitting**: aHPM model fitting for individual wells
+- **Growth Visualization**: Interactive plotting of microbial growth curves
+- **Curve Fitting**: Growth model fitting for individual wells
 - **Multi-experiment Support**: Compare data across multiple experiments
 - **Export Capabilities**: Export plots as PNG/SVG
 
@@ -16,7 +16,7 @@ A standalone web interface for bacterial growth curve analysis using the aHPM (a
 
 2. **Navigate to this directory**:
    ```bash
-   cd aHPM-web-interface
+   cd GUIbiont
    ```
 
 3. **Install dependencies** (choose one method):
@@ -60,7 +60,7 @@ A standalone web interface for bacterial growth curve analysis using the aHPM (a
 ## Project Structure
 
 ```
-aHPM-web-interface/
+GUIbiont/
 ├── web_interface.html          # Frontend interface
 ├── web_server.jl              # Backend Julia server
 ├── launch_web_app.jl          # Application launcher
@@ -160,7 +160,7 @@ See `Project.toml` for complete dependency list and version constraints.
 
 ### 3. Fit Curve Tab
 - Select one experiment and one well
-- Fit aHPM model to growth data
+- Fit growth model to data
 - View fitted parameters and curve overlay
 
 ## Troubleshooting
@@ -209,6 +209,6 @@ rm Manifest.toml
 julia --project=. -e "import Pkg; Pkg.instantiate()"
 ```
 
-## Original Project
+## Related Projects
 
-This web interface is extracted from the larger aHPM-fit project. For the complete analysis pipeline including R scripts and additional tools, see the original repository.
+GUIbiont is built on [KinBiont.jl](https://github.com/pinheiroGroup/Kinbiont.jl), a Julia library for microbial growth curve analysis.
