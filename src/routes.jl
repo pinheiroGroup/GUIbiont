@@ -181,6 +181,12 @@ function router(req)
             # GET /api/experiments - List all experiments
             experiments = get_experiments()
             return HTTP.Response(200, headers, JSON3.write(experiments))
+
+        elseif path == "/api/models" && HTTP.method(req) == "GET"
+            # GET /api/models - List available growth models from KinBiont MODEL_REGISTRY
+            model_list = sort(collect(keys(MODEL_REGISTRY)))
+            model_info = [Dict("name" => name, "param_names" => MODEL_REGISTRY[name].param_names) for name in model_list]
+            return HTTP.Response(200, headers, JSON3.write(model_info))
             
         elseif startswith(path, "/api/experiment/") && endswith(path, "/info")
             # GET /api/experiment/{name}/info - Get experiment metadata
@@ -590,6 +596,10 @@ function router(req)
             well            = string(request_data.well)
             subtract_blank  = Bool(get(request_data, :blank_subtraction, false))
             blank_method    = string(get(request_data, :blank_method, "pointbypoint"))
+            model_name      = string(get(request_data, :model_name, "aHPM"))
+            if !haskey(MODEL_REGISTRY, model_name)
+                return HTTP.Response(400, headers, JSON3.write(Dict("error" => "Unknown model: $model_name")))
+            end
 
             try
                 data_file        = joinpath(CLEAN_DATA_PATH, experiment, "data_channel_1.csv")
@@ -634,6 +644,7 @@ function router(req)
                     blank_method     = blank_method,
                     blank_timeseries = blank_ts_valid,
                     blank_well_names = blank_well_names,
+                    model_name       = model_name,
                 )
                 return HTTP.Response(200, headers, JSON3.write(response_data))
 
@@ -772,7 +783,11 @@ function router(req)
             well_selections  = request_data.well_selections
             label            = string(get(request_data, :label, "replicate"))
             experiment_name  = string(get(request_data, :experiment, "replicate"))
+            model_name       = string(get(request_data, :model_name, "aHPM"))
             calibration_file = "./cal_curve_avg.csv"
+            if !haskey(MODEL_REGISTRY, model_name)
+                return HTTP.Response(400, headers, JSON3.write(Dict("error" => "Unknown model: $model_name")))
+            end
 
             try
                 all_od_data   = Vector{Vector{Float64}}()
@@ -816,7 +831,8 @@ function router(req)
 
                 response_data = fit_well_data(
                     avg_time[valid_indices], avg_od[valid_indices],
-                    0.0, calibration_file, label, experiment_name,
+                    0.0, calibration_file, label, experiment_name;
+                    model_name = model_name,
                 )
                 return HTTP.Response(200, headers, JSON3.write(response_data))
 

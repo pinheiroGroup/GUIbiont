@@ -10,7 +10,8 @@ import { buildReplicateList, toggleReplicate, selectAllReplicates, clearAllRepli
 import { displayWells, createWellItem, toggleExperiment, toggleWell,
          updateExperimentHeaders, updateSelectedCount,
          selectAllFilteredWells, clearAllSelectedWells, filterWellsAccordion } from './wells.js';
-import { setFitMode, onFittingReplicateChange, fitReplicateAverage, loadFittingExperiments,
+import { setFitMode, onFittingReplicateChange, fitReplicateAverage,
+         loadFittingModels, loadFittingExperiments,
          onFittingExperimentChange, onFittingWellChange, onBlankSubtractionChange,
          onBlankMethodChange, useAutoDetectedBlanks, runBlankAnalysis, renderBlankAnalysisCard,
          fitGrowthCurve, displayFittingResults, onFitShowIndividualChange,
@@ -41,6 +42,7 @@ async function init() {
     await applyConfig();
     await loadExperiments();
     loadFittingExperiments();
+    loadFittingModels();
     loadRawExperiments();
 }
 
@@ -220,7 +222,8 @@ Object.assign(window, {
     updateSelectedReplicatesCount, onShowIndividualChange, setPlotMode,
     computeReplicateAverage, trapezoidalAUC, plotReplicates,
     // Fitting
-    setFitMode, onFittingReplicateChange, fitReplicateAverage, loadFittingExperiments,
+    setFitMode, onFittingReplicateChange, fitReplicateAverage,
+    loadFittingModels, loadFittingExperiments,
     onFittingExperimentChange, onFittingWellChange, onBlankSubtractionChange,
     onBlankMethodChange, useAutoDetectedBlanks, runBlankAnalysis, renderBlankAnalysisCard,
     fitGrowthCurve, displayFittingResults, onFitShowIndividualChange,

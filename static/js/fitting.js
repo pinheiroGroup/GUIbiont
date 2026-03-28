@@ -60,7 +60,8 @@ async function fitReplicateAverage() {
             body: JSON.stringify({
                 well_selections: replicateWells,
                 label: label,
-                experiment: experiment
+                experiment: experiment,
+                model_name: document.getElementById('fitting-model').value || 'aHPM',
             })
         });
 
@@ -80,6 +81,26 @@ async function fitReplicateAverage() {
     } finally {
         fitButton.disabled = false;
         fitButton.textContent = '📊 Fit Curve';
+    }
+}
+
+async function loadFittingModels() {
+    const modelSelect = document.getElementById('fitting-model');
+    try {
+        const response = await fetch(`${API_BASE}/api/models`);
+        if (!response.ok) return;
+        const models = await response.json();
+        modelSelect.innerHTML = '';
+        models.forEach(m => {
+            const option = document.createElement('option');
+            option.value = m.name;
+            option.textContent = `${m.name} (${m.param_names.join(', ')})`;
+            option.dataset.paramNames = JSON.stringify(m.param_names);
+            if (m.name === 'aHPM') option.selected = true;
+            modelSelect.appendChild(option);
+        });
+    } catch (e) {
+        console.error('Failed to load models:', e);
     }
 }
 
@@ -321,7 +342,8 @@ async function fitGrowthCurve() {
                 experiment: experiment,
                 well: well,
                 blank_subtraction: document.getElementById('fit-blank-subtraction').checked,
-                blank_method: document.getElementById('fit-blank-method').value
+                blank_method: document.getElementById('fit-blank-method').value,
+                model_name: document.getElementById('fitting-model').value || 'aHPM',
             })
         });
         
@@ -351,13 +373,7 @@ function displayFittingResults(fitData) {
     const resultsDiv = document.getElementById('fitting-results');
     const parametersDiv = document.getElementById('fitting-parameters');
     
-    // Debug logging
-    console.log('Fit data received:', fitData);
-    console.log('Parameters:', fitData.parameters);
-    console.log('Parameters types:', fitData.parameters?.map(p => typeof p));
-    
-    // Show aHPM parameter names
-    const parameterNames = ['Growth Rate (μ)', 'Exit Lag Rate (r)', 'Carrying Capacity (N_max)', 'Shape Parameter (α)'];
+    const parameterNames = fitData.param_names || [];
     
     let html = `
         <div class="parameter-row">
@@ -397,36 +413,16 @@ function displayFittingResults(fitData) {
     console.log('Parameters length:', fitData.parameters?.length);
     
     if (fitData.parameters && Array.isArray(fitData.parameters)) {
-        // Find the actual numerical parameters (skip any text/metadata entries)
-        const numericalParams = [];
-        for (let i = 0; i < fitData.parameters.length; i++) {
-            const param = fitData.parameters[i];
-            if (typeof param === 'number' && !isNaN(param) && isFinite(param)) {
-                numericalParams.push(param);
-            }
-            console.log(`Parameter ${i}:`, param, `(type: ${typeof param})`);
-        }
-        
-        console.log('Numerical parameters found:', numericalParams);
-        
-        // Display only the first 4 numerical parameters (aHPM model parameters)
-        for (let i = 0; i < Math.min(4, numericalParams.length); i++) {
+        const numericalParams = fitData.parameters.filter(p => typeof p === 'number' && isFinite(p));
+        numericalParams.forEach((val, i) => {
+            const name = parameterNames[i] || `param_${i + 1}`;
             html += `
                 <div class="parameter-row">
-                    <span class="parameter-name">${parameterNames[i]}:</span>
-                    <span class="parameter-value">${numericalParams[i].toFixed(6)}</span>
+                    <span class="parameter-name">${name}:</span>
+                    <span class="parameter-value">${val.toFixed(6)}</span>
                 </div>
             `;
-        }
-        
-        if (numericalParams.length < 4) {
-            html += `
-                <div class="parameter-row">
-                    <span class="parameter-name">Warning:</span>
-                    <span class="parameter-value" style="color: orange;">Only ${numericalParams.length} numerical parameters found</span>
-                </div>
-            `;
-        }
+        });
     } else {
         html += `
             <div class="parameter-row">
@@ -499,7 +495,7 @@ function plotFittedCurve(fitData) {
         y: fitData.fit_od,
         mode: 'lines',
         type: 'scatter',
-        name: `aHPM Fit`,
+        name: `${fitData.model} Fit`,
         line: { color: 'red', width: 3 }
     });
 
@@ -549,7 +545,7 @@ function plotFittedCurve(fitData) {
 
 export {
     setFitMode, onFittingReplicateChange, fitReplicateAverage,
-    loadFittingExperiments, onFittingExperimentChange, onFittingWellChange,
+    loadFittingModels, loadFittingExperiments, onFittingExperimentChange, onFittingWellChange,
     onBlankSubtractionChange, onBlankMethodChange,
     useAutoDetectedBlanks, runBlankAnalysis, renderBlankAnalysisCard,
     fitGrowthCurve, displayFittingResults, onFitShowIndividualChange,

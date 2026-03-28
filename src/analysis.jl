@@ -15,6 +15,7 @@ function fit_well_data(
     blank_method::String = "pointbypoint",  # "shift" | "pointbypoint" | "clip"
     blank_timeseries::Vector{Float64} = Float64[],
     blank_well_names::Vector{String} = String[],
+    model_name::String = "aHPM",
 )
     if subtract_blank && blank_value > 0.0
         if blank_method == "pointbypoint" && length(blank_timeseries) == length(od_raw)
@@ -44,12 +45,14 @@ function fit_well_data(
 
     data = GrowthData(reshape(od_for_fit, 1, :), time_numeric, [label])
 
-    p0 = [0.2, 0.2, 0.80, 1.0]
+    model = MODEL_REGISTRY[model_name]
+    n_params = length(model.param_names)
+    p0 = fill(1.0, n_params)
     spec = ModelSpec(
-        [MODEL_REGISTRY["aHPM"]],
+        [model],
         [p0];
-        lower = [[0.0, 0.0, 0.0, 0.0]],
-        upper = [p0 .* 10],
+        lower = [fill(0.0, n_params)],
+        upper = [fill(50.0, n_params)],
     )
 
     opts = FitOptions(
@@ -95,6 +98,7 @@ function fit_well_data(
         "fit_time"               => fit_time_out,
         "fit_od"                 => fit_od_out,
         "parameters"             => r.best_params,
+        "param_names"            => model.param_names,
         "model"                  => r.best_model.name,
         "blank_value"            => blank_value,
         "blank_subtraction"      => subtract_blank,

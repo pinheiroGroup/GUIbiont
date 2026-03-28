@@ -164,6 +164,12 @@
                                     <option value="">Select Replicate</option>
                                 </select>
                             </div>
+                            <div style="display: flex; align-items: center; gap: 8px; margin-top: 6px;">
+                                <label for="fitting-model" style="font-size: 0.9em; white-space: nowrap;">Model:</label>
+                                <select id="fitting-model" class="fitting-select" style="flex: 1;">
+                                    <option value="aHPM">aHPM (loading...)</option>
+                                </select>
+                            </div>
                             <button class="btn fit-btn" onclick="fitGrowthCurve()" id="fit-button" disabled>📊 Fit Curve</button>
                         </div>
 
