@@ -117,6 +117,7 @@ function fit_well_data(
         "blank_method"           => blank_method,
         "blank_wells"            => blank_well_names,
         "stationary_phase_start" => r.times[end],
+        "aic"                    => r.best_aic,
     )
 
     if od_subtracted_display !== nothing

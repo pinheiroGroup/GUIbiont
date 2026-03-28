@@ -1578,9 +1578,13 @@
 
         .batch-results-table th {
             background: #f1f3f5;
+            color: #212529;
             padding: 8px 10px;
             text-align: left;
             font-weight: 600;
+            font-size: 13px;
+            text-transform: none;
+            letter-spacing: normal;
             border-bottom: 2px solid #dee2e6;
             white-space: nowrap;
         }
