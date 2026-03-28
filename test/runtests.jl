@@ -3,9 +3,20 @@ using CSV
 using DataFrames
 using HTTP
 using JSON3
+using Statistics
 
 # Load the functions under test
 include(joinpath(@__DIR__, "..", "function_clean_synergy.jl"))
+
+# Load backend modules (data helpers + experiment store)
+# These mirror the include order in web_server.jl, minus HTTP/Kinbiont deps.
+const CLEAN_DATA_PATH = get(ENV, "CLEAN_DATA_PATH",
+    joinpath(@__DIR__, "..", "Clean_data") * "/")
+include(joinpath(@__DIR__, "..", "src", "data.jl"))
+include(joinpath(@__DIR__, "..", "src", "experiment_store.jl"))
+
+include("data_helpers_test.jl")
+include("experiment_store_test.jl")
 
 # ---------------------------------------------------------------------------
 # Paths to fixtures — prefer committed test/fixtures, fall back to local data
@@ -302,6 +313,51 @@ else
                                  Dict("experiment" => SINGLE_CH_EXP, "well" => SINGLE_CH_WELL))
         @test status == 200
         @test haskey(body, :has_blank_wells) || haskey(body, :error)
+    end
+
+    @testset "GET /api/models" begin
+        status, body = get_json("/api/models")
+        @test status == 200
+        @test body isa AbstractVector
+        @test !isempty(body)
+        m = first(body)
+        @test haskey(m, :name)
+        @test haskey(m, :param_names)
+        @test m[:param_names] isa AbstractVector
+        @test !isempty(m[:param_names])
+        names_list = [string(m[:name]) for m in body]
+        @test "aHPM"     in names_list
+        @test "logistic" in names_list
+        @test "gompertz" in names_list
+        @test names_list == sort(names_list)
+    end
+
+    @testset "POST /api/fit-curve — default model (aHPM)" begin
+        status, body = post_json("/api/fit-curve",
+                                 Dict("experiment" => SINGLE_CH_EXP, "well" => SINGLE_CH_WELL))
+        @test status == 200
+        @test string(body[:model]) == "aHPM"
+        @test haskey(body, :param_names)
+        @test length(body[:param_names]) == length(body[:parameters])
+    end
+
+    @testset "POST /api/fit-curve — explicit model (logistic)" begin
+        status, body = post_json("/api/fit-curve",
+                                 Dict("experiment" => SINGLE_CH_EXP, "well" => SINGLE_CH_WELL,
+                                      "model_name" => "logistic"))
+        @test status == 200
+        @test string(body[:model]) == "logistic"
+        @test haskey(body, :param_names)
+        @test length(body[:param_names]) == 2   # logistic has gr, N_max
+        @test length(body[:parameters]) == 2
+    end
+
+    @testset "POST /api/fit-curve — unknown model returns 400" begin
+        status, body = post_json("/api/fit-curve",
+                                 Dict("experiment" => SINGLE_CH_EXP, "well" => SINGLE_CH_WELL,
+                                      "model_name" => "not_a_real_model"))
+        @test status == 400
+        @test haskey(body, :error)
     end
 
     @testset "GET / serves HTML" begin
