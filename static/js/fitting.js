@@ -84,6 +84,65 @@ async function fitReplicateAverage() {
     }
 }
 
+// Brief descriptions for well-known models shown in the info card.
+const MODEL_DESCRIPTIONS = {
+    aHPM:                            'Adjusted Hyper-exponential Plateau Model — ODE-based model with explicit lag, exponential growth, and stationary phase (McKellar 1997).',
+    HPM:                             'Hyper-exponential Plateau Model — original HPM without shape parameter.',
+    HPM_exp:                         'HPM exponential variant — two-parameter simplified HPM.',
+    HPM_3_death:                     'HPM with inactivation and death phases.',
+    HPM_3_inhibition:                'HPM with growth inhibition term.',
+    HPM_inhibition:                  'HPM with inhibitor-driven growth reduction.',
+    aHPM_inhibition:                 'aHPM extended with inhibition kinetics.',
+    aHPM_3_death_resistance:         'aHPM with death and antibiotic-resistance subpopulation.',
+    logistic:                        'Classic logistic growth (Verhulst 1838) — two-parameter ODE.',
+    alogistic:                       'Logistic with a shape parameter controlling the inflection point.',
+    hyper_logistic:                  'Logistic with additional doubling-time and shape parameters.',
+    gompertz:                        'Gompertz ODE — asymmetric sigmoidal growth (Gompertz 1825).',
+    hyper_gompertz:                  'Gompertz with an additional shape parameter.',
+    baranyi_exp:                     'Baranyi & Roberts model with exponential lag exit (Baranyi & Roberts 1994).',
+    baranyi_richards:                'Baranyi with Richards-type stationary phase flexibility.',
+    baranyi_roberts:                 'Full Baranyi–Roberts model with two shape parameters.',
+    bertalanffy_richards:            'von Bertalanffy growth with Richards shape flexibility.',
+    ode_von_bertalanffy:             'Classic von Bertalanffy ODE with anabolism–catabolism balance.',
+    exponential:                     'Single-parameter exponential growth — no saturation.',
+    NL_logistic:                     'Phenomenological logistic with explicit lag time.',
+    NL_Gompertz:                     'Gompertz phenomenological model with lag (Zwietering 1990).',
+    NL_Richards:                     'Richards phenomenological model with shape and lag.',
+    NL_Bertalanffy:                  'Bertalanffy phenomenological model.',
+    NL_Weibull:                      'Weibull-based phenomenological model.',
+    NL_exponential:                  'Phenomenological exponential — N₀ and growth rate.',
+    NL_Morgan:                       'Morgan dose–response type growth model.',
+    NL_piecewise_exp_logistic:       'Piecewise: exponential lag exit then logistic saturation.',
+    NL_piecewise_lin_logistic:       'Piecewise: linear lag exit then logistic saturation.',
+    triple_piecewise:                'Three-phase piecewise: lag, exponential, stationary.',
+    triple_piecewise_adjusted_logistic: 'Three-phase piecewise with adjusted logistic saturation.',
+    triple_piecewise_bertalanffy_richards: 'Three-phase piecewise with Bertalanffy–Richards saturation.',
+    triple_piecewise_sub_linear:     'Three-phase piecewise with sub-linear stationary decline.',
+    piecewise_adjusted_logistic:     'Two-phase piecewise with adjusted logistic saturation.',
+    ODE_four_piecewise:              'Four-phase ODE piecewise model.',
+    gbsm_piecewise:                  'Gompertz–Baranyi structured model piecewise variant.',
+    ODEs_HPM_SR:                     'HPM ODE system with phage, susceptible and resistant subpopulations.',
+    Diauxic_replicator_1:            'Diauxic growth model — single replicator with linear stationary term.',
+    Diauxic_replicator_2:            'Diauxic growth model — replicator with stationary growth term.',
+    Diauxic_piecewise_adjusted_logistic: 'Diauxic growth with two sequential adjusted-logistic phases.',
+};
+
+// References for selected models (DOI or URL).
+const MODEL_REFS = {
+    aHPM:           { text: 'McKellar & Lu (2004)', url: 'https://doi.org/10.1016/j.ijfoodmicro.2003.08.018' },
+    logistic:       { text: 'Verhulst (1838)', url: 'https://doi.org/10.1007/BF02309004' },
+    gompertz:       { text: 'Gompertz (1825)', url: 'https://doi.org/10.1098/rstl.1825.0026' },
+    baranyi_exp:    { text: 'Baranyi & Roberts (1994)', url: 'https://doi.org/10.1016/0168-1605(94)90157-0' },
+    baranyi_richards: { text: 'Baranyi & Roberts (1994)', url: 'https://doi.org/10.1016/0168-1605(94)90157-0' },
+    baranyi_roberts:  { text: 'Baranyi & Roberts (1994)', url: 'https://doi.org/10.1016/0168-1605(94)90157-0' },
+    NL_Gompertz:    { text: 'Zwietering et al. (1990)', url: 'https://doi.org/10.1128/aem.56.6.1875-1881.1990' },
+    NL_Richards:    { text: 'Richards (1959)', url: 'https://doi.org/10.1093/jxb/10.2.290' },
+    ode_von_bertalanffy: { text: 'von Bertalanffy (1957)', url: 'https://doi.org/10.1086/physzool.10.2.30151538' },
+};
+
+// Cache of model metadata returned by /api/models, keyed by name.
+const _modelRegistry = {};
+
 async function loadFittingModels() {
     const modelSelect = document.getElementById('fitting-model');
     try {
@@ -92,16 +151,45 @@ async function loadFittingModels() {
         const models = await response.json();
         modelSelect.innerHTML = '';
         models.forEach(m => {
+            _modelRegistry[m.name] = m;
             const option = document.createElement('option');
             option.value = m.name;
-            option.textContent = `${m.name} (${m.param_names.join(', ')})`;
-            option.dataset.paramNames = JSON.stringify(m.param_names);
+            option.textContent = `${m.name}  (${m.param_names.length} params)`;
             if (m.name === 'aHPM') option.selected = true;
             modelSelect.appendChild(option);
         });
+        onFittingModelChange();
     } catch (e) {
         console.error('Failed to load models:', e);
     }
+}
+
+function onFittingModelChange() {
+    const name = document.getElementById('fitting-model').value;
+    const card = document.getElementById('model-info-card');
+    const m = _modelRegistry[name];
+    if (!m) { card.style.display = 'none'; return; }
+
+    const typeCls  = m.model_type === 'NL' ? 'nl' : 'ode';
+    const typeLabel = m.model_type === 'NL' ? 'Phenomenological' : 'ODE-based';
+    const chips    = m.param_names.map(p => `<span class="mi-param-chip">${p}</span>`).join('');
+    const desc     = MODEL_DESCRIPTIONS[name] || '';
+    const ref      = MODEL_REFS[name];
+    const refHtml  = ref
+        ? `<div class="mi-refs">Reference: <a href="${ref.url}" target="_blank" rel="noopener">${ref.text}</a></div>`
+        : '';
+
+    card.innerHTML = `
+        <div class="mi-header">
+            <span class="model-type-badge ${typeCls}">${typeLabel}</span>
+            <span style="font-weight:600;">${name}</span>
+            <span style="color:#6c757d;">(${m.param_names.length} parameters)</span>
+        </div>
+        <div class="mi-params">${chips}</div>
+        ${desc  ? `<div class="mi-description">${desc}</div>` : ''}
+        ${refHtml}
+    `;
+    card.style.display = '';
 }
 
 function loadFittingExperiments() {
@@ -545,7 +633,7 @@ function plotFittedCurve(fitData) {
 
 export {
     setFitMode, onFittingReplicateChange, fitReplicateAverage,
-    loadFittingModels, loadFittingExperiments, onFittingExperimentChange, onFittingWellChange,
+    loadFittingModels, onFittingModelChange, loadFittingExperiments, onFittingExperimentChange, onFittingWellChange,
     onBlankSubtractionChange, onBlankMethodChange,
     useAutoDetectedBlanks, runBlankAnalysis, renderBlankAnalysisCard,
     fitGrowthCurve, displayFittingResults, onFitShowIndividualChange,

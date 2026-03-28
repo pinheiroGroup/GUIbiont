@@ -164,14 +164,16 @@
                                     <option value="">Select Replicate</option>
                                 </select>
                             </div>
-                            <div style="display: flex; align-items: center; gap: 8px; margin-top: 6px;">
-                                <label for="fitting-model" style="font-size: 0.9em; white-space: nowrap;">Model:</label>
-                                <select id="fitting-model" class="fitting-select" style="flex: 1;">
-                                    <option value="aHPM">aHPM (loading...)</option>
-                                </select>
-                            </div>
                             <button class="btn fit-btn" onclick="fitGrowthCurve()" id="fit-button" disabled>📊 Fit Curve</button>
                         </div>
+
+                        <div class="model-selector-row">
+                            <label for="fitting-model" class="model-selector-label">Model:</label>
+                            <select id="fitting-model" class="fitting-select model-select" onchange="onFittingModelChange()">
+                                <option value="aHPM">aHPM (4 params)</option>
+                            </select>
+                        </div>
+                        <div id="model-info-card" class="model-info-card"></div>
 
                         <div style="margin-top: 8px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
                             <label style="display: flex; align-items: center; gap: 8px; font-size: 0.9em; cursor: pointer;">

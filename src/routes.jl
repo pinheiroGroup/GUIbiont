@@ -185,7 +185,11 @@ function router(req)
         elseif path == "/api/models" && HTTP.method(req) == "GET"
             # GET /api/models - List available growth models from KinBiont MODEL_REGISTRY
             model_list = sort(collect(keys(MODEL_REGISTRY)))
-            model_info = [Dict("name" => name, "param_names" => MODEL_REGISTRY[name].param_names) for name in model_list]
+            model_info = [Dict(
+                "name"        => name,
+                "param_names" => MODEL_REGISTRY[name].param_names,
+                "model_type"  => occursin("NL", string(typeof(MODEL_REGISTRY[name]))) ? "NL" : "ODE",
+            ) for name in model_list]
             return HTTP.Response(200, headers, JSON3.write(model_info))
             
         elseif startswith(path, "/api/experiment/") && endswith(path, "/info")

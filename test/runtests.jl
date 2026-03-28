@@ -323,13 +323,21 @@ else
         m = first(body)
         @test haskey(m, :name)
         @test haskey(m, :param_names)
+        @test haskey(m, :model_type)
         @test m[:param_names] isa AbstractVector
         @test !isempty(m[:param_names])
+        @test string(m[:model_type]) in ("ODE", "NL")
         names_list = [string(m[:name]) for m in body]
         @test "aHPM"     in names_list
         @test "logistic" in names_list
         @test "gompertz" in names_list
         @test names_list == sort(names_list)
+        # Type classification sanity checks
+        type_map = Dict(string(m[:name]) => string(m[:model_type]) for m in body)
+        @test type_map["aHPM"]       == "ODE"
+        @test type_map["logistic"]   == "ODE"
+        @test type_map["NL_logistic"] == "NL"
+        @test type_map["NL_Gompertz"] == "NL"
     end
 
     @testset "POST /api/fit-curve — default model (aHPM)" begin
