@@ -24,6 +24,7 @@
             <button class="tab-button" onclick="switchTab('fit-curve')">🧮 Fit Curve</button>
             <button class="tab-button" onclick="switchTab('clustering')">🔵 Clustering</button>
             <button class="tab-button" onclick="switchTab('batch-fit')">⚡ Batch Fit</button>
+            <button class="tab-button" onclick="switchTab('ml-analysis')">🔬 ML Analysis</button>
         </div>
 
         <div class="controls">
@@ -607,6 +608,103 @@
                 </div>
 
                 <div id="batch-fit-results" style="display: none; margin-top: 20px; padding: 0 5px;"></div>
+            </div>
+
+            <!-- ML Analysis Tab Content -->
+            <div id="ml-analysis-content" class="tab-content">
+                <div class="control-group" style="padding: 20px;">
+                    <p class="fitting-description">
+                        Link batch-fit growth parameters to an external feature matrix
+                        (e.g. chemical compound concentrations) using Spearman rank correlations
+                        and random-forest feature importance.
+                    </p>
+
+                    <div style="display:flex; flex-wrap:wrap; gap:20px; align-items:flex-start; margin-top:10px;">
+
+                        <!-- Fit results upload -->
+                        <div style="flex:1; min-width:220px;">
+                            <label style="font-weight:600; display:block; margin-bottom:6px;">
+                                Batch-fit results CSV
+                                <span style="font-weight:400; font-size:0.85em; color:#6c757d;">
+                                  (columns: label, gr, exit_lag_rate, N_max, shape)
+                                </span>
+                            </label>
+                            <label class="btn" style="cursor:pointer; display:inline-block;">
+                                📂 Choose file
+                                <input type="file" id="ml-fit-file" accept=".csv"
+                                       style="display:none" onchange="onFitResultsFileChange()">
+                            </label>
+                            <span id="ml-fit-file-label"
+                                  style="margin-left:8px; font-size:0.88em; color:#6c757d;">No file chosen</span>
+                        </div>
+
+                        <!-- Feature matrix upload -->
+                        <div style="flex:1; min-width:220px;">
+                            <label style="font-weight:600; display:block; margin-bottom:6px;">
+                                Feature matrix CSV
+                                <span style="font-weight:400; font-size:0.85em; color:#6c757d;">
+                                  (first column: label, remaining: features)
+                                </span>
+                            </label>
+                            <label class="btn" style="cursor:pointer; display:inline-block;">
+                                📂 Choose file
+                                <input type="file" id="ml-feature-file" accept=".csv"
+                                       style="display:none" onchange="onFeatureMatrixFileChange()">
+                            </label>
+                            <span id="ml-feature-file-label"
+                                  style="margin-left:8px; font-size:0.88em; color:#6c757d;">No file chosen</span>
+                        </div>
+
+                        <!-- Param selection for RF importance -->
+                        <div style="flex:1; min-width:200px;">
+                            <label style="font-weight:600; display:block; margin-bottom:6px;">
+                                Params for feature importance
+                            </label>
+                            <div style="display:flex; flex-direction:column; gap:4px;">
+                                <label><input type="checkbox" id="ml-param-gr"            checked> gr</label>
+                                <label><input type="checkbox" id="ml-param-exit_lag_rate" checked> exit_lag_rate</label>
+                                <label><input type="checkbox" id="ml-param-N_max"         checked> N_max</label>
+                                <label><input type="checkbox" id="ml-param-shape">                 shape</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="margin-top:16px;">
+                        <button class="btn fit-btn" id="ml-run-btn"
+                                onclick="runMlAnalysis()" disabled>
+                            🔬 Run ML Analysis
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Status + Results -->
+                <div id="ml-status"
+                     style="display:none; padding:10px 20px; font-size:0.9em; color:#6c757d;"></div>
+
+                <div id="ml-results" style="display:none; padding:0 20px 20px;">
+                    <p id="ml-n-wells" style="font-size:0.9em; color:#6c757d; margin-bottom:14px;"></p>
+
+                    <!-- Spearman correlations -->
+                    <h3 style="margin-bottom:8px;">Spearman rank correlations</h3>
+                    <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+                        <label style="font-size:0.9em;">Growth parameter:</label>
+                        <select id="ml-corr-param-sel" style="font-size:0.9em;"
+                                onchange="onCorrParamChange()">
+                            <option value="gr">gr</option>
+                            <option value="exit_lag_rate">exit_lag_rate</option>
+                            <option value="N_max">N_max</option>
+                            <option value="shape">shape</option>
+                        </select>
+                    </div>
+                    <div id="ml-corr-container">
+                        <div id="ml-corr-plot" style="width:100%; max-width:700px;"></div>
+                    </div>
+
+                    <!-- Feature importance -->
+                    <h3 style="margin-top:24px; margin-bottom:12px;">Random-forest feature importance (top 15)</h3>
+                    <div id="ml-importance-container"
+                         style="display:flex; flex-wrap:wrap; gap:16px;"></div>
+                </div>
             </div>
 
             <div id="loading" class="loading" style="display: none;">
