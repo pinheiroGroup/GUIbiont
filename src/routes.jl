@@ -195,31 +195,18 @@ function router(req)
         elseif startswith(path, "/api/experiment/") && endswith(path, "/info")
             # GET /api/experiment/{name}/info - Get experiment metadata
             path_parts = split(path, "/")
-            println("Debug - path: $path, parts: $path_parts")
             if length(path_parts) >= 4
                 experiment = path_parts[4]  # Extract experiment name
-                println("Debug - experiment: $experiment")
-                # Call function directly inline to avoid scoping issues
                 data_file = joinpath(CLEAN_DATA_PATH, experiment, "data_channel_1.csv")
                 annotation_file = joinpath(CLEAN_DATA_PATH, experiment, "annotation_clean.csv")
-                
+
                 if !isfile(data_file) || !isfile(annotation_file)
                     info = nothing
                 else
                     try
-                        # Read with more flexible options
-                        println("Debug - Reading file: $data_file")
                         growth_data = CSV.read(data_file, DataFrame, header=1, silencewarnings=true)
-                        println("Debug - Growth data loaded. Columns: $(ncol(growth_data)), Rows: $(nrow(growth_data))")
-                        println("Debug - Column names: $(names(growth_data))")
-                        
                         annotations = CSV.read(annotation_file, DataFrame, header=false, silencewarnings=true, stringtype=String)
-                        println("Debug - Annotations loaded. Columns: $(ncol(annotations)), Rows: $(nrow(annotations))")
-                        println("Debug - First few rows:")
-                        for i in 1:min(3, nrow(annotations))
-                            println("Debug - Row $i: $(annotations[i, :])")
-                        end
-                        
+
                         # Rename columns - 5th column (index 5) should be antibiotic
                         col_names = names(annotations)
                         new_names = Symbol[]
@@ -235,18 +222,13 @@ function router(req)
                             end
                         end
                         rename!(annotations, new_names)
-                        println("Debug - Column names after renaming: $(names(annotations))")
-                        
+
                         time_col = names(growth_data)[1]
                         all_well_columns = names(growth_data)[2:end]
-                        
-                        # Filter out blank wells based on annotation file (more precise than regex)
+
                         blank_wells = get_blank_wells(annotations)
                         well_columns = filter(well -> !(string(well) in blank_wells), all_well_columns)
-                        println("Debug - All wells: $all_well_columns")
-                        println("Debug - Filtered wells: $well_columns")
-                        println("Debug - Filtered out: $(length(all_well_columns) - length(well_columns)) wells")
-                        
+
                         # Create well info with conditions including columns 3, 4, and antibiotic
                         well_info = []
                         for well in well_columns
@@ -256,7 +238,7 @@ function router(req)
                             if nrow(well_annotation) > 0
                                 row = well_annotation[1, :]
                                 condition_parts = [string(row.condition)]
-                                
+
                                 # Add columns 3 and 4 if they exist and have values
                                 if "col_3" in names(annotations) && !ismissing(row.col_3) && string(row.col_3) != ""
                                     push!(condition_parts, string(row.col_3))
@@ -264,36 +246,22 @@ function router(req)
                                 if "col_4" in names(annotations) && !ismissing(row.col_4) && string(row.col_4) != ""
                                     push!(condition_parts, string(row.col_4))
                                 end
-                                
+
                                 # Add antibiotic from column 5
                                 if "antibiotic" in names(annotations)
                                     antibiotic_value = row.antibiotic
-                                    println("Debug - Well $well: antibiotic raw value = '$antibiotic_value', missing? $(ismissing(antibiotic_value))")
                                     if !ismissing(antibiotic_value) && string(antibiotic_value) != ""
                                         antibiotic = string(antibiotic_value)
-                                        println("Debug - Well $well: antibiotic set to '$antibiotic'")
                                     else
                                         antibiotic = "None"
-                                        println("Debug - Well $well: antibiotic set to 'None' (empty or missing)")
                                     end
                                 else
                                     antibiotic = "None"
-                                    println("Debug - Well $well: no antibiotic column found")
                                 end
                             end
-                            
+
                             condition = join(condition_parts, " | ")
                             push!(well_info, Dict("well" => well, "condition" => condition, "antibiotic" => antibiotic))
-                            if antibiotic != "None"
-                                println("Debug - Found well with antibiotic: $well -> $antibiotic")
-                            end
-                        end
-                        
-                        println("Debug - Total wells in result: $(length(well_info))")
-                        antibiotic_wells = filter(w -> w["antibiotic"] != "None", well_info)
-                        println("Debug - Wells with antibiotics: $(length(antibiotic_wells))")
-                        for w in antibiotic_wells
-                            println("Debug - Antibiotic well: $(w["well"]) -> $(w["antibiotic"])")
                         end
                         
                         info = Dict(
@@ -556,18 +524,11 @@ function router(req)
                 # Create output directory
                 output_path = joinpath(CLEAN_DATA_PATH, experiment) * "/"
                 
-                # Load cleaning functions
-                println("Starting data cleaning for experiment: $experiment")
-                println("Input path: $raw_experiment_path")
-                println("Output path: $output_path")
-                
                 # Clean the annotation file first
                 read_labguru_annotation(plate_file, output_path, well_count)
-                println("Annotation cleaning completed")
-                
+
                 # Clean the data file
                 cleaning_data_synergy(data_file, output_path)
-                println("Data cleaning completed")
                 
                 # Check what files were created
                 created_files = []
