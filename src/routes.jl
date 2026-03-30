@@ -1595,6 +1595,63 @@ function router(req)
             result = _cluster_comparison(ids1, ids2)
             return HTTP.Response(200, headers, JSON3.write(result))
 
+        # ------------------------------------------------------------------
+        # /api/ml-downstream  — Spearman correlations + RF importance
+        # ------------------------------------------------------------------
+        elseif path == "/api/ml-downstream" && HTTP.method(req) == "POST"
+            try
+                body        = JSON3.read(String(req.body))
+                fit_results = body.fit_results
+                csv_text    = string(body.feature_matrix)
+                param_names = String.(body.params)
+
+                feat_io      = IOBuffer(csv_text)
+                feat_raw     = CSV.read(feat_io, DataFrame)
+                feat_labels  = string.(feat_raw[!, 1])
+                feature_names = String.(names(feat_raw)[2:end])
+                feat_matrix  = Matrix{Float64}(coalesce.(feat_raw[!, 2:end], NaN))
+
+                fit_df = DataFrame(
+                    label         = [string(r.label)         for r in fit_results],
+                    gr            = [Float64(r.gr)            for r in fit_results],
+                    exit_lag_rate = [Float64(r.exit_lag_rate) for r in fit_results],
+                    N_max         = [Float64(r.N_max)         for r in fit_results],
+                    shape         = [Float64(r.shape)         for r in fit_results],
+                )
+                feat_df = DataFrame(
+                    :label => feat_labels,
+                    [Symbol(n) => feat_matrix[:, i] for (i, n) in enumerate(feature_names)]...,
+                )
+                joined = innerjoin(fit_df, feat_df; on = :label)
+
+                isempty(joined) && return HTTP.Response(400, headers,
+                    JSON3.write(Dict("error" => "No matching well labels between fit results and feature matrix")))
+
+                all_params = ["gr", "exit_lag_rate", "N_max", "shape"]
+                param_mat  = Matrix{Float64}(joined[!, Symbol.(all_params)])
+                feat_mat   = Matrix{Float64}(joined[!, Symbol.(feature_names)])
+
+                corr = spearman_correlations(param_mat, feat_mat, all_params, feature_names)
+
+                importance = Dict{String,Any}()
+                for pname in param_names
+                    pcol = findfirst(==(pname), all_params)
+                    if pcol !== nothing
+                        importance[pname] = forest_importance(param_mat, feat_mat, pcol, feature_names)
+                    end
+                end
+
+                return HTTP.Response(200, headers, JSON3.write(Dict(
+                    "correlations" => corr,
+                    "importance"   => importance,
+                    "n_wells"      => nrow(joined),
+                )))
+            catch e
+                println("Error in /api/ml-downstream: $e")
+                return HTTP.Response(500, headers,
+                    JSON3.write(Dict("error" => "ML analysis failed: $(string(e))")))
+            end
+
         elseif path == "/"
             # Serve the main HTML page
             html_file = joinpath(@__DIR__, "..", "web_interface.html")

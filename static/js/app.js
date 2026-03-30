@@ -26,6 +26,8 @@ import { initBatchFitTab, loadBatchFitModels, loadBatchFitExperiments,
          selectAllBatchWells, clearAllBatchWells,
          onBatchModeChange, selectAllBatchModels, clearAllBatchModels,
          runBatchFit, displayBatchResults, downloadBatchCSV } from './batch-fit.js';
+import { onFitResultsFileChange, onFeatureMatrixFileChange, updateMlRunBtn,
+         runMlAnalysis, onCorrParamChange } from './ml-analysis.js';
 import { setClusteringMode, populateClusteringExperiments,
          selectAllClusteringExperiments, clearAllClusteringExperiments,
          onClusteringFileChange, updateClusteringRunBtn, toggleClusteringAdvanced,
@@ -258,6 +260,9 @@ Object.assign(window, {
     selectAllBatchWells, clearAllBatchWells,
     onBatchModeChange, selectAllBatchModels, clearAllBatchModels,
     runBatchFit, displayBatchResults, downloadBatchCSV,
+    // ML downstream analysis
+    onFitResultsFileChange, onFeatureMatrixFileChange, updateMlRunBtn,
+    runMlAnalysis, onCorrParamChange,
 });
 
 // Handle window resize — fullscreen plots need manual relayout, others use resizePlot
