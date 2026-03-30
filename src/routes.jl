@@ -1531,19 +1531,35 @@ function router(req)
             end
             zscored = _zscore_rows(curves_for)
 
+            # Compute WCSS from assignments + z-scored data
+            function _wcss_from_assignments(data::Matrix{Float64}, ids::Vector{Int})
+                wcss = 0.0
+                for c in unique(ids)
+                    rows = data[ids .== c, :]
+                    centroid = mean(rows, dims=1)
+                    wcss += sum((rows .- centroid).^2)
+                end
+                return wcss
+            end
+
             sweep_results = []
             for k in 2:min(k_max, n_series)
-                ids = try
+                ids, wcss = try
                     if cluster_method == "kmeans"
-                        Clustering.assignments(Clustering.kmeans(zscored', k; maxiter, tol))
+                        km  = Clustering.kmeans(zscored', k; maxiter, tol)
+                        Clustering.assignments(km), km.totalcost
                     elseif cluster_method == "kmedoids"
                         dmat = _pairwise_euclidean(zscored)
-                        Clustering.assignments(Clustering.kmedoids(dmat, k; maxiter, tol))
+                        km   = Clustering.kmedoids(dmat, k; maxiter, tol)
+                        asgn = Clustering.assignments(km)
+                        asgn, _wcss_from_assignments(zscored, asgn)
                     elseif cluster_method == "hclust"
                         dmat = _pairwise_euclidean(zscored)
-                        Clustering.cutree(Clustering.hclust(dmat; linkage=hclust_linkage); k)
+                        asgn = Clustering.cutree(Clustering.hclust(dmat; linkage=hclust_linkage); k)
+                        asgn, _wcss_from_assignments(zscored, asgn)
                     else
-                        Clustering.assignments(Clustering.kmeans(zscored', k; maxiter, tol))
+                        km  = Clustering.kmeans(zscored', k; maxiter, tol)
+                        Clustering.assignments(km), km.totalcost
                     end
                 catch e
                     println("Sweep k=$k error: $e")
@@ -1554,6 +1570,7 @@ function router(req)
                 q = _cluster_quality_indices(zscored, ids_r)
                 push!(sweep_results, Dict(
                     "k"                 => k,
+                    "wcss"              => wcss,
                     "silhouette_mean"   => q["silhouette_mean"],
                     "dunn"              => q["dunn"],
                     "davies_bouldin"    => q["davies_bouldin"],

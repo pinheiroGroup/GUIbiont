@@ -150,7 +150,24 @@ async function runClustering() {
             return;
         }
         const data = await response.json();
+        data._request = {
+            _mode:          state.currentClusteringMode,
+            k,
+            normalize,
+            smooth_method:  smooth,
+            lowess_frac:    lowessFrac,
+            gaussian_h_mult: gHmult,
+            cluster_method: method,
+            maxiter,
+            tol,
+            hclust_linkage: hLinkage,
+            dbscan_eps:     dbscanEps,
+            dbscan_min_pts: dbscanMin,
+            subtract_blank: document.getElementById('cluster-subtract-blank').checked,
+            blank_method:   document.getElementById('cluster-blank-method').value,
+        };
         state._lastClusterData = data;
+        document.getElementById('cluster-export-btn').disabled = false;
         renderClusterGrid(data);
         renderQualityPanel(data);
         renderClusterBlankNotice(data);
@@ -505,16 +522,54 @@ async function runClusterSweep() {
     }
 }
 
+// Return the k at which the second derivative of WCSS is maximised (elbow).
+function _detectElbow(ks, wcss) {
+    if (wcss.length < 3) return ks[0];
+    let maxD2 = -Infinity, elbowIdx = 1;
+    for (let i = 1; i < wcss.length - 1; i++) {
+        const d2 = wcss[i - 1] - 2 * wcss[i] + wcss[i + 1];
+        if (d2 > maxD2) { maxD2 = d2; elbowIdx = i; }
+    }
+    return ks[elbowIdx];
+}
+
 function renderSweepPanel(sweep) {
     document.getElementById('cluster-sweep-panel').style.display = 'block';
-    const ks = sweep.map(r => r.k);
+    const ks   = sweep.map(r => r.k);
+    const wcss = sweep.map(r => r.wcss);
 
+    // --- WCSS elbow plot ---
+    const elbowK = _detectElbow(ks, wcss);
+    const elbowY = wcss[ks.indexOf(elbowK)];
+    Plotly.newPlot(document.getElementById('cluster-sweep-plot-wcss'), [
+        {
+            type: 'scatter', mode: 'lines+markers',
+            x: ks, y: wcss, name: 'WCSS',
+            marker: { size: 7, color: '#2c7bb6' },
+            line:   { color: '#2c7bb6' },
+            hovertemplate: 'k=%{x}  WCSS=%{y:.2f}<extra></extra>',
+        },
+        {
+            type: 'scatter', mode: 'markers', name: `Elbow (k=${elbowK})`,
+            x: [elbowK], y: [elbowY],
+            marker: { size: 12, color: '#e74c3c', symbol: 'star' },
+            hovertemplate: `Elbow k=${elbowK}<extra></extra>`,
+        },
+    ], {
+        margin: { t: 36, b: 36, l: 52, r: 10 },
+        xaxis:  { title: 'N clusters', dtick: 1, tickfont: { size: 11 } },
+        yaxis:  { title: 'WCSS', tickfont: { size: 11 } },
+        title:  { text: `WCSS (elbow: k=${elbowK}) ↓`, font: { size: 12 } },
+        showlegend: false,
+    }, { responsive: true, displayModeBar: false });
+
+    // --- Other quality indices ---
     const indices = [
-        { key: 'silhouette_mean',   divId: 'cluster-sweep-plot-silhouette',     label: 'Silhouette (mean) ↑',   color: '#4a90e2' },
-        { key: 'calinski_harabasz', divId: 'cluster-sweep-plot-calinski',        label: 'Calinski-Harabasz ↑',   color: '#e67e22' },
-        { key: 'xie_beni',          divId: 'cluster-sweep-plot-xie_beni',        label: 'Xie-Beni ↓',            color: '#8e44ad' },
-        { key: 'davies_bouldin',    divId: 'cluster-sweep-plot-davies_bouldin',  label: 'Davies-Bouldin ↓',      color: '#e74c3c' },
-        { key: 'dunn',              divId: 'cluster-sweep-plot-dunn',            label: 'Dunn ↑',                color: '#27ae60' },
+        { key: 'silhouette_mean',   divId: 'cluster-sweep-plot-silhouette',     label: 'Silhouette (mean) ↑',  color: '#4a90e2' },
+        { key: 'calinski_harabasz', divId: 'cluster-sweep-plot-calinski',        label: 'Calinski-Harabasz ↑',  color: '#e67e22' },
+        { key: 'xie_beni',          divId: 'cluster-sweep-plot-xie_beni',        label: 'Xie-Beni ↓',           color: '#8e44ad' },
+        { key: 'davies_bouldin',    divId: 'cluster-sweep-plot-davies_bouldin',  label: 'Davies-Bouldin ↓',     color: '#e74c3c' },
+        { key: 'dunn',              divId: 'cluster-sweep-plot-dunn',            label: 'Dunn ↑',               color: '#27ae60' },
     ];
 
     indices.forEach(({ key, divId, label, color }) => {
@@ -523,13 +578,13 @@ function renderSweepPanel(sweep) {
             type: 'scatter', mode: 'lines+markers',
             x: ks, y: ys,
             marker: { size: 7, color },
-            line: { color },
+            line:   { color },
             hovertemplate: 'k=%{x}  %{y:.4f}<extra></extra>',
         }], {
             margin: { t: 36, b: 36, l: 52, r: 10 },
-            xaxis: { title: 'N clusters', dtick: 1, tickfont: { size: 11 } },
-            yaxis: { title: 'Quality', tickfont: { size: 11 } },
-            title: { text: label, font: { size: 12 } },
+            xaxis:  { title: 'N clusters', dtick: 1, tickfont: { size: 11 } },
+            yaxis:  { title: 'Quality', tickfont: { size: 11 } },
+            title:  { text: label, font: { size: 12 } },
         }, { responsive: true, displayModeBar: false });
     });
 }
