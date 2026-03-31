@@ -2,7 +2,7 @@ using HTTP, JSON3, CSV, DataFrames, Statistics
 using Kinbiont
 using Distributions: Normal, cdf
 using StatsBase: corspearman
-using DecisionTree: build_forest, impurity_importance
+using DecisionTree: build_forest, impurity_importance, apply_forest
 import Clustering
 
 # Configuration - adjust paths for standalone deployment

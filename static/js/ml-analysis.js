@@ -117,6 +117,7 @@ function renderMlResults(data, selectedParams) {
 
     renderCorrelationChart(data.correlations);
     renderImportanceCharts(data.importance, selectedParams);
+    renderPDPCharts(data.pdp, selectedParams);
 }
 
 function renderCorrelationChart(correlations) {
@@ -196,6 +197,51 @@ function renderImportanceCharts(importance, selectedParams) {
             yaxis:  { autorange: 'reversed' },
             height: 360,
             title:  `Feature importance — ${param}`,
+        }, { responsive: true });
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Partial Dependence Plots
+// ---------------------------------------------------------------------------
+
+function renderPDPCharts(pdp, selectedParams) {
+    const container = document.getElementById('ml-pdp-container');
+    if (!container) return;
+    container.innerHTML = '';
+
+    if (!pdp || selectedParams.every(p => !pdp[p] || pdp[p].length === 0)) {
+        container.innerHTML = '<p style="color:#6c757d; padding:10px;">No PDP data available.</p>';
+        return;
+    }
+
+    selectedParams.forEach(param => {
+        const curves = pdp[param];
+        if (!curves || curves.length === 0) return;
+
+        // One multi-trace plot per parameter: all top-5 features overlaid
+        const divId = `ml-pdp-plot-${param}`;
+        const wrapper = document.createElement('div');
+        wrapper.style.cssText = 'width:100%;';
+        wrapper.innerHTML = `<div id="${divId}" style="width:100%; height:400px;"></div>`;
+        container.appendChild(wrapper);
+
+        const traces = curves.map(c => ({
+            type: 'scatter',
+            mode: 'lines',
+            name: c.feature,
+            x: c.grid,
+            y: c.mean,
+            hovertemplate: `${c.feature}<br>value: %{x:.3g}<br>predicted ${param}: %{y:.4f}<extra></extra>`,
+        }));
+
+        Plotly.newPlot(divId, traces, {
+            title:  `Partial dependence — ${param} (top 5 features)`,
+            xaxis:  { title: 'Feature value' },
+            yaxis:  { title: `Predicted ${param}` },
+            height: 400,
+            margin: { l: 70, r: 20, t: 50, b: 60 },
+            legend: { orientation: 'v', x: 1.02, xanchor: 'left' },
         }, { responsive: true });
     });
 }

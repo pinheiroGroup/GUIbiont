@@ -60,10 +60,10 @@ function forest_importance(
     n_trees::Int  = 100,
     max_depth::Int = 5,
     seed::Int     = 42,
-)::Vector{Dict{String,Any}}
+)  # returns (rankings, model, Xm) or ([], nothing, nothing)
     y    = params[:, param_col]
     mask = .!isnan.(y) .& all(.!isnan.(features), dims=2)[:]
-    sum(mask) < 10 && return Dict{String,Any}[]
+    sum(mask) < 10 && return (Dict{String,Any}[], nothing, nothing)
 
     Xm = features[mask, :]
     ym = y[mask]
@@ -71,7 +71,30 @@ function forest_importance(
     model = build_forest(ym, Xm, -1, n_trees, 0.7, max_depth; rng=seed)
     imp   = impurity_importance(model)
 
-    order = sortperm(imp; rev=true)
-    return [Dict{String,Any}("feature" => feature_names[i], "importance" => imp[i])
-            for i in order]
+    order    = sortperm(imp; rev=true)
+    rankings = [Dict{String,Any}("feature" => feature_names[i], "importance" => imp[i])
+                for i in order]
+    return (rankings, model, Xm)
+end
+
+"""
+    partial_dependence(model, X, feature_idx; n_grid=30)
+
+Compute the partial dependence of `model`'s predictions on column `feature_idx`
+of feature matrix `X`. Returns `(grid, mean_predictions)`.
+"""
+function partial_dependence(
+    model,
+    X::Matrix{Float64},
+    feature_idx::Int;
+    n_grid::Int = 30,
+)::Tuple{Vector{Float64}, Vector{Float64}}
+    col  = X[:, feature_idx]
+    grid = collect(range(minimum(col), maximum(col); length=n_grid))
+    X_mod = copy(X)
+    means = map(grid) do val
+        X_mod[:, feature_idx] .= val
+        Statistics.mean(apply_forest(model, X_mod))
+    end
+    return grid, means
 end
