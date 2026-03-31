@@ -176,8 +176,8 @@ function renderImportanceCharts(importance, selectedParams) {
         const top = imp.slice(0, 15);
         const divId = `ml-imp-plot-${param}`;
         const wrapper = document.createElement('div');
-        wrapper.style.cssText = 'flex:1; min-width:300px; max-width:600px;';
-        wrapper.innerHTML = `<div id="${divId}" style="width:100%; height:360px;"></div>`;
+        wrapper.style.cssText = 'width:100%;';
+        wrapper.innerHTML = `<div id="${divId}" style="width:100%; height:400px;"></div>`;
         container.appendChild(wrapper);
 
         const features = top.map(r => r.feature);
