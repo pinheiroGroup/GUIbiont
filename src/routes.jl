@@ -1634,16 +1634,29 @@ function router(req)
                 corr = spearman_correlations(param_mat, feat_mat, all_params, feature_names)
 
                 importance = Dict{String,Any}()
+                pdp        = Dict{String,Any}()
                 for pname in param_names
                     pcol = findfirst(==(pname), all_params)
-                    if pcol !== nothing
-                        importance[pname] = forest_importance(param_mat, feat_mat, pcol, feature_names)
-                    end
+                    pcol === nothing && continue
+                    rankings, model, Xm = forest_importance(param_mat, feat_mat, pcol, feature_names)
+                    importance[pname] = rankings
+                    isempty(rankings) || model === nothing && continue
+                    # PDPs for top 5 features
+                    top5 = [findfirst(==(r["feature"]), feature_names)
+                            for r in rankings[1:min(5, length(rankings))]]
+                    pdp[pname] = [
+                        begin
+                            grid, means = partial_dependence(model, Xm, idx)
+                            Dict("feature" => feature_names[idx], "grid" => grid, "mean" => means)
+                        end
+                        for idx in top5 if idx !== nothing
+                    ]
                 end
 
                 return HTTP.Response(200, headers, JSON3.write(Dict(
                     "correlations" => corr,
                     "importance"   => importance,
+                    "pdp"          => pdp,
                     "n_wells"      => nrow(joined),
                 )))
             catch e

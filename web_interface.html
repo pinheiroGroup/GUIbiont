@@ -704,6 +704,15 @@
                     <h3 style="margin-top:24px; margin-bottom:12px;">Random-forest feature importance (top 15)</h3>
                     <div id="ml-importance-container"
                          style="display:flex; flex-direction:column; gap:24px;"></div>
+
+                    <!-- Partial Dependence Plots -->
+                    <h3 style="margin-top:32px; margin-bottom:8px;">Partial dependence plots (top 5 features per parameter)</h3>
+                    <p style="color:#6c757d; font-size:0.88em; margin:0 0 12px;">
+                        Each curve shows the model's average predicted value as one compound concentration varies,
+                        holding all others at their observed values.
+                    </p>
+                    <div id="ml-pdp-container"
+                         style="display:flex; flex-direction:column; gap:24px;"></div>
                 </div>
             </div>
 
