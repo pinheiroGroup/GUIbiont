@@ -68,7 +68,7 @@ function forest_importance(
     Xm = features[mask, :]
     ym = y[mask]
 
-    model = build_forest(ym, Xm; n_trees=n_trees, max_depth=max_depth, rng=seed)
+    model = build_forest(ym, Xm, -1, n_trees, 0.7, max_depth; rng=seed)
     imp   = impurity_importance(model)
 
     order = sortperm(imp; rev=true)
