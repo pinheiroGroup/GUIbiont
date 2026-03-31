@@ -5,7 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GUIbiont</title>
     <link rel="stylesheet" href="/static/css/main.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
     <script src="/static/vendor/plotly-2.29.1.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/julia/julia.min.js"></script>
 </head>
 <body>
     <div class="container">
@@ -21,6 +24,7 @@
             <button class="tab-button" onclick="switchTab('fit-curve')">🧮 Fit Curve</button>
             <button class="tab-button" onclick="switchTab('clustering')">🔵 Clustering</button>
             <button class="tab-button" onclick="switchTab('batch-fit')">⚡ Batch Fit</button>
+            <button class="tab-button" onclick="switchTab('ml-analysis')">🔬 ML Analysis</button>
         </div>
 
         <div class="controls">
@@ -166,6 +170,7 @@
                                 </select>
                             </div>
                             <button class="btn fit-btn" onclick="fitGrowthCurve()" id="fit-button" disabled>📊 Fit Curve</button>
+                            <button class="btn" onclick="openFitCodeExport()" id="fit-export-btn" style="display:none;">📋 Export Julia code</button>
                         </div>
 
                         <div class="model-selector-row">
@@ -471,6 +476,7 @@
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
                     <div id="cluster-blank-notice" style="display:none; font-size:0.875em; padding:6px 12px; border-radius:6px; background:rgba(74,144,226,0.1); border:1px solid #4a90e2; color:#2c5f8a;"></div>
                     <div style="display:flex; gap:8px; margin-left:auto;">
+                        <button class="btn" id="cluster-export-btn" onclick="openClusterCodeExport()" disabled>📋 Export Julia code</button>
                         <button class="btn" onclick="exportAllClustersCSV()">📥 Export all (CSV)</button>
                         <button class="btn" onclick="exportAllClustersPNG()">🖼 Export all (PNG)</button>
                     </div>
@@ -495,6 +501,7 @@
                 <div style="background:#fff; border:1px solid #dee2e6; border-radius:8px; padding:16px;">
                     <h4 style="margin:0 0 12px; color:#495057;">🔍 Best k — Quality Indices</h4>
                     <div id="cluster-sweep-grid" style="display:grid; grid-template-columns:repeat(3,1fr); gap:12px;">
+                        <div id="cluster-sweep-plot-wcss"           style="height:220px;"></div>
                         <div id="cluster-sweep-plot-silhouette"     style="height:220px;"></div>
                         <div id="cluster-sweep-plot-calinski"       style="height:220px;"></div>
                         <div id="cluster-sweep-plot-xie_beni"       style="height:220px;"></div>
@@ -594,12 +601,119 @@
 
                         <div style="margin-top: 14px; display: flex; align-items: center; gap: 12px;">
                             <button class="btn fit-btn" id="batch-fit-run-btn" onclick="runBatchFit()" disabled>⚡ Run Batch Fit</button>
+                            <button class="btn" id="batch-export-btn" onclick="openBatchCodeExport()" disabled>📋 Export Julia code</button>
                             <span id="batch-fit-progress" style="display:none; font-size: 0.9em; color: #6c757d;"></span>
                         </div>
                     </div>
                 </div>
 
                 <div id="batch-fit-results" style="display: none; margin-top: 20px; padding: 0 5px;"></div>
+            </div>
+
+            <!-- ML Analysis Tab Content -->
+            <div id="ml-analysis-content" class="tab-content">
+                <div class="control-group" style="padding: 20px;">
+                    <p class="fitting-description">
+                        Link batch-fit growth parameters to an external feature matrix
+                        (e.g. chemical compound concentrations) using Spearman rank correlations
+                        and random-forest feature importance.
+                    </p>
+
+                    <div style="display:flex; flex-wrap:wrap; gap:20px; align-items:flex-start; margin-top:10px;">
+
+                        <!-- Fit results upload -->
+                        <div style="flex:1; min-width:220px;">
+                            <label style="font-weight:600; display:block; margin-bottom:6px;">
+                                Batch-fit results CSV
+                                <span style="font-weight:400; font-size:0.85em; color:#6c757d;">
+                                  (columns: label, gr, exit_lag_rate, N_max, shape)
+                                </span>
+                            </label>
+                            <label class="btn" style="cursor:pointer; display:inline-block;">
+                                📂 Choose file
+                                <input type="file" id="ml-fit-file" accept=".csv"
+                                       style="display:none" onchange="onFitResultsFileChange()">
+                            </label>
+                            <span id="ml-fit-file-label"
+                                  style="margin-left:8px; font-size:0.88em; color:#6c757d;">No file chosen</span>
+                        </div>
+
+                        <!-- Feature matrix upload -->
+                        <div style="flex:1; min-width:220px;">
+                            <label style="font-weight:600; display:block; margin-bottom:6px;">
+                                Feature matrix CSV
+                                <span style="font-weight:400; font-size:0.85em; color:#6c757d;">
+                                  (first column: label, remaining: features)
+                                </span>
+                            </label>
+                            <label class="btn" style="cursor:pointer; display:inline-block;">
+                                📂 Choose file
+                                <input type="file" id="ml-feature-file" accept=".csv"
+                                       style="display:none" onchange="onFeatureMatrixFileChange()">
+                            </label>
+                            <span id="ml-feature-file-label"
+                                  style="margin-left:8px; font-size:0.88em; color:#6c757d;">No file chosen</span>
+                        </div>
+
+                        <!-- Param selection for RF importance -->
+                        <div style="flex:1; min-width:200px;">
+                            <label style="font-weight:600; display:block; margin-bottom:6px;">
+                                Params for feature importance
+                            </label>
+                            <div style="display:flex; flex-direction:column; gap:4px;">
+                                <label><input type="checkbox" id="ml-param-gr"            checked> gr</label>
+                                <label><input type="checkbox" id="ml-param-exit_lag_rate" checked> exit_lag_rate</label>
+                                <label><input type="checkbox" id="ml-param-N_max"         checked> N_max</label>
+                                <label><input type="checkbox" id="ml-param-shape">                 shape</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="margin-top:16px;">
+                        <button class="btn fit-btn" id="ml-run-btn"
+                                onclick="runMlAnalysis()" disabled>
+                            🔬 Run ML Analysis
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Status + Results -->
+                <div id="ml-status"
+                     style="display:none; padding:10px 20px; font-size:0.9em; color:#6c757d;"></div>
+
+                <div id="ml-results" style="display:none; padding:0 20px 20px;">
+                    <p id="ml-n-wells" style="font-size:0.9em; color:#6c757d; margin-bottom:14px;"></p>
+
+                    <!-- Spearman correlations -->
+                    <h3 style="margin-bottom:8px;">Spearman rank correlations</h3>
+                    <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+                        <label style="font-size:0.9em;">Growth parameter:</label>
+                        <select id="ml-corr-param-sel" style="font-size:0.9em;"
+                                onchange="onCorrParamChange()">
+                            <option value="gr">gr</option>
+                            <option value="exit_lag_rate">exit_lag_rate</option>
+                            <option value="N_max">N_max</option>
+                            <option value="shape">shape</option>
+                        </select>
+                    </div>
+                    <div id="ml-corr-container">
+                        <div id="ml-corr-plot" style="width:100%; max-width:700px;"></div>
+                    </div>
+
+                    <!-- Feature importance -->
+                    <h3 style="margin-top:24px; margin-bottom:12px;">Random-forest feature importance (top 15)</h3>
+                    <div id="ml-importance-container"
+                         style="display:flex; flex-direction:column; gap:24px;"></div>
+
+                    <!-- Partial Dependence Plots -->
+                    <h3 style="margin-top:32px; margin-bottom:8px;">Partial dependence plots (top 5 features per parameter)</h3>
+                    <p style="color:#6c757d; font-size:0.88em; margin:0 0 12px;">
+                        Each curve shows the model's average predicted value as one compound concentration varies,
+                        holding all others at their observed values.
+                    </p>
+                    <div id="ml-pdp-container"
+                         style="display:flex; flex-direction:column; gap:24px;"></div>
+                </div>
             </div>
 
             <div id="loading" class="loading" style="display: none;">
@@ -610,6 +724,26 @@
             <div id="info" class="info">
                 👋 Welcome! Select an experiment from the dropdown above to get started.
             </div>
+        </div>
+    </div>
+
+    <!-- Code Export Modal -->
+    <div id="code-export-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:10000; align-items:center; justify-content:center;">
+        <div style="background:#fff; border-radius:12px; width:min(880px,95vw); max-height:90vh; display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,0.35); overflow:hidden;">
+            <!-- Header -->
+            <div style="padding:14px 20px; border-bottom:1px solid #dee2e6; display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+                <h3 id="code-export-title" style="margin:0; color:#343a40; font-size:1.05em; white-space:nowrap;"></h3>
+                <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
+                    <label style="display:flex; align-items:center; gap:6px; font-size:0.875em; cursor:pointer; user-select:none;">
+                        <input type="checkbox" id="code-export-comments" onchange="toggleCodeComments()">
+                        Add explanatory comments
+                    </label>
+                    <button class="btn" onclick="downloadExportedCode()">📥 Download .jl</button>
+                    <button onclick="closeCodeExportModal()" style="background:none; border:none; font-size:1.5em; line-height:1; cursor:pointer; color:#6c757d; padding:0 2px;" title="Close">✕</button>
+                </div>
+            </div>
+            <!-- CodeMirror editor fills remaining space -->
+            <div id="code-export-editor" style="flex:1; overflow:auto;"></div>
         </div>
     </div>
 

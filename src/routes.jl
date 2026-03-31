@@ -195,31 +195,18 @@ function router(req)
         elseif startswith(path, "/api/experiment/") && endswith(path, "/info")
             # GET /api/experiment/{name}/info - Get experiment metadata
             path_parts = split(path, "/")
-            println("Debug - path: $path, parts: $path_parts")
             if length(path_parts) >= 4
                 experiment = path_parts[4]  # Extract experiment name
-                println("Debug - experiment: $experiment")
-                # Call function directly inline to avoid scoping issues
                 data_file = joinpath(CLEAN_DATA_PATH, experiment, "data_channel_1.csv")
                 annotation_file = joinpath(CLEAN_DATA_PATH, experiment, "annotation_clean.csv")
-                
+
                 if !isfile(data_file) || !isfile(annotation_file)
                     info = nothing
                 else
                     try
-                        # Read with more flexible options
-                        println("Debug - Reading file: $data_file")
                         growth_data = CSV.read(data_file, DataFrame, header=1, silencewarnings=true)
-                        println("Debug - Growth data loaded. Columns: $(ncol(growth_data)), Rows: $(nrow(growth_data))")
-                        println("Debug - Column names: $(names(growth_data))")
-                        
                         annotations = CSV.read(annotation_file, DataFrame, header=false, silencewarnings=true, stringtype=String)
-                        println("Debug - Annotations loaded. Columns: $(ncol(annotations)), Rows: $(nrow(annotations))")
-                        println("Debug - First few rows:")
-                        for i in 1:min(3, nrow(annotations))
-                            println("Debug - Row $i: $(annotations[i, :])")
-                        end
-                        
+
                         # Rename columns - 5th column (index 5) should be antibiotic
                         col_names = names(annotations)
                         new_names = Symbol[]
@@ -235,18 +222,13 @@ function router(req)
                             end
                         end
                         rename!(annotations, new_names)
-                        println("Debug - Column names after renaming: $(names(annotations))")
-                        
+
                         time_col = names(growth_data)[1]
                         all_well_columns = names(growth_data)[2:end]
-                        
-                        # Filter out blank wells based on annotation file (more precise than regex)
+
                         blank_wells = get_blank_wells(annotations)
                         well_columns = filter(well -> !(string(well) in blank_wells), all_well_columns)
-                        println("Debug - All wells: $all_well_columns")
-                        println("Debug - Filtered wells: $well_columns")
-                        println("Debug - Filtered out: $(length(all_well_columns) - length(well_columns)) wells")
-                        
+
                         # Create well info with conditions including columns 3, 4, and antibiotic
                         well_info = []
                         for well in well_columns
@@ -256,7 +238,7 @@ function router(req)
                             if nrow(well_annotation) > 0
                                 row = well_annotation[1, :]
                                 condition_parts = [string(row.condition)]
-                                
+
                                 # Add columns 3 and 4 if they exist and have values
                                 if "col_3" in names(annotations) && !ismissing(row.col_3) && string(row.col_3) != ""
                                     push!(condition_parts, string(row.col_3))
@@ -264,36 +246,22 @@ function router(req)
                                 if "col_4" in names(annotations) && !ismissing(row.col_4) && string(row.col_4) != ""
                                     push!(condition_parts, string(row.col_4))
                                 end
-                                
+
                                 # Add antibiotic from column 5
                                 if "antibiotic" in names(annotations)
                                     antibiotic_value = row.antibiotic
-                                    println("Debug - Well $well: antibiotic raw value = '$antibiotic_value', missing? $(ismissing(antibiotic_value))")
                                     if !ismissing(antibiotic_value) && string(antibiotic_value) != ""
                                         antibiotic = string(antibiotic_value)
-                                        println("Debug - Well $well: antibiotic set to '$antibiotic'")
                                     else
                                         antibiotic = "None"
-                                        println("Debug - Well $well: antibiotic set to 'None' (empty or missing)")
                                     end
                                 else
                                     antibiotic = "None"
-                                    println("Debug - Well $well: no antibiotic column found")
                                 end
                             end
-                            
+
                             condition = join(condition_parts, " | ")
                             push!(well_info, Dict("well" => well, "condition" => condition, "antibiotic" => antibiotic))
-                            if antibiotic != "None"
-                                println("Debug - Found well with antibiotic: $well -> $antibiotic")
-                            end
-                        end
-                        
-                        println("Debug - Total wells in result: $(length(well_info))")
-                        antibiotic_wells = filter(w -> w["antibiotic"] != "None", well_info)
-                        println("Debug - Wells with antibiotics: $(length(antibiotic_wells))")
-                        for w in antibiotic_wells
-                            println("Debug - Antibiotic well: $(w["well"]) -> $(w["antibiotic"])")
                         end
                         
                         info = Dict(
@@ -556,18 +524,11 @@ function router(req)
                 # Create output directory
                 output_path = joinpath(CLEAN_DATA_PATH, experiment) * "/"
                 
-                # Load cleaning functions
-                println("Starting data cleaning for experiment: $experiment")
-                println("Input path: $raw_experiment_path")
-                println("Output path: $output_path")
-                
                 # Clean the annotation file first
                 read_labguru_annotation(plate_file, output_path, well_count)
-                println("Annotation cleaning completed")
-                
+
                 # Clean the data file
                 cleaning_data_synergy(data_file, output_path)
-                println("Data cleaning completed")
                 
                 # Check what files were created
                 created_files = []
@@ -1570,19 +1531,35 @@ function router(req)
             end
             zscored = _zscore_rows(curves_for)
 
+            # Compute WCSS from assignments + z-scored data
+            function _wcss_from_assignments(data::Matrix{Float64}, ids::Vector{Int})
+                wcss = 0.0
+                for c in unique(ids)
+                    rows = data[ids .== c, :]
+                    centroid = mean(rows, dims=1)
+                    wcss += sum((rows .- centroid).^2)
+                end
+                return wcss
+            end
+
             sweep_results = []
             for k in 2:min(k_max, n_series)
-                ids = try
+                ids, wcss = try
                     if cluster_method == "kmeans"
-                        Clustering.assignments(Clustering.kmeans(zscored', k; maxiter, tol))
+                        km  = Clustering.kmeans(zscored', k; maxiter, tol)
+                        Clustering.assignments(km), km.totalcost
                     elseif cluster_method == "kmedoids"
                         dmat = _pairwise_euclidean(zscored)
-                        Clustering.assignments(Clustering.kmedoids(dmat, k; maxiter, tol))
+                        km   = Clustering.kmedoids(dmat, k; maxiter, tol)
+                        asgn = Clustering.assignments(km)
+                        asgn, _wcss_from_assignments(zscored, asgn)
                     elseif cluster_method == "hclust"
                         dmat = _pairwise_euclidean(zscored)
-                        Clustering.cutree(Clustering.hclust(dmat; linkage=hclust_linkage); k)
+                        asgn = Clustering.cutree(Clustering.hclust(dmat; linkage=hclust_linkage); k)
+                        asgn, _wcss_from_assignments(zscored, asgn)
                     else
-                        Clustering.assignments(Clustering.kmeans(zscored', k; maxiter, tol))
+                        km  = Clustering.kmeans(zscored', k; maxiter, tol)
+                        Clustering.assignments(km), km.totalcost
                     end
                 catch e
                     println("Sweep k=$k error: $e")
@@ -1593,6 +1570,7 @@ function router(req)
                 q = _cluster_quality_indices(zscored, ids_r)
                 push!(sweep_results, Dict(
                     "k"                 => k,
+                    "wcss"              => wcss,
                     "silhouette_mean"   => q["silhouette_mean"],
                     "dunn"              => q["dunn"],
                     "davies_bouldin"    => q["davies_bouldin"],
@@ -1616,6 +1594,76 @@ function router(req)
 
             result = _cluster_comparison(ids1, ids2)
             return HTTP.Response(200, headers, JSON3.write(result))
+
+        # ------------------------------------------------------------------
+        # /api/ml-downstream  — Spearman correlations + RF importance
+        # ------------------------------------------------------------------
+        elseif path == "/api/ml-downstream" && HTTP.method(req) == "POST"
+            try
+                body        = JSON3.read(String(req.body))
+                fit_results = body.fit_results
+                csv_text    = string(body.feature_matrix)
+                param_names = String.(body.params)
+
+                feat_io      = IOBuffer(csv_text)
+                feat_raw     = CSV.read(feat_io, DataFrame)
+                feat_labels  = string.(feat_raw[!, 1])
+                feature_names = String.(names(feat_raw)[2:end])
+                feat_matrix  = Matrix{Float64}(coalesce.(feat_raw[!, 2:end], NaN))
+
+                fit_df = DataFrame(
+                    label         = [string(r.label)         for r in fit_results],
+                    gr            = [Float64(r.gr)            for r in fit_results],
+                    exit_lag_rate = [Float64(r.exit_lag_rate) for r in fit_results],
+                    N_max         = [Float64(r.N_max)         for r in fit_results],
+                    shape         = [Float64(r.shape)         for r in fit_results],
+                )
+                feat_df = DataFrame(
+                    :label => feat_labels,
+                    [Symbol(n) => feat_matrix[:, i] for (i, n) in enumerate(feature_names)]...,
+                )
+                joined = innerjoin(fit_df, feat_df; on = :label)
+
+                isempty(joined) && return HTTP.Response(400, headers,
+                    JSON3.write(Dict("error" => "No matching well labels between fit results and feature matrix")))
+
+                all_params = ["gr", "exit_lag_rate", "N_max", "shape"]
+                param_mat  = Matrix{Float64}(joined[!, Symbol.(all_params)])
+                feat_mat   = Matrix{Float64}(joined[!, Symbol.(feature_names)])
+
+                corr = spearman_correlations(param_mat, feat_mat, all_params, feature_names)
+
+                importance = Dict{String,Any}()
+                pdp        = Dict{String,Any}()
+                for pname in param_names
+                    pcol = findfirst(==(pname), all_params)
+                    pcol === nothing && continue
+                    rankings, model, Xm = forest_importance(param_mat, feat_mat, pcol, feature_names)
+                    importance[pname] = rankings
+                    isempty(rankings) || model === nothing && continue
+                    # PDPs for top 5 features
+                    top5 = [findfirst(==(r["feature"]), feature_names)
+                            for r in rankings[1:min(5, length(rankings))]]
+                    pdp[pname] = [
+                        begin
+                            grid, means = partial_dependence(model, Xm, idx)
+                            Dict("feature" => feature_names[idx], "grid" => grid, "mean" => means)
+                        end
+                        for idx in top5 if idx !== nothing
+                    ]
+                end
+
+                return HTTP.Response(200, headers, JSON3.write(Dict(
+                    "correlations" => corr,
+                    "importance"   => importance,
+                    "pdp"          => pdp,
+                    "n_wells"      => nrow(joined),
+                )))
+            catch e
+                println("Error in /api/ml-downstream: $e")
+                return HTTP.Response(500, headers,
+                    JSON3.write(Dict("error" => "ML analysis failed: $(string(e))")))
+            end
 
         elseif path == "/"
             # Serve the main HTML page

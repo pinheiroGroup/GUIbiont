@@ -1,6 +1,8 @@
 using HTTP, JSON3, CSV, DataFrames, Statistics
 using Kinbiont
 using Distributions: Normal, cdf
+using StatsBase: corspearman
+using DecisionTree: build_forest, impurity_importance, apply_forest
 import Clustering
 
 # Configuration - adjust paths for standalone deployment
@@ -13,6 +15,7 @@ include("src/clustering.jl")
 include("src/data.jl")
 include("src/http.jl")
 include("src/analysis.jl")
+include("src/ml_downstream.jl")
 include("src/routes.jl")
 
 # Start the server
