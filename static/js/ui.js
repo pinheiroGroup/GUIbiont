@@ -144,16 +144,16 @@ function hideLoading() {
 }
 
 function showError(message) {
-    document.getElementById('info').innerHTML = `❌ ${message}`;
-    document.getElementById('info').className = 'error';
+    const infoEl = document.getElementById('info');
+    if (infoEl) { infoEl.innerHTML = `❌ ${message}`; infoEl.className = 'error'; }
 }
 
 function hideWellsAndPlot() {
     document.getElementById('wells-group').style.display = 'none';
     state.selectedReplicateKeys.clear();
     hidePlotAndStats();
-    document.getElementById('info').innerHTML = '👋 Select an experiment to get started.';
-    document.getElementById('info').className = 'info';
+    const infoEl = document.getElementById('info');
+    if (infoEl) { infoEl.innerHTML = '👋 Select an experiment to get started.'; infoEl.className = 'info'; }
 }
 
 function hidePlotAndStats() {

@@ -4,13 +4,32 @@ import { state, API_BASE } from './state.js';
 // ML Downstream Analysis tab
 // ---------------------------------------------------------------------------
 // Workflow:
-//   1. User uploads batch-fit CSV  (columns: label, gr, exit_lag_rate, N_max, shape)
-//   2. User uploads feature CSV    (columns: label, feature1, feature2, …)
-//   3. User selects growth params to include in RF importance
+//   1. User uploads batch-fit CSV  (any label column + numeric param columns)
+//   2. User uploads feature CSV    (any label column + numeric feature columns)
+//   3. User selects label column (default: first column) and growth params
 //   4. Click "Run ML Analysis" → POST /api/ml-downstream
-//   5. Render: Spearman correlation bar chart + RF feature importance bar charts
+//   5. Render: Spearman correlation bar chart + RF feature importance + PDPs
 
-const ML_PARAMS = ['gr', 'exit_lag_rate', 'N_max', 'shape'];
+// ---------------------------------------------------------------------------
+// CSV header parser
+// ---------------------------------------------------------------------------
+
+function parseCsvHeader(text) {
+    const firstLine = text.trim().split(/\r?\n/)[0];
+    return firstLine.split(',').map(h => h.trim());
+}
+
+function isNumericColumn(text, colIdx) {
+    const lines = text.trim().split(/\r?\n/);
+    // Check up to 10 data rows
+    const dataLines = lines.slice(1, Math.min(11, lines.length));
+    let numericCount = 0;
+    for (const line of dataLines) {
+        const val = line.split(',')[colIdx]?.trim();
+        if (val !== undefined && val !== '' && !isNaN(Number(val))) numericCount++;
+    }
+    return numericCount > 0 && numericCount >= Math.min(dataLines.length, 3);
+}
 
 // ---------------------------------------------------------------------------
 // File upload handlers
@@ -20,34 +39,150 @@ function onFitResultsFileChange() {
     const file = document.getElementById('ml-fit-file').files[0];
     const label = document.getElementById('ml-fit-file-label');
     label.textContent = file ? file.name : 'No file chosen';
-    updateMlRunBtn();
+
+    if (!file) { updateMlRunBtn(); return; }
+
+    const reader = new FileReader();
+    reader.onload = e => {
+        const text = e.target.result;
+        state._fitCsvText = text;
+        const headers = parseCsvHeader(text);
+
+        // Populate label column selector
+        const labelSel = document.getElementById('ml-label-col-select');
+        labelSel.innerHTML = '';
+        headers.forEach((h, i) => {
+            const opt = document.createElement('option');
+            opt.value = h;
+            opt.textContent = h;
+            if (i === 0) opt.selected = true;
+            labelSel.appendChild(opt);
+        });
+        document.getElementById('ml-label-col-wrap').style.display = 'block';
+
+        // Populate param checkboxes (numeric columns only, skip first column = label)
+        const numericCols = headers.filter(h => {
+            const realIdx = headers.indexOf(h);
+            return realIdx !== 0 && isNumericColumn(text, realIdx);
+        });
+
+        const checkboxContainer = document.getElementById('ml-param-checkboxes');
+        if (numericCols.length === 0) {
+            checkboxContainer.innerHTML =
+                '<span style="color:#dc3545; font-size:0.88em;">No numeric columns detected.</span>';
+        } else {
+            checkboxContainer.innerHTML = '';
+            numericCols.forEach(col => {
+                const id = `ml-param-${col}`;
+                const wrap = document.createElement('label');
+                wrap.style.cssText = 'display:flex; align-items:center; gap:6px; cursor:pointer;';
+                wrap.innerHTML = `<input type="checkbox" id="${id}" value="${col}" checked>
+                    <span>${col}</span>`;
+                checkboxContainer.appendChild(wrap);
+            });
+        }
+
+        // Populate correlation selector
+        const corrSel = document.getElementById('ml-corr-param-sel');
+        corrSel.innerHTML = '';
+        numericCols.forEach((col, i) => {
+            const opt = document.createElement('option');
+            opt.value = col;
+            opt.textContent = col;
+            if (i === 0) opt.selected = true;
+            corrSel.appendChild(opt);
+        });
+
+        validateLabels();
+        updateMlRunBtn();
+    };
+    reader.readAsText(file);
 }
 
 function onFeatureMatrixFileChange() {
     const file = document.getElementById('ml-feature-file').files[0];
     const label = document.getElementById('ml-feature-file-label');
     label.textContent = file ? file.name : 'No file chosen';
-    updateMlRunBtn();
+
+    if (!file) { updateMlRunBtn(); return; }
+
+    const reader = new FileReader();
+    reader.onload = e => {
+        state._featCsvText = e.target.result;
+        validateLabels();
+        updateMlRunBtn();
+    };
+    reader.readAsText(file);
+}
+
+function onMlLabelColChange() {
+    validateLabels();
+}
+
+// ---------------------------------------------------------------------------
+// Label validation: count matches between fit results and feature matrix
+// ---------------------------------------------------------------------------
+
+function validateLabels() {
+    const statusEl = document.getElementById('ml-label-match-status');
+    if (!state._fitCsvText || !state._featCsvText) {
+        statusEl.style.display = 'none';
+        return;
+    }
+
+    const labelCol = document.getElementById('ml-label-col-select')?.value;
+    if (!labelCol) { statusEl.style.display = 'none'; return; }
+
+    // Extract labels from fit CSV using selected label column
+    const fitHeaders = parseCsvHeader(state._fitCsvText);
+    const labelIdx = fitHeaders.indexOf(labelCol);
+    const fitLines = state._fitCsvText.trim().split(/\r?\n/).slice(1);
+    const fitLabels = new Set(fitLines.map(l => l.split(',')[labelIdx]?.trim()).filter(Boolean));
+
+    // Extract labels from feature CSV (always first column)
+    const featLines = state._featCsvText.trim().split(/\r?\n/).slice(1);
+    const featLabels = new Set(featLines.map(l => l.split(',')[0]?.trim()).filter(Boolean));
+
+    const matched = [...fitLabels].filter(l => featLabels.has(l)).length;
+    const total   = fitLabels.size;
+
+    statusEl.style.display = 'block';
+    if (matched === 0) {
+        statusEl.style.background = '#fff3cd';
+        statusEl.style.borderColor = '#ffc107';
+        statusEl.style.color = '#856404';
+        statusEl.textContent = `Warning: 0 / ${total} labels matched between files. Check that label columns are consistent.`;
+    } else {
+        statusEl.style.background = '#d1e7dd';
+        statusEl.style.borderColor = '#0f5132';
+        statusEl.style.color = '#0f5132';
+        statusEl.textContent = `${matched} / ${total} labels matched.`;
+    }
 }
 
 function updateMlRunBtn() {
-    const fitFile     = document.getElementById('ml-fit-file').files[0];
-    const featFile    = document.getElementById('ml-feature-file').files[0];
-    document.getElementById('ml-run-btn').disabled = !(fitFile && featFile);
+    const hasFit  = !!state._fitCsvText;
+    const hasFeat = !!state._featCsvText;
+    document.getElementById('ml-run-btn').disabled = !(hasFit && hasFeat);
 }
 
 // ---------------------------------------------------------------------------
 // Main: run ML analysis
 // ---------------------------------------------------------------------------
 
-async function runMlAnalysis() {
-    const fitFile  = document.getElementById('ml-fit-file').files[0];
-    const featFile = document.getElementById('ml-feature-file').files[0];
-    if (!fitFile || !featFile) return;
+function getSelectedParams() {
+    return [...document.querySelectorAll('#ml-param-checkboxes input[type=checkbox]')]
+        .filter(cb => cb.checked)
+        .map(cb => cb.value);
+}
 
-    const selectedParams = ML_PARAMS.filter(p =>
-        document.getElementById(`ml-param-${p}`)?.checked
-    );
+async function runMlAnalysis() {
+    if (!state._fitCsvText || !state._featCsvText) return;
+
+    const labelCol = document.getElementById('ml-label-col-select')?.value;
+    if (!labelCol) { alert('Please select a label column.'); return; }
+
+    const selectedParams = getSelectedParams();
     if (selectedParams.length === 0) {
         alert('Please select at least one growth parameter for feature importance.');
         return;
@@ -60,26 +195,10 @@ async function runMlAnalysis() {
     resultsEl.style.display = 'none';
 
     try {
-        const fitText  = await fitFile.text();
-        const featText = await featFile.text();
-
-        const fitRows = parseCsvToObjects(fitText);
-        if (fitRows.length === 0) {
-            statusEl.textContent = 'Error: fit results CSV is empty or malformed.';
-            return;
-        }
-
-        const fitResults = fitRows.map(r => ({
-            label:         String(r.label ?? r[Object.keys(r)[0]]),
-            gr:            parseFloat(r.gr)            || 0,
-            exit_lag_rate: parseFloat(r.exit_lag_rate) || 0,
-            N_max:         parseFloat(r.N_max)         || 0,
-            shape:         parseFloat(r.shape)         || 0,
-        }));
-
         const body = {
-            fit_results:    fitResults,
-            feature_matrix: featText,
+            fit_csv:        state._fitCsvText,
+            label_col:      labelCol,
+            feature_matrix: state._featCsvText,
             params:         selectedParams,
         };
 
@@ -127,14 +246,13 @@ function renderCorrelationChart(correlations) {
         return;
     }
 
-    // Show correlation for 'gr' by default; user can switch via selector
     const paramSel = document.getElementById('ml-corr-param-sel');
-    const activeParam = paramSel ? paramSel.value : 'gr';
-    _drawCorrBar(correlations, activeParam);
+    const activeParam = paramSel ? paramSel.value : correlations[0] ?
+        Object.keys(correlations[0]).find(k => k !== 'feature') : null;
+    if (activeParam) _drawCorrBar(correlations, activeParam);
 }
 
 function _drawCorrBar(correlations, param) {
-    // Sort by |ρ| descending, take top 30
     const sorted = [...correlations]
         .filter(r => r[param] !== undefined && !isNaN(r[param]))
         .sort((a, b) => Math.abs(b[param]) - Math.abs(a[param]))
@@ -162,7 +280,6 @@ function _drawCorrBar(correlations, param) {
 
 function onCorrParamChange() {
     const sel = document.getElementById('ml-corr-param-sel');
-    // Re-read cached correlations from the last result
     if (state._mlCorrelations) _drawCorrBar(state._mlCorrelations, sel.value);
 }
 
@@ -219,7 +336,6 @@ function renderPDPCharts(pdp, selectedParams) {
         const curves = pdp[param];
         if (!curves || curves.length === 0) return;
 
-        // One multi-trace plot per parameter: all top-5 features overlaid
         const divId = `ml-pdp-plot-${param}`;
         const wrapper = document.createElement('div');
         wrapper.style.cssText = 'width:100%;';
@@ -247,22 +363,6 @@ function renderPDPCharts(pdp, selectedParams) {
 }
 
 // ---------------------------------------------------------------------------
-// Tiny CSV parser (header row + data rows → array of objects)
-// ---------------------------------------------------------------------------
-
-function parseCsvToObjects(text) {
-    const lines = text.trim().split(/\r?\n/);
-    if (lines.length < 2) return [];
-    const headers = lines[0].split(',').map(h => h.trim());
-    return lines.slice(1).map(line => {
-        const vals = line.split(',');
-        const obj = {};
-        headers.forEach((h, i) => { obj[h] = vals[i]?.trim() ?? ''; });
-        return obj;
-    });
-}
-
-// ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
 
@@ -272,4 +372,5 @@ export {
     updateMlRunBtn,
     runMlAnalysis,
     onCorrParamChange,
+    onMlLabelColChange,
 };

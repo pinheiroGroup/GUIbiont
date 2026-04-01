@@ -1194,6 +1194,8 @@ function router(req)
             cluster_method = string(get(request_data, :cluster_method, "kmeans"))
             maxiter        = Int(get(request_data, :maxiter, 100))
             tol            = Float64(get(request_data, :tol, 1e-6))
+            interpolate    = Bool(get(request_data, :interpolate, false))
+            interp_n       = Int(get(request_data, :interp_n, 100))
             dbscan_eps     = Float64(get(request_data, :dbscan_eps, 1.0))
             dbscan_minpts  = Int(get(request_data, :dbscan_min_pts, 3))
             hclust_linkage = Symbol(get(request_data, :hclust_linkage, "ward"))
@@ -1201,6 +1203,7 @@ function router(req)
             blank_method      = string(get(request_data, :blank_method, "pointbypoint"))
             blank_range_thr   = Float64(get(request_data, :blank_range_thr, 0.005))
             blank_od_pct      = Float64(get(request_data, :blank_od_percentile, 0.10))
+            max_display       = Int(get(request_data, :max_display_curves, 200))
 
             times_all       = Vector{Vector{Float64}}()
             curves_all      = Vector{Vector{Float64}}()
@@ -1210,14 +1213,17 @@ function router(req)
             blank_labels_used = Vector{String}()
             blank_source      = "none"   # "annotated" | "auto" | "none"
 
-            if haskey(request_data, :csv)
-                df       = CSV.read(IOBuffer(String(request_data[:csv])), DataFrame)
-                csv_time = Float64.(df[!, names(df)[1]])
-                for s in names(df)[2:end]
-                    push!(times_all,  csv_time)
-                    push!(curves_all, Float64.(df[!, s]))
-                    push!(labels_all, String(s))
+            if haskey(request_data, :csv_path) || haskey(request_data, :csv)
+                df = if haskey(request_data, :csv_path)
+                    p = String(request_data[:csv_path])
+                    isfile(p) || return HTTP.Response(400, headers,
+                        JSON3.write(Dict("error" => "File not found: $p")))
+                    CSV.read(p, DataFrame)
+                else
+                    CSV.read(IOBuffer(String(request_data[:csv])), DataFrame)
                 end
+                ta, ca, la = _load_csv_curves(df)
+                append!(times_all, ta); append!(curves_all, ca); append!(labels_all, la)
             else
                 for exp_name in String.(request_data[:experiments])
                     data_file       = joinpath(CLEAN_DATA_PATH, exp_name, "data_channel_1.csv")
@@ -1264,12 +1270,48 @@ function router(req)
             isempty(curves_all) && return HTTP.Response(400, headers,
                 JSON3.write(Dict("error" => "No data loaded")))
 
-            min_len  = minimum(length.(curves_all))
-            times    = times_all[1][1:min_len]
             n_series = length(curves_all)
-            curves   = Matrix{Float64}(undef, n_series, min_len)
-            for (i, c) in enumerate(curves_all)
-                curves[i, :] = c[1:min_len]
+            if interpolate && haskey(request_data, :csv)
+                # Common time grid: span the intersection of all curves
+                # Find valid time range per curve (both time and value must be finite)
+                t_starts_v = Float64[]; t_ends_v = Float64[]
+                for (t_i, c_i) in zip(times_all, curves_all)
+                    fi = findfirst(i -> isfinite(t_i[i]) && isfinite(c_i[i]), eachindex(c_i))
+                    li = findlast( i -> isfinite(t_i[i]) && isfinite(c_i[i]), eachindex(c_i))
+                    (fi === nothing || li === nothing) && continue
+                    push!(t_starts_v, t_i[fi]); push!(t_ends_v, t_i[li])
+                end
+                isempty(t_starts_v) && return HTTP.Response(400, headers,
+                    JSON3.write(Dict("error" => "No finite data found in curves")))
+                t_start = maximum(t_starts_v)
+                t_end   = minimum(t_ends_v)
+                t_end <= t_start && return HTTP.Response(400, headers,
+                    JSON3.write(Dict("error" => "No overlapping time range across curves for interpolation")))
+                times  = collect(range(t_start, t_end; length=interp_n))
+                curves = Matrix{Float64}(undef, n_series, interp_n)
+                for (i, (t_i, c_i)) in enumerate(zip(times_all, curves_all))
+                    for (j, tq) in enumerate(times)
+                        # linear interpolation: find surrounding indices
+                        idx = searchsortedlast(t_i, tq)
+                        if idx == 0
+                            curves[i, j] = c_i[1]
+                        elseif idx >= length(t_i)
+                            curves[i, j] = c_i[end]
+                        else
+                            t0, t1 = t_i[idx], t_i[idx+1]
+                            frac = (tq - t0) / (t1 - t0)
+                            v0, v1 = c_i[idx], c_i[idx+1]
+                            curves[i, j] = isnan(v0) || isnan(v1) ? NaN : v0 + frac * (v1 - v0)
+                        end
+                    end
+                end
+            else
+                min_len  = minimum(length.(curves_all))
+                times    = times_all[1][1:min_len]
+                curves   = Matrix{Float64}(undef, n_series, min_len)
+                for (i, c) in enumerate(curves_all)
+                    curves[i, :] = c[1:min_len]
+                end
             end
 
             # ------------------------------------------------------------------
@@ -1295,7 +1337,8 @@ function router(req)
                 end
 
                 if !isempty(blank_curves_all)
-                    blen      = min(min_len, minimum(length.(blank_curves_all)))
+                    n_tp      = size(curves, 2)
+                    blen      = min(n_tp, minimum(length.(blank_curves_all)))
                     blank_mat = Matrix{Float64}(undef, length(blank_curves_all), blen)
                     for (i, bc) in enumerate(blank_curves_all)
                         blank_mat[i, :] = bc[1:blen]
@@ -1303,11 +1346,16 @@ function router(req)
                     # Mean blank timeseries (per timepoint)
                     blank_ts = [mean(filter(isfinite, blank_mat[:, t])) for t in 1:blen]
                     # Pad/trim to match curves width
-                    blank_ts_full = length(blank_ts) >= min_len ? blank_ts[1:min_len] :
-                                    vcat(blank_ts, fill(blank_ts[end], min_len - length(blank_ts)))
+                    blank_ts_full = length(blank_ts) >= n_tp ? blank_ts[1:n_tp] :
+                                    vcat(blank_ts, fill(blank_ts[end], n_tp - length(blank_ts)))
                     curves = _apply_blank_subtraction_matrix(curves, blank_ts_full, blank_method)
                 end
             end
+
+            # ------------------------------------------------------------------
+            # Sanitise: replace NaN/Inf with column means before any downstream step
+            # ------------------------------------------------------------------
+            curves = _fill_nan_colmean(curves)
 
             # ------------------------------------------------------------------
             # Smoothing via KinBiont preprocess
@@ -1387,11 +1435,19 @@ function router(req)
                 mask = findall(cluster_ids .== c)
                 isempty(mask) && continue
                 label = c == 0 ? "Noise" : string(c)
+                # Sample up to max_display curves for the response (take every N-th)
+                display_mask = if length(mask) > max_display
+                    step = div(length(mask), max_display)
+                    mask[1:step:end][1:max_display]
+                else
+                    mask
+                end
                 push!(clusters, Dict(
                     "id"            => c,
                     "label"         => label,
-                    "series_labels" => labels_all[mask],
-                    "series_data"   => [display_curves[i, :] for i in mask]
+                    "series_labels" => labels_all[display_mask],
+                    "series_data"   => [display_curves[i, :] for i in display_mask],
+                    "n_total"       => length(mask),
                 ))
             end
 
@@ -1456,20 +1512,25 @@ function router(req)
             maxiter        = Int(get(request_data, :maxiter, 100))
             tol            = Float64(get(request_data, :tol, 1e-6))
             hclust_linkage = Symbol(get(request_data, :hclust_linkage, "ward"))
+            interpolate    = Bool(get(request_data, :interpolate, false))
+            interp_n       = Int(get(request_data, :interp_n, 100))
 
             # Re-use the same data-loading logic as /api/cluster
             times_all  = Vector{Vector{Float64}}()
             curves_all = Vector{Vector{Float64}}()
             labels_all = Vector{String}()
 
-            if haskey(request_data, :csv)
-                df       = CSV.read(IOBuffer(String(request_data[:csv])), DataFrame)
-                csv_time = Float64.(df[!, names(df)[1]])
-                for s in names(df)[2:end]
-                    push!(times_all,  csv_time)
-                    push!(curves_all, Float64.(df[!, s]))
-                    push!(labels_all, String(s))
+            if haskey(request_data, :csv_path) || haskey(request_data, :csv)
+                df = if haskey(request_data, :csv_path)
+                    p = String(request_data[:csv_path])
+                    isfile(p) || return HTTP.Response(400, headers,
+                        JSON3.write(Dict("error" => "File not found: $p")))
+                    CSV.read(p, DataFrame)
+                else
+                    CSV.read(IOBuffer(String(request_data[:csv])), DataFrame)
                 end
+                ta, ca, la = _load_csv_curves(df)
+                append!(times_all, ta); append!(curves_all, ca); append!(labels_all, la)
             else
                 for exp_name in String.(request_data[:experiments])
                     data_file       = joinpath(CLEAN_DATA_PATH, exp_name, "data_channel_1.csv")
@@ -1509,13 +1570,50 @@ function router(req)
             isempty(curves_all) && return HTTP.Response(400, headers,
                 JSON3.write(Dict("error" => "No data loaded")))
 
-            min_len  = minimum(length.(curves_all))
-            times    = times_all[1][1:min_len]
             n_series = length(curves_all)
-            curves   = Matrix{Float64}(undef, n_series, min_len)
-            for (i, c) in enumerate(curves_all)
-                curves[i, :] = c[1:min_len]
+            if interpolate && haskey(request_data, :csv)
+                # Find valid time range per curve (both time and value must be finite)
+                t_starts_v = Float64[]; t_ends_v = Float64[]
+                for (t_i, c_i) in zip(times_all, curves_all)
+                    fi = findfirst(i -> isfinite(t_i[i]) && isfinite(c_i[i]), eachindex(c_i))
+                    li = findlast( i -> isfinite(t_i[i]) && isfinite(c_i[i]), eachindex(c_i))
+                    (fi === nothing || li === nothing) && continue
+                    push!(t_starts_v, t_i[fi]); push!(t_ends_v, t_i[li])
+                end
+                isempty(t_starts_v) && return HTTP.Response(400, headers,
+                    JSON3.write(Dict("error" => "No finite data found in curves")))
+                t_start = maximum(t_starts_v)
+                t_end   = minimum(t_ends_v)
+                t_end <= t_start && return HTTP.Response(400, headers,
+                    JSON3.write(Dict("error" => "No overlapping time range across curves for interpolation")))
+                times  = collect(range(t_start, t_end; length=interp_n))
+                curves = Matrix{Float64}(undef, n_series, interp_n)
+                for (i, (t_i, c_i)) in enumerate(zip(times_all, curves_all))
+                    for (j, tq) in enumerate(times)
+                        idx = searchsortedlast(t_i, tq)
+                        if idx == 0
+                            curves[i, j] = c_i[1]
+                        elseif idx >= length(t_i)
+                            curves[i, j] = c_i[end]
+                        else
+                            t0, t1 = t_i[idx], t_i[idx+1]
+                            frac = (tq - t0) / (t1 - t0)
+                            v0, v1 = c_i[idx], c_i[idx+1]
+                            curves[i, j] = isnan(v0) || isnan(v1) ? NaN : v0 + frac * (v1 - v0)
+                        end
+                    end
+                end
+            else
+                min_len  = minimum(length.(curves_all))
+                times    = times_all[1][1:min_len]
+                curves   = Matrix{Float64}(undef, n_series, min_len)
+                for (i, c) in enumerate(curves_all)
+                    curves[i, :] = c[1:min_len]
+                end
             end
+
+            # Sanitise before smoothing
+            curves = _fill_nan_colmean(curves)
 
             # Smooth once, then sweep over k
             if smooth_method != :none
@@ -1601,35 +1699,46 @@ function router(req)
         elseif path == "/api/ml-downstream" && HTTP.method(req) == "POST"
             try
                 body        = JSON3.read(String(req.body))
-                fit_results = body.fit_results
-                csv_text    = string(body.feature_matrix)
+                fit_csv     = string(body.fit_csv)
+                label_col   = string(body.label_col)
+                feat_csv    = string(body.feature_matrix)
                 param_names = String.(body.params)
 
-                feat_io      = IOBuffer(csv_text)
-                feat_raw     = CSV.read(feat_io, DataFrame)
-                feat_labels  = string.(feat_raw[!, 1])
-                feature_names = String.(names(feat_raw)[2:end])
-                feat_matrix  = Matrix{Float64}(coalesce.(feat_raw[!, 2:end], NaN))
+                # Parse fit CSV dynamically
+                fit_raw       = CSV.read(IOBuffer(fit_csv), DataFrame)
+                fit_col_names = String.(names(fit_raw))
+                haskey_label  = label_col in fit_col_names
+                haskey_label || throw(ArgumentError("label column '$label_col' not found in fit CSV"))
+                fit_labels    = string.(fit_raw[!, Symbol(label_col)])
 
+                # All numeric columns except the label column are candidate params
+                all_params = filter(n -> n != label_col &&
+                    eltype(fit_raw[!, Symbol(n)]) <: Union{Number, Missing},
+                    fit_col_names)
+
+                # Parse feature CSV (label always in first column)
+                feat_raw      = CSV.read(IOBuffer(feat_csv), DataFrame)
+                feat_labels   = string.(feat_raw[!, 1])
+                feature_names = String.(names(feat_raw)[2:end])
+
+                # Join on label
                 fit_df = DataFrame(
-                    label         = [string(r.label)         for r in fit_results],
-                    gr            = [Float64(r.gr)            for r in fit_results],
-                    exit_lag_rate = [Float64(r.exit_lag_rate) for r in fit_results],
-                    N_max         = [Float64(r.N_max)         for r in fit_results],
-                    shape         = [Float64(r.shape)         for r in fit_results],
+                    :label => fit_labels,
+                    [Symbol(p) => Float64.(coalesce.(fit_raw[!, Symbol(p)], NaN))
+                     for p in all_params]...,
                 )
                 feat_df = DataFrame(
                     :label => feat_labels,
-                    [Symbol(n) => feat_matrix[:, i] for (i, n) in enumerate(feature_names)]...,
+                    [Symbol(n) => Float64.(coalesce.(feat_raw[!, Symbol(n)], NaN))
+                     for n in feature_names]...,
                 )
                 joined = innerjoin(fit_df, feat_df; on = :label)
 
                 isempty(joined) && return HTTP.Response(400, headers,
-                    JSON3.write(Dict("error" => "No matching well labels between fit results and feature matrix")))
+                    JSON3.write(Dict("error" => "No matching labels between fit results and feature matrix")))
 
-                all_params = ["gr", "exit_lag_rate", "N_max", "shape"]
-                param_mat  = Matrix{Float64}(joined[!, Symbol.(all_params)])
-                feat_mat   = Matrix{Float64}(joined[!, Symbol.(feature_names)])
+                param_mat = Matrix{Float64}(joined[!, Symbol.(all_params)])
+                feat_mat  = Matrix{Float64}(joined[!, Symbol.(feature_names)])
 
                 corr = spearman_correlations(param_mat, feat_mat, all_params, feature_names)
 
@@ -1640,8 +1749,7 @@ function router(req)
                     pcol === nothing && continue
                     rankings, model, Xm = forest_importance(param_mat, feat_mat, pcol, feature_names)
                     importance[pname] = rankings
-                    isempty(rankings) || model === nothing && continue
-                    # PDPs for top 5 features
+                    (isempty(rankings) || model === nothing) && continue
                     top5 = [findfirst(==(r["feature"]), feature_names)
                             for r in rankings[1:min(5, length(rankings))]]
                     pdp[pname] = [

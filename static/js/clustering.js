@@ -19,6 +19,7 @@ function setClusteringMode(mode) {
     document.getElementById('cluster-mode-btn-experiments').classList.toggle('active', mode === 'experiments');
     document.getElementById('cluster-file-content').style.display = mode === 'file' ? 'block' : 'none';
     document.getElementById('cluster-experiments-content').style.display = mode === 'experiments' ? 'block' : 'none';
+    document.getElementById('cluster-interp-block').style.display = mode === 'file' ? 'flex' : 'none';
     updateClusteringRunBtn();
 }
 
@@ -36,9 +37,15 @@ function onClusterBlankChange() {
     document.getElementById('cluster-blank-method-row').style.display = checked ? 'flex' : 'none';
 }
 
+function onClusterInterpolateChange() {
+    const checked = document.getElementById('cluster-interpolate').checked;
+    document.getElementById('cluster-interp-params').style.display = checked ? 'flex' : 'none';
+}
+
 function updateClusteringRunBtn() {
     const hasData = state.currentClusteringMode === 'file'
-        ? !!document.getElementById('clustering-file').files[0]
+        ? (!!document.getElementById('clustering-file').files[0] ||
+           !!document.getElementById('cluster-server-path').value.trim())
         : document.querySelectorAll('.clustering-exp-checkbox:checked').length > 0;
     document.getElementById('clustering-run-btn').disabled  = !hasData;
     document.getElementById('cluster-sweep-btn').disabled   = !hasData;
@@ -111,9 +118,13 @@ async function runClustering() {
     let body;
 
     if (state.currentClusteringMode === 'file') {
+        const serverPath = document.getElementById('cluster-server-path').value.trim();
         const file = document.getElementById('clustering-file').files[0];
-        if (!file) return;
-        body = { csv: await file.text(), k, normalize };
+        if (serverPath) {
+            body = { csv_path: serverPath, k, normalize };
+        } else if (file) {
+            body = { csv: await file.text(), k, normalize };
+        } else return;
     } else {
         const selected = [...document.querySelectorAll('.clustering-exp-checkbox:checked')].map(c => c.value);
         if (!selected.length) return;
@@ -133,6 +144,8 @@ async function runClustering() {
         blank_method:         document.getElementById('cluster-blank-method').value,
         blank_range_thr:      parseFloat(document.getElementById('cluster-blank-range-thr').value),
         blank_od_percentile:  parseFloat(document.getElementById('cluster-blank-od-pct').value),
+        interpolate:          document.getElementById('cluster-interpolate').checked,
+        interp_n:             parseInt(document.getElementById('cluster-interp-n').value) || 100,
     });
 
     document.getElementById('loading').style.display = 'flex';
@@ -211,7 +224,11 @@ function renderClusterGrid(data) {
         const titleText = document.createElement('span');
         titleText.className = 'cluster-title-text';
         const clusterLabel = cluster.label || String(cluster.id);
-        titleText.textContent = `Cluster ${clusterLabel}  (${cluster.series_labels.length} series)`;
+        const total = cluster.n_total ?? cluster.series_labels.length;
+        const shown = cluster.series_labels.length;
+        titleText.textContent = total > shown
+            ? `Cluster ${clusterLabel}  (${total} series, showing ${shown})`
+            : `Cluster ${clusterLabel}  (${total} series)`;
         title.appendChild(titleText);
 
         const seriesBtn = document.createElement('button');
@@ -493,9 +510,13 @@ async function runClusterSweep() {
     let body;
 
     if (state.currentClusteringMode === 'file') {
+        const serverPath = document.getElementById('cluster-server-path').value.trim();
         const file = document.getElementById('clustering-file').files[0];
-        if (!file) return;
-        body = { csv: await file.text(), k_max: kMax };
+        if (serverPath) {
+            body = { csv_path: serverPath, k_max: kMax };
+        } else if (file) {
+            body = { csv: await file.text(), k_max: kMax };
+        } else return;
     } else {
         const selected = [...document.querySelectorAll('.clustering-exp-checkbox:checked')].map(c => c.value);
         if (!selected.length) return;
@@ -711,7 +732,7 @@ export {
     setClusteringMode, populateClusteringExperiments,
     selectAllClusteringExperiments, clearAllClusteringExperiments,
     onClusteringFileChange, updateClusteringRunBtn, toggleClusteringAdvanced,
-    onClusterSmoothChange, onClusterMethodChange, onClusterBlankChange,
+    onClusterSmoothChange, onClusterMethodChange, onClusterBlankChange, onClusterInterpolateChange,
     renderClusterBlankNotice, runClustering, renderClusterGrid,
     exportClusterCSV, exportAllClustersCSV, exportAllClustersPNG,
     renderQualityPanel, runClusterSweep, renderSweepPanel,

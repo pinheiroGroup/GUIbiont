@@ -128,8 +128,8 @@ function displayWells(wells) {
     }, 150);
 
     const experimentNames = Array.from(state.selectedExperiments).join(', ');
-    document.getElementById('info').innerHTML = `📊 Experiments loaded: <strong>${experimentNames}</strong><br>Found ${wells.length} wells total. Click on experiment headers to expand/collapse. Click wells to select/deselect them.`;
-    document.getElementById('info').className = 'info';
+    const infoEl = document.getElementById('info');
+    if (infoEl) { infoEl.innerHTML = `📊 Experiments loaded: <strong>${experimentNames}</strong><br>Found ${wells.length} wells total. Click on experiment headers to expand/collapse. Click wells to select/deselect them.`; infoEl.className = 'info'; }
 }
 
 function createWellItem(wellInfo, isSelected) {

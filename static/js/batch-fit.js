@@ -168,6 +168,8 @@ async function runBatchFit() {
     progressEl.style.display = 'block';
     progressEl.textContent = `Fitting ${wells.length} wells — this may take a moment…`;
     document.getElementById('batch-fit-results').style.display = 'none';
+    const batchExportBtn = document.getElementById('batch-export-btn');
+    if (batchExportBtn) batchExportBtn.style.display = 'none';
 
     try {
         const response = await fetch(`${API_BASE}/api/batch-fit`, {
@@ -206,6 +208,8 @@ async function runBatchFit() {
 // ---------------------------------------------------------------------------
 
 function displayBatchResults(data) {
+    const exportBtn = document.getElementById('batch-export-btn');
+    if (exportBtn) exportBtn.style.display = '';
     const resultsDiv = document.getElementById('batch-fit-results');
     const { experiment, model, model_names, summary, results } = data;
     const modelLabel = model === 'multi'

@@ -27,11 +27,13 @@ import { initBatchFitTab, loadBatchFitModels, loadBatchFitExperiments,
          onBatchModeChange, selectAllBatchModels, clearAllBatchModels,
          runBatchFit, displayBatchResults, downloadBatchCSV } from './batch-fit.js';
 import { onFitResultsFileChange, onFeatureMatrixFileChange, updateMlRunBtn,
-         runMlAnalysis, onCorrParamChange } from './ml-analysis.js';
+         runMlAnalysis, onCorrParamChange, onMlLabelColChange } from './ml-analysis.js';
+import { openFitCodeExport, openBatchCodeExport, openClusterCodeExport,
+         closeCodeExportModal, toggleCodeComments, downloadExportedCode } from './code-export.js';
 import { setClusteringMode, populateClusteringExperiments,
          selectAllClusteringExperiments, clearAllClusteringExperiments,
          onClusteringFileChange, updateClusteringRunBtn, toggleClusteringAdvanced,
-         onClusterSmoothChange, onClusterMethodChange, onClusterBlankChange,
+         onClusterSmoothChange, onClusterMethodChange, onClusterBlankChange, onClusterInterpolateChange,
          renderClusterBlankNotice, runClustering, renderClusterGrid,
          exportClusterCSV, exportAllClustersCSV, exportAllClustersPNG,
          renderQualityPanel, runClusterSweep, renderSweepPanel,
@@ -102,8 +104,8 @@ async function loadExperiments() {
 
     } catch (error) {
         console.error('Error loading experiments:', error);
-        document.getElementById('info').innerHTML = '❌ Error loading experiments. Make sure the server is running.';
-        document.getElementById('info').className = 'error';
+        const infoEl = document.getElementById('info');
+        if (infoEl) { infoEl.innerHTML = '❌ Error loading experiments. Make sure the server is running.'; infoEl.className = 'error'; }
     }
 }
 
@@ -262,7 +264,10 @@ Object.assign(window, {
     runBatchFit, displayBatchResults, downloadBatchCSV,
     // ML downstream analysis
     onFitResultsFileChange, onFeatureMatrixFileChange, updateMlRunBtn,
-    runMlAnalysis, onCorrParamChange,
+    runMlAnalysis, onCorrParamChange, onMlLabelColChange,
+    // Code export modal
+    openFitCodeExport, openBatchCodeExport, openClusterCodeExport,
+    closeCodeExportModal, toggleCodeComments, downloadExportedCode,
 });
 
 // Handle window resize — fullscreen plots need manual relayout, others use resizePlot

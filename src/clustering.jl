@@ -1,6 +1,46 @@
 # Clustering helper functions
 # Pairwise Euclidean, z-score normalisation, k-means utilities, blank detection
 
+# Load curves from a DataFrame, auto-detecting an unnamed sequential-integer index column.
+# Returns (times_all, curves_all, labels_all).
+# If column 1 is an integer 0..n-1 sequence (e.g. an unnamed pandas/CSV row index),
+# it is skipped and column 2 is used as the time axis.
+function _load_csv_curves(df::DataFrame)
+    col_names = names(df)
+    ncols = length(col_names)
+    ncols < 2 && error("CSV must have at least 2 columns (time + one data series)")
+
+    # Detect unnamed row-index column.
+    # CSV.jl names an empty header field "Column1"; pandas exports row indices as
+    # an unnamed first column.  We skip it and use column 2 as the time axis when:
+    #   • the first column is named "Column1" or starts with "Unnamed:" (pandas), AND
+    #   • its element type is numeric (integer or float — a time column would be Float)
+    time_col_idx = 1
+    if ncols >= 2
+        fn = col_names[1]
+        et = nonmissingtype(eltype(df[!, fn]))
+        if (fn == "Column1" || startswith(fn, "Unnamed:")) && et <: Number
+            time_col_idx = 2
+        end
+    end
+
+    csv_time = Float64.(coalesce.(df[!, col_names[time_col_idx]], NaN))
+    # If time column has NaN (e.g. missing values), fall back to row indices so
+    # downstream smoothing (which requires finite time) does not fail.
+    if any(isnan, csv_time)
+        csv_time = Float64.(0:(nrow(df) - 1))
+    end
+    times_all  = Vector{Vector{Float64}}()
+    curves_all = Vector{Vector{Float64}}()
+    labels_all = Vector{String}()
+    for s in col_names[(time_col_idx + 1):end]
+        push!(times_all,  csv_time)
+        push!(curves_all, Float64.(coalesce.(df[!, s], NaN)))
+        push!(labels_all, String(s))
+    end
+    return times_all, curves_all, labels_all
+end
+
 # Pairwise Euclidean distance matrix (n × n) for a matrix with rows = observations.
 function _pairwise_euclidean(X::Matrix{Float64})::Matrix{Float64}
     n = size(X, 1)
@@ -11,13 +51,35 @@ function _pairwise_euclidean(X::Matrix{Float64})::Matrix{Float64}
     return D
 end
 
-# Z-score each row (curve) across time; constant rows become all-zeros.
+# Z-score each row (curve) across time; constant rows and all-NaN rows become all-zeros.
+# NaN values in a row are set to 0 (mean) after z-scoring so they don't pollute distances.
 function _zscore_rows(m::Matrix{Float64})::Matrix{Float64}
-    out = similar(m)
+    out = zeros(size(m))
     for i in axes(m, 1)
-        row = m[i, :]
-        s   = std(row)
-        out[i, :] = s < 1e-12 ? zeros(length(row)) : (row .- mean(row)) ./ s
+        row    = m[i, :]
+        finite = filter(isfinite, row)
+        length(finite) < 2 && continue
+        μ = mean(finite)
+        s = std(finite)
+        s < 1e-12 && continue
+        for j in axes(m, 2)
+            out[i, j] = isfinite(m[i, j]) ? (m[i, j] - μ) / s : 0.0
+        end
+    end
+    return out
+end
+
+# Replace NaN/Inf in each column with the column finite mean (or 0 if all non-finite).
+# Used to sanitise a curves matrix before passing it to external libraries.
+function _fill_nan_colmean(m::Matrix{Float64})::Matrix{Float64}
+    out = copy(m)
+    for j in axes(m, 2)
+        col     = m[:, j]
+        finite  = filter(isfinite, col)
+        fill_v  = isempty(finite) ? 0.0 : mean(finite)
+        for i in axes(m, 1)
+            isfinite(out[i, j]) || (out[i, j] = fill_v)
+        end
     end
     return out
 end

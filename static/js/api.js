@@ -48,8 +48,8 @@ async function loadExperiments() {
 
     } catch (error) {
         console.error('Error loading experiments:', error);
-        document.getElementById('info').innerHTML = '❌ Error loading experiments. Make sure the server is running.';
-        document.getElementById('info').className = 'error';
+        const infoEl = document.getElementById('info');
+        if (infoEl) { infoEl.innerHTML = '❌ Error loading experiments. Make sure the server is running.'; infoEl.className = 'error'; }
     }
 }
 
