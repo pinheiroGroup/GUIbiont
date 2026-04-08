@@ -343,19 +343,25 @@ end
     end
     zscored = _zscore_rows(curves_for)
 
+    _wcss(data, ids) = sum(sum((data[ids .== c, :] .- mean(data[ids .== c, :], dims=1)).^2) for c in unique(ids))
+
     sweep_results = []
     for k in 2:min(k_max, n_series)
-        ids = try
+        ids, wcss = try
             if cluster_method == "kmeans"
-                Clustering.assignments(Clustering.kmeans(zscored', k; maxiter, tol))
+                km = Clustering.kmeans(zscored', k; maxiter, tol)
+                Clustering.assignments(km), km.totalcost
             elseif cluster_method == "kmedoids"
                 dmat = _pairwise_euclidean(zscored)
-                Clustering.assignments(Clustering.kmedoids(dmat, k; maxiter, tol))
+                asgn = Clustering.assignments(Clustering.kmedoids(dmat, k; maxiter, tol))
+                asgn, _wcss(zscored, asgn)
             elseif cluster_method == "hclust"
                 dmat = _pairwise_euclidean(zscored)
-                Clustering.cutree(Clustering.hclust(dmat; linkage=hclust_linkage); k)
+                asgn = Clustering.cutree(Clustering.hclust(dmat; linkage=hclust_linkage); k)
+                asgn, _wcss(zscored, asgn)
             else
-                Clustering.assignments(Clustering.kmeans(zscored', k; maxiter, tol))
+                km = Clustering.kmeans(zscored', k; maxiter, tol)
+                Clustering.assignments(km), km.totalcost
             end
         catch e
             @warn "Sweep k=$k error: $e"
@@ -366,6 +372,7 @@ end
         q = _cluster_quality_indices(zscored, ids_r)
         push!(sweep_results, Dict(
             "k"                 => k,
+            "wcss"              => wcss,
             "silhouette_mean"   => q["silhouette_mean"],
             "dunn"              => q["dunn"],
             "davies_bouldin"    => q["davies_bouldin"],
