@@ -155,3 +155,37 @@ function compute_blank_timeseries(growth_data::DataFrame, blank_wells::Vector{St
 end
 
 # CORS headers for allowing frontend requests
+
+function detect_and_save_well_count(experiment_path::String)::Int
+    files = filter(f -> startswith(f, "data_channel_") && endswith(f, ".csv"),
+                   readdir(experiment_path))
+    isempty(files) && return 48
+    data_file = joinpath(experiment_path, sort(files)[1])
+    first_line = readline(data_file)
+    ncols = length(split(first_line, ",")) - 1
+    well_count = ncols > 60 ? 96 : 48
+    open(joinpath(experiment_path, "metadata.json"), "w") do f
+        write(f, JSON3.write(Dict("well_count" => well_count)))
+    end
+    return well_count
+end
+
+function get_calibration_file(experiment::String; override::String="")::String
+    if !isempty(override) && isfile(override)
+        return override
+    end
+    experiment_path = joinpath(CLEAN_DATA_PATH, experiment)
+    metadata_file   = joinpath(experiment_path, "metadata.json")
+    if isfile(metadata_file)
+        meta       = JSON3.read(read(metadata_file, String))
+        well_count = Int(get(meta, :well_count, 48))
+    else
+        well_count = detect_and_save_well_count(experiment_path)
+    end
+    cal96 = joinpath(@__DIR__, "..", "calibration", "cal_curve_avg96.csv")
+    cal48 = joinpath(@__DIR__, "..", "calibration", "cal_curve_avg.csv")
+    if well_count == 96
+        return isfile(cal96) ? cal96 : cal48
+    end
+    return cal48
+end
