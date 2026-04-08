@@ -42,5 +42,7 @@ function CORSMiddleware(handler)
     end
 end
 
+staticfiles("static", "static")
+
 @info "Starting GUIbiont on port $PORT"
 serve(middleware=[CORSMiddleware], host="0.0.0.0", port=PORT, async=false)

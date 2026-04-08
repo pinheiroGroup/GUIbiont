@@ -1,4 +1,5 @@
-@post "/api/fit-curve" function(req::HTTP.Request, body::FitCurveRequest)
+@post "/api/fit-curve" function(req::HTTP.Request, body::Json{FitCurveRequest})
+    body = body.payload
     experiment     = string(body.experiment)
     well           = string(body.well)
     subtract_blank = body.blank_subtraction
@@ -11,7 +12,7 @@
     calibration_file = get_calibration_file(experiment; override=string(body.calibration_file))
 
     if !isfile(data_file) || !isfile(annotation_file)
-        throw(Oxygen.HTTPException(404, "Data files not found"))
+        return json(Dict("error" => "Data files not found"); status=404)
     end
 
     try
@@ -22,10 +23,10 @@
         column_names_str = string.(names(growth_data))
 
         if !(well in column_names_str)
-            throw(Oxygen.HTTPException(404, "Well '$well' not found"))
+            return json(Dict("error" => "Well '$well' not found"); status=404)
         end
         if well in excluded_wells
-            throw(Oxygen.HTTPException(400, "Well '$well' is a blank well"))
+            return json(Dict("error" => "Well '$well' is a blank well"); status=400)
         end
 
         time_numeric     = parse_time_column(growth_data)
@@ -36,7 +37,7 @@
 
         valid_indices = findall(.!isnan.(od_raw))
         if length(valid_indices) < 10
-            throw(Oxygen.HTTPException(400, "Not enough valid data points for fitting"))
+            return json(Dict("error" => "Not enough valid data points for fitting"); status=400)
         end
 
         # Align blank timeseries to valid indices if computed
@@ -53,12 +54,12 @@
             model_names      = model_names,
         )
     catch e
-        e isa Oxygen.HTTPException && rethrow()
-        throw(Oxygen.HTTPException(500, "Curve fitting failed: $e"))
+                return json(Dict("error" => "Curve fitting failed: $e"); status=500)
     end
 end
 
-@post "/api/fit-replicate" function(req::HTTP.Request, body::FitReplicateRequest)
+@post "/api/fit-replicate" function(req::HTTP.Request, body::Json{FitReplicateRequest})
+    body = body.payload
     well_selections  = body.well_selections
     label            = string(body.label)
     experiment_name  = string(body.experiment)
@@ -91,7 +92,7 @@ end
         end
 
         if isempty(all_od_data)
-            throw(Oxygen.HTTPException(400, "No valid well data found"))
+            return json(Dict("error" => "No valid well data found"); status=400)
         end
 
         # Average across wells (align by minimum length)
@@ -101,7 +102,7 @@ end
 
         valid_indices = findall(.!isnan.(avg_od))
         if length(valid_indices) < 10
-            throw(Oxygen.HTTPException(400, "Not enough valid data points for fitting"))
+            return json(Dict("error" => "Not enough valid data points for fitting"); status=400)
         end
 
         return fit_well_data(
@@ -109,8 +110,7 @@ end
             0.0, calibration_file, label, experiment_name,
         )
     catch e
-        e isa Oxygen.HTTPException && rethrow()
-        throw(Oxygen.HTTPException(500, "Replicate fitting failed: $e"))
+                return json(Dict("error" => "Replicate fitting failed: $e"); status=500)
     end
 end
 
@@ -123,7 +123,7 @@ end
     annotation_file = joinpath(CLEAN_DATA_PATH, experiment, "annotation_clean.csv")
 
     if !isfile(data_file)
-        throw(Oxygen.HTTPException(404, "Data file not found"))
+        return json(Dict("error" => "Data file not found"); status=404)
     end
 
     try
@@ -230,12 +230,12 @@ end
             "method_notes"         => method_notes,
         )
     catch e
-        e isa Oxygen.HTTPException && rethrow()
-        throw(Oxygen.HTTPException(500, "Blank analysis failed: $e"))
+                return json(Dict("error" => "Blank analysis failed: $e"); status=500)
     end
 end
 
-@post "/api/batch-fit" function(req::HTTP.Request, body::BatchFitRequest)
+@post "/api/batch-fit" function(req::HTTP.Request, body::Json{BatchFitRequest})
+    body = body.payload
     experiment      = string(body.experiment)
     model_name      = string(body.model_name)
     model_names_req = String[string(m) for m in body.model_names]
@@ -246,12 +246,12 @@ end
 
     if isempty(model_names_req)
         if !haskey(MODEL_REGISTRY, model_name)
-            throw(Oxygen.HTTPException(400, "Unknown model: $model_name"))
+            return json(Dict("error" => "Unknown model: $model_name"); status=400)
         end
     else
         unknown = filter(m -> !haskey(MODEL_REGISTRY, m), model_names_req)
         if !isempty(unknown)
-            throw(Oxygen.HTTPException(400, "Unknown models: $(join(unknown, ", "))"))
+            return json(Dict("error" => "Unknown models: $(join(unknown, ", "))"); status=400)
         end
     end
 
@@ -261,7 +261,7 @@ end
         calibration_file = get_calibration_file(experiment; override=cal_override)
 
         if !isfile(data_file) || !isfile(annotation_file)
-            throw(Oxygen.HTTPException(404, "Data files not found for experiment '$experiment'"))
+            return json(Dict("error" => "Data files not found for experiment '$experiment'"); status=404)
         end
 
         growth_data      = CSV.read(data_file, DataFrame, header=1, silencewarnings=true)
@@ -323,7 +323,6 @@ end
             ),
         )
     catch e
-        e isa Oxygen.HTTPException && rethrow()
-        throw(Oxygen.HTTPException(500, "Batch fitting failed: $e"))
+                return json(Dict("error" => "Batch fitting failed: $e"); status=500)
     end
 end

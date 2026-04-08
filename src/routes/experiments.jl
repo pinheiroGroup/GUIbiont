@@ -19,7 +19,7 @@ end
     annotation_file = joinpath(CLEAN_DATA_PATH, experiment, "annotation_clean.csv")
 
     if !isfile(data_file) || !isfile(annotation_file)
-        throw(Oxygen.HTTPException(404, "Experiment not found"))
+        return json(Dict("error" => "Experiment not found"); status=404)
     end
 
     try
@@ -91,11 +91,12 @@ end
             "time_column" => time_col
         )
     catch e
-        throw(Oxygen.HTTPException(500, "Error loading experiment $experiment: $e"))
+        return json(Dict("error" => "Error loading experiment $experiment: $e"); status=500)
     end
 end
 
-@post "/api/multi-experiment-info" function(req::HTTP.Request, body::MultiExperimentInfoRequest)
+@post "/api/multi-experiment-info" function(req::HTTP.Request, body::Json{MultiExperimentInfoRequest})
+    body = body.payload
     experiments = body.experiments
 
     combined_wells = []
@@ -117,10 +118,14 @@ end
             for (ch_idx, ch_file) in enumerate(channel_files)
                 ch_num = ch_idx   # 1-based channel number
 
-                # Per-channel annotation (annotation_channel_N_*.csv) with fallback
-                ann_file = find_annotation_file(exp_dir, ch_num)
-                ann_file === nothing && continue   # skip channel if no annotation at all
+                # Collect wells from ALL annotation files for this channel (one file per media condition)
+                all_files = try readdir(exp_dir) catch; String[] end
+                prefix = "annotation_channel_$(ch_num)_"
+                ann_files = [joinpath(exp_dir, f) for f in sort(filter(f -> startswith(f, prefix) && endswith(f, ".csv"), all_files))]
+                isempty(ann_files) && (ann_file = find_annotation_file(exp_dir, ch_num); ann_file !== nothing && push!(ann_files, ann_file))
+                isempty(ann_files) && continue
 
+                for ann_file in ann_files
                 try
                     annotations = CSV.read(ann_file, DataFrame, header=false, silencewarnings=true, stringtype=String)
                     col_names = names(annotations)
@@ -179,8 +184,9 @@ end
                         ))
                     end
                 catch e
-                    @warn "Error loading channel $ch_num of $experiment: $e"
+                    @warn "Error loading channel $ch_num of $experiment ($ann_file): $e"
                 end
+                end  # for ann_file
             end
         catch e
             @warn "Error loading experiment $experiment for multi-select: $e"
@@ -190,7 +196,8 @@ end
     return combined_info
 end
 
-@post "/api/global-search" function(req::HTTP.Request, body::GlobalSearchRequest)
+@post "/api/global-search" function(req::HTTP.Request, body::Json{GlobalSearchRequest})
+    body = body.payload
     condition_query  = body.condition
     antibiotic_query = body.antibiotic
 
@@ -293,21 +300,22 @@ end
                                 readdir(RAW_DATA_PATH))
         return sort(raw_experiments)
     catch e
-        throw(Oxygen.HTTPException(500, "Failed to list raw experiments: $e"))
+        return json(Dict("error" => "Failed to list raw experiments: $e"); status=500)
     end
 end
 
-@post "/api/clean-data" function(req::HTTP.Request, body::CleanDataRequest)
+@post "/api/clean-data" function(req::HTTP.Request, body::Json{CleanDataRequest})
+    body = body.payload
     experiment = body.experiment
     well_count = body.well_count
 
     # Validate inputs
     if isempty(experiment)
-        throw(Oxygen.HTTPException(400, "Experiment name is required"))
+        return json(Dict("error" => "Experiment name is required"); status=400)
     end
 
     if !(well_count in [6, 48, 96])
-        throw(Oxygen.HTTPException(400, "Well count must be 6, 48, or 96"))
+        return json(Dict("error" => "Well count must be 6, 48, or 96"); status=400)
     end
 
     # Check if raw data exists
@@ -316,7 +324,7 @@ end
     plate_file = joinpath(raw_experiment_path, "plate.csv")
 
     if !isfile(data_file) || !isfile(plate_file)
-        throw(Oxygen.HTTPException(404, "Required files (data.csv and plate.csv) not found in raw experiment folder"))
+        return json(Dict("error" => "Required files (data.csv and plate.csv) not found in raw experiment folder"); status=404)
     end
 
     try
@@ -341,6 +349,6 @@ end
             "message"       => "Data cleaning completed successfully"
         )
     catch e
-        throw(Oxygen.HTTPException(500, "Data cleaning failed: $e"))
+        return json(Dict("error" => "Data cleaning failed: $e"); status=500)
     end
 end

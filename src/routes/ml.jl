@@ -1,4 +1,5 @@
-@post "/api/cluster" function(req::HTTP.Request, body::ClusterRequest)
+@post "/api/cluster" function(req::HTTP.Request, body::Json{ClusterRequest})
+    body = body.payload
     k_input        = Int(body.k)
     normalize      = Bool(body.normalize)
     smooth_method  = Symbol(body.smooth_method)
@@ -74,7 +75,7 @@
         end
     end
 
-    isempty(curves_all) && throw(Oxygen.HTTPException(400, "No data loaded"))
+    isempty(curves_all) && return json(Dict("error" => "No data loaded"); status=400)
 
     min_len  = minimum(length.(curves_all))
     times    = times_all[1][1:min_len]
@@ -176,7 +177,7 @@
         raw   # 0 = noise
 
     else
-        throw(Oxygen.HTTPException(400, "Unknown cluster_method: $cluster_method"))
+        return json(Dict("error" => "Unknown cluster_method: $cluster_method"); status=400)
     end
 
     # ------------------------------------------------------------------
@@ -258,7 +259,8 @@ end
 # /api/cluster-sweep  — run clustering for k=2..k_max and return
 # quality indices per k so the user can find the best number of clusters.
 # ------------------------------------------------------------------
-@post "/api/cluster-sweep" function(req::HTTP.Request, body::ClusterSweepRequest)
+@post "/api/cluster-sweep" function(req::HTTP.Request, body::Json{ClusterSweepRequest})
+    body = body.payload
     k_max          = Int(body.k_max)
     smooth_method  = Symbol(body.smooth_method)
     lowess_frac    = Float64(body.lowess_frac)
@@ -317,7 +319,7 @@ end
         end
     end
 
-    isempty(curves_all) && throw(Oxygen.HTTPException(400, "No data loaded"))
+    isempty(curves_all) && return json(Dict("error" => "No data loaded"); status=400)
 
     min_len  = minimum(length.(curves_all))
     times    = times_all[1][1:min_len]
@@ -378,18 +380,20 @@ end
 # ------------------------------------------------------------------
 # /api/cluster-compare  — compare two saved clusterings
 # ------------------------------------------------------------------
-@post "/api/cluster-compare" function(req::HTTP.Request, body::ClusterCompareRequest)
+@post "/api/cluster-compare" function(req::HTTP.Request, body::Json{ClusterCompareRequest})
+    body = body.payload
     ids1 = body.assignments1
     ids2 = body.assignments2
 
     if length(ids1) != length(ids2)
-        throw(Oxygen.HTTPException(400, "assignments must have the same length"))
+        return json(Dict("error" => "assignments must have the same length"); status=400)
     end
 
     return _cluster_comparison(ids1, ids2)
 end
 
-@post "/api/ml-downstream" function(req::HTTP.Request, body::MLDownstreamRequest)
+@post "/api/ml-downstream" function(req::HTTP.Request, body::Json{MLDownstreamRequest})
+    body = body.payload
     fit_csv     = string(body.fit_csv)
     label_col   = string(body.label_col)
     feat_csv    = string(body.feature_matrix)
@@ -398,7 +402,7 @@ end
     try
         fit_raw       = CSV.read(IOBuffer(fit_csv), DataFrame)
         fit_col_names = String.(names(fit_raw))
-        label_col in fit_col_names || throw(Oxygen.HTTPException(400, "label column '$label_col' not found in fit CSV"))
+        label_col in fit_col_names || return json(Dict("error" => "label column '$label_col' not found in fit CSV"); status=400)
         fit_labels = string.(fit_raw[!, Symbol(label_col)])
 
         all_params = filter(n -> n != label_col &&
@@ -419,7 +423,7 @@ end
         )
         joined = innerjoin(fit_df, feat_df; on = :label)
 
-        isempty(joined) && throw(Oxygen.HTTPException(400, "No matching labels between fit results and feature matrix"))
+        isempty(joined) && return json(Dict("error" => "No matching labels between fit results and feature matrix"); status=400)
 
         param_mat = Matrix{Float64}(joined[!, Symbol.(all_params)])
         feat_mat  = Matrix{Float64}(joined[!, Symbol.(feature_names)])
@@ -452,7 +456,6 @@ end
             "n_wells"      => nrow(joined),
         )
     catch e
-        e isa Oxygen.HTTPException && rethrow()
-        throw(Oxygen.HTTPException(500, "ML analysis failed: $e"))
+                return json(Dict("error" => "ML analysis failed: $e"); status=500)
     end
 end

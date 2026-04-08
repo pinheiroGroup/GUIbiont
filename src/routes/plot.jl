@@ -141,12 +141,12 @@
         annotation_file = joinpath(CLEAN_DATA_PATH, experiment, "annotation_clean.csv")
 
         if !isfile(data_file) || !isfile(annotation_file)
-            throw(Oxygen.HTTPException(404, "Data not found"))
+            return json(Dict("error" => "Data not found"); status=404)
         end
 
         try
             growth_data = CSV.read(data_file, DataFrame, header=1, silencewarnings=true)
-            annotations = CSV.read(annotation_file, DataFrame, header=false, silencewarnings=true)
+            annotations = CSV.read(annotation_file, DataFrame, header=false, silencewarnings=true, stringtype=String)
 
             # Rename columns - 5th column (index 5) should be antibiotic
             col_names = names(annotations)
@@ -262,8 +262,7 @@
 
             return Dict("traces" => traces, "stats" => stats)
         catch e
-            e isa Oxygen.HTTPException && rethrow()
-            throw(Oxygen.HTTPException(500, "Error getting plot data: $e"))
+                        return json(Dict("error" => "Error getting plot data: $e"); status=500)
         end
     end
 end

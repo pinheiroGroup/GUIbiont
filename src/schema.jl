@@ -1,22 +1,22 @@
 using StructTypes
 
-Base.@kwdef struct MultiExperimentInfoRequest
-    experiments::Vector{String}
+Base.@kwdef mutable struct MultiExperimentInfoRequest
+    experiments::Vector{String} = String[]
 end
 
-Base.@kwdef struct GlobalSearchRequest
+Base.@kwdef mutable struct GlobalSearchRequest
     condition::String = ""
     antibiotic::String = ""
 end
 
-Base.@kwdef struct CleanDataRequest
-    experiment::String
+Base.@kwdef mutable struct CleanDataRequest
+    experiment::String = ""
     well_count::Int = 48
 end
 
-Base.@kwdef struct FitCurveRequest
-    experiment::String
-    well::String
+Base.@kwdef mutable struct FitCurveRequest
+    experiment::String = ""
+    well::String = ""
     blank_subtraction::Bool = false
     blank_method::String = "pointbypoint"
     calibration_file::String = ""
@@ -24,8 +24,8 @@ Base.@kwdef struct FitCurveRequest
     model_names::Vector{String} = String[]
 end
 
-Base.@kwdef struct BatchFitRequest
-    experiment::String
+Base.@kwdef mutable struct BatchFitRequest
+    experiment::String = ""
     model_name::String = "aHPM"
     model_names::Vector{String} = String[]
     blank_subtraction::Bool = false
@@ -34,39 +34,39 @@ Base.@kwdef struct BatchFitRequest
     wells::Vector{String} = String[]
 end
 
-Base.@kwdef struct MLDownstreamRequest
-    fit_csv::String
-    label_col::String
-    feature_matrix::String
-    params::Vector{String}
+Base.@kwdef mutable struct MLDownstreamRequest
+    fit_csv::String = ""
+    label_col::String = ""
+    feature_matrix::String = ""
+    params::Vector{String} = String[]
 end
 
-Base.@kwdef struct WellSelection
-    experiment::String
-    well::String
+Base.@kwdef mutable struct WellSelection
+    experiment::String = ""
+    well::String = ""
     channel::Int = 1
 end
 
-Base.@kwdef struct FitReplicateRequest
-    well_selections::Vector{WellSelection}
+Base.@kwdef mutable struct FitReplicateRequest
+    well_selections::Vector{WellSelection} = WellSelection[]
     label::String = "replicate"
     experiment::String = "replicate"
     model_name::String = "aHPM"
     calibration_file::String = ""
 end
 
-Base.@kwdef struct BlankAnalysisRequest
-    experiment::String
-    well::String
+Base.@kwdef mutable struct BlankAnalysisRequest
+    experiment::String = ""
+    well::String = ""
 end
 
-Base.@kwdef struct PlotDataRequest
+Base.@kwdef mutable struct PlotDataRequest
     well_selections::Vector{WellSelection} = WellSelection[]
     experiment::String = ""
     wells::Vector{String} = String[]
 end
 
-Base.@kwdef struct ClusterRequest
+Base.@kwdef mutable struct ClusterRequest
     experiments::Vector{String} = String[]
     csv::String = ""
     k::Int = 3
@@ -86,7 +86,7 @@ Base.@kwdef struct ClusterRequest
     blank_od_percentile::Float64 = 0.10
 end
 
-Base.@kwdef struct ClusterSweepRequest
+Base.@kwdef mutable struct ClusterSweepRequest
     experiments::Vector{String} = String[]
     csv::String = ""
     k_max::Int = 10
@@ -99,22 +99,22 @@ Base.@kwdef struct ClusterSweepRequest
     hclust_linkage::String = "ward"
 end
 
-Base.@kwdef struct ClusterCompareRequest
-    assignments1::Vector{Int}
-    assignments2::Vector{Int}
+Base.@kwdef mutable struct ClusterCompareRequest
+    assignments1::Vector{Int} = Int[]
+    assignments2::Vector{Int} = Int[]
 end
 
 # Register all structs with StructTypes for JSON deserialization + OpenAPI schema generation
-StructTypes.StructType(::Type{MultiExperimentInfoRequest}) = StructTypes.Struct()
-StructTypes.StructType(::Type{GlobalSearchRequest}) = StructTypes.Struct()
-StructTypes.StructType(::Type{CleanDataRequest}) = StructTypes.Struct()
-StructTypes.StructType(::Type{FitCurveRequest}) = StructTypes.Struct()
-StructTypes.StructType(::Type{BatchFitRequest}) = StructTypes.Struct()
-StructTypes.StructType(::Type{MLDownstreamRequest}) = StructTypes.Struct()
-StructTypes.StructType(::Type{WellSelection}) = StructTypes.Struct()
-StructTypes.StructType(::Type{FitReplicateRequest}) = StructTypes.Struct()
-StructTypes.StructType(::Type{BlankAnalysisRequest}) = StructTypes.Struct()
-StructTypes.StructType(::Type{PlotDataRequest}) = StructTypes.Struct()
-StructTypes.StructType(::Type{ClusterRequest}) = StructTypes.Struct()
-StructTypes.StructType(::Type{ClusterSweepRequest}) = StructTypes.Struct()
-StructTypes.StructType(::Type{ClusterCompareRequest}) = StructTypes.Struct()
+StructTypes.StructType(::Type{MultiExperimentInfoRequest}) = StructTypes.Mutable()
+StructTypes.StructType(::Type{GlobalSearchRequest}) = StructTypes.Mutable()
+StructTypes.StructType(::Type{CleanDataRequest}) = StructTypes.Mutable()
+StructTypes.StructType(::Type{FitCurveRequest}) = StructTypes.Mutable()
+StructTypes.StructType(::Type{BatchFitRequest}) = StructTypes.Mutable()
+StructTypes.StructType(::Type{MLDownstreamRequest}) = StructTypes.Mutable()
+StructTypes.StructType(::Type{WellSelection}) = StructTypes.Mutable()
+StructTypes.StructType(::Type{FitReplicateRequest}) = StructTypes.Mutable()
+StructTypes.StructType(::Type{BlankAnalysisRequest}) = StructTypes.Mutable()
+StructTypes.StructType(::Type{PlotDataRequest}) = StructTypes.Mutable()
+StructTypes.StructType(::Type{ClusterRequest}) = StructTypes.Mutable()
+StructTypes.StructType(::Type{ClusterSweepRequest}) = StructTypes.Mutable()
+StructTypes.StructType(::Type{ClusterCompareRequest}) = StructTypes.Mutable()
