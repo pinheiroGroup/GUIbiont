@@ -13,7 +13,7 @@ end
     return get_experiments()
 end
 
-@get "/api/experiment/{name}/info" function(req::HTTP.Request; name::String)
+@get "/api/experiment/{name}/info" function(req::HTTP.Request, name::String)
     experiment = name
     data_file = joinpath(CLEAN_DATA_PATH, experiment, "data_channel_1.csv")
     annotation_file = joinpath(CLEAN_DATA_PATH, experiment, "annotation_clean.csv")
