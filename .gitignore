@@ -8,8 +8,7 @@ Manifest.toml
 Clean_data/
 raw_data/
 
-# Calibration curve (optional)
-cal_curve_avg.csv
+# Calibration curves are tracked in the repository
 
 # OS files
 .DS_Store
