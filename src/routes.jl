@@ -1,6 +1,51 @@
 # HTTP router and legacy data accessor functions
 # Note: get_experiment_info / get_plot_data below are superseded by the
 # multi-channel implementations inside the router, but kept for reference.
+
+# ---------------------------------------------------------------------------
+# Calibration file helpers
+# ---------------------------------------------------------------------------
+
+# Detect the number of wells in an experiment by reading the first data channel
+# file found. Returns 96 if >60 data columns, 48 otherwise.
+function detect_and_save_well_count(experiment_path::String)::Int
+    files = filter(f -> startswith(f, "data_channel_") && endswith(f, ".csv"),
+                   readdir(experiment_path))
+    isempty(files) && return 48
+    data_file = joinpath(experiment_path, sort(files)[1])
+    first_line = readline(data_file)
+    ncols = length(split(first_line, ",")) - 1   # subtract time column
+    well_count = ncols > 60 ? 96 : 48
+    metadata_file = joinpath(experiment_path, "metadata.json")
+    open(metadata_file, "w") do f
+        write(f, JSON3.write(Dict("well_count" => well_count)))
+    end
+    return well_count
+end
+
+# Return the calibration file path for an experiment.
+# - override: explicit path supplied by the user (takes precedence if file exists)
+# - Falls back to metadata.json, or auto-detects and writes metadata.json on first call.
+function get_calibration_file(experiment::String; override::String="")::String
+    if !isempty(override) && isfile(override)
+        return override
+    end
+    experiment_path = joinpath(CLEAN_DATA_PATH, experiment)
+    metadata_file   = joinpath(experiment_path, "metadata.json")
+    if isfile(metadata_file)
+        meta       = JSON3.read(read(metadata_file, String))
+        well_count = Int(get(meta, :well_count, 48))
+    else
+        well_count = detect_and_save_well_count(experiment_path)
+    end
+    cal96 = "./calibration/cal_curve_avg96.csv"
+    cal48 = "./calibration/cal_curve_avg.csv"
+    if well_count == 96
+        return isfile(cal96) ? cal96 : cal48
+    end
+    return cal48
+end
+
 # Get list of available experiments
 function get_experiments()
     if !isdir(CLEAN_DATA_PATH)
@@ -530,12 +575,18 @@ function router(req)
                 # Clean the data file
                 cleaning_data_synergy(data_file, output_path)
                 
+                # Persist plate metadata so fitting routes can auto-select calibration
+                metadata_file = joinpath(output_path, "metadata.json")
+                open(metadata_file, "w") do f
+                    write(f, JSON3.write(Dict("well_count" => well_count)))
+                end
+
                 # Check what files were created
                 created_files = []
                 if isdir(output_path)
                     created_files = readdir(output_path)
                 end
-                
+
                 response_data = Dict(
                     "success" => true,
                     "experiment" => experiment,
@@ -562,6 +613,7 @@ function router(req)
             subtract_blank  = Bool(get(request_data, :blank_subtraction, false))
             blank_method    = string(get(request_data, :blank_method, "pointbypoint"))
             model_name      = string(get(request_data, :model_name, "aHPM"))
+            cal_override    = string(get(request_data, :calibration_file, ""))
             if !haskey(MODEL_REGISTRY, model_name)
                 return HTTP.Response(400, headers, JSON3.write(Dict("error" => "Unknown model: $model_name")))
             end
@@ -569,7 +621,7 @@ function router(req)
             try
                 data_file        = joinpath(CLEAN_DATA_PATH, experiment, "data_channel_1.csv")
                 annotation_file  = joinpath(CLEAN_DATA_PATH, experiment, "annotation_clean.csv")
-                calibration_file = "./cal_curve_avg.csv"
+                calibration_file = get_calibration_file(experiment; override=cal_override)
 
                 if !isfile(data_file) || !isfile(annotation_file)
                     return HTTP.Response(404, headers, JSON3.write(Dict("error" => "Data files not found")))
@@ -749,7 +801,11 @@ function router(req)
             label            = string(get(request_data, :label, "replicate"))
             experiment_name  = string(get(request_data, :experiment, "replicate"))
             model_name       = string(get(request_data, :model_name, "aHPM"))
-            calibration_file = "./cal_curve_avg.csv"
+            cal_override     = string(get(request_data, :calibration_file, ""))
+            # Use the first experiment in well_selections to detect plate type
+            first_exp        = isempty(well_selections) ? "" : string(well_selections[1].experiment)
+            calibration_file = isempty(first_exp) ? (isempty(cal_override) ? "./calibration/cal_curve_avg.csv" : cal_override) :
+                                   get_calibration_file(first_exp; override=cal_override)
             if !haskey(MODEL_REGISTRY, model_name)
                 return HTTP.Response(400, headers, JSON3.write(Dict("error" => "Unknown model: $model_name")))
             end
@@ -818,6 +874,7 @@ function router(req)
                 String[string(m) for m in request_data.model_names] : String[]
             subtract_blank = Bool(get(request_data, :blank_subtraction, false))
             blank_method   = string(get(request_data, :blank_method, "pointbypoint"))
+            cal_override   = string(get(request_data, :calibration_file, ""))
             # "wells" is optional — if omitted, fit all non-blank wells
             requested_wells = haskey(request_data, :wells) ?
                 String[string(w) for w in request_data.wells] : nothing
@@ -836,7 +893,7 @@ function router(req)
             try
                 data_file        = joinpath(CLEAN_DATA_PATH, experiment, "data_channel_1.csv")
                 annotation_file  = joinpath(CLEAN_DATA_PATH, experiment, "annotation_clean.csv")
-                calibration_file = "./cal_curve_avg.csv"
+                calibration_file = get_calibration_file(experiment; override=cal_override)
 
                 if !isfile(data_file) || !isfile(annotation_file)
                     return HTTP.Response(404, headers, JSON3.write(Dict("error" => "Data files not found for experiment '$experiment'")))

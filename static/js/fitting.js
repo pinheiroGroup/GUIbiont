@@ -54,6 +54,7 @@ async function fitReplicateAverage() {
         const plotData = await plotResponse.json();
         state.lastReplicateTraces = plotData.traces || [];
 
+        const fitCalFile = (document.getElementById('fit-calibration-file')?.value || '').trim();
         const fitResponse = await fetch(`${API_BASE}/api/fit-replicate`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -62,6 +63,7 @@ async function fitReplicateAverage() {
                 label: label,
                 experiment: experiment,
                 model_name: document.getElementById('fitting-model').value || 'aHPM',
+                ...(fitCalFile ? { calibration_file: fitCalFile } : {}),
             })
         });
 
@@ -421,6 +423,7 @@ async function fitGrowthCurve() {
     fitButton.textContent = '⏳ Fitting...';
     
     try {
+        const calFile = (document.getElementById('fit-calibration-file')?.value || '').trim();
         const response = await fetch(`${API_BASE}/api/fit-curve`, {
             method: 'POST',
             headers: {
@@ -432,6 +435,7 @@ async function fitGrowthCurve() {
                 blank_subtraction: document.getElementById('fit-blank-subtraction').checked,
                 blank_method: document.getElementById('fit-blank-method').value,
                 model_name: document.getElementById('fitting-model').value || 'aHPM',
+                ...(calFile ? { calibration_file: calFile } : {}),
             })
         });
         

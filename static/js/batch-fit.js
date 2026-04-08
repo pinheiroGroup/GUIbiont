@@ -172,6 +172,7 @@ async function runBatchFit() {
     if (batchExportBtn) batchExportBtn.style.display = 'none';
 
     try {
+        const batchCalFile = (document.getElementById('batch-fit-calibration-file')?.value || '').trim();
         const response = await fetch(`${API_BASE}/api/batch-fit`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -181,6 +182,7 @@ async function runBatchFit() {
                 ...modelPayload,
                 blank_subtraction: document.getElementById('batch-fit-blank-subtraction').checked,
                 blank_method: document.getElementById('batch-fit-blank-method').value,
+                ...(batchCalFile ? { calibration_file: batchCalFile } : {}),
             }),
         });
 
