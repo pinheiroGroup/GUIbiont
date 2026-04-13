@@ -69,6 +69,7 @@ end
 Base.@kwdef mutable struct ClusterRequest
     experiments::Vector{String} = String[]
     csv::String = ""
+    csv_path::String = ""
     k::Int = 3
     normalize::Bool = false
     smooth_method::String = "lowess"
@@ -89,6 +90,7 @@ end
 Base.@kwdef mutable struct ClusterSweepRequest
     experiments::Vector{String} = String[]
     csv::String = ""
+    csv_path::String = ""
     k_max::Int = 10
     smooth_method::String = "lowess"
     lowess_frac::Float64 = 0.05
