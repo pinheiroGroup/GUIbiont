@@ -32,12 +32,8 @@
         else
             CSV.read(IOBuffer(body.csv), DataFrame)
         end
-        csv_time = Float64.(coalesce.(df[!, names(df)[1]], NaN))
-        for s in names(df)[2:end]
-            push!(times_all,  csv_time)
-            push!(curves_all, Float64.(coalesce.(df[!, s], NaN)))
-            push!(labels_all, String(s))
-        end
+        ta, ca, la = _load_csv_curves(df)
+        append!(times_all, ta); append!(curves_all, ca); append!(labels_all, la)
     else
         for exp_name in body.experiments
             data_file       = joinpath(CLEAN_DATA_PATH, exp_name, "data_channel_1.csv")
@@ -289,12 +285,8 @@ end
         else
             CSV.read(IOBuffer(body.csv), DataFrame)
         end
-        csv_time = Float64.(coalesce.(df[!, names(df)[1]], NaN))
-        for s in names(df)[2:end]
-            push!(times_all,  csv_time)
-            push!(curves_all, Float64.(coalesce.(df[!, s], NaN)))
-            push!(labels_all, String(s))
-        end
+        ta, ca, la = _load_csv_curves(df)
+        append!(times_all, ta); append!(curves_all, ca); append!(labels_all, la)
     else
         for exp_name in body.experiments
             data_file       = joinpath(CLEAN_DATA_PATH, exp_name, "data_channel_1.csv")

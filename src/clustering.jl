@@ -282,22 +282,28 @@ function _cluster_quality_indices(X::Matrix{Float64}, ids::Vector{Int})::Dict{St
         return q
     end
 
-    dmat = _pairwise_euclidean(X)
+    # Pairwise-distance-based indices (silhouette, Dunn) require an n×n matrix.
+    # Skip them when n is large to avoid OOM — centroid-based indices still run.
+    if n <= 5000
+        dmat = _pairwise_euclidean(X)
 
-    # Silhouettes
-    sil_vals = try
-        Clustering.silhouettes(ids, dmat)
-    catch _
-        nothing
-    end
-    q["silhouettes"]      = sil_vals === nothing ? nothing : collect(Float64, sil_vals)
-    q["silhouette_mean"]  = sil_vals === nothing ? nothing : mean(sil_vals)
+        sil_vals = try
+            Clustering.silhouettes(ids, dmat)
+        catch _
+            nothing
+        end
+        q["silhouettes"]     = sil_vals === nothing ? nothing : collect(Float64, sil_vals)
+        q["silhouette_mean"] = sil_vals === nothing ? nothing : mean(sil_vals)
 
-    # Dunn (no centers needed)
-    q["dunn"] = try
-        Float64(Clustering.clustering_quality(X', ids; quality_index = :dunn))
-    catch _
-        nothing
+        q["dunn"] = try
+            Float64(Clustering.clustering_quality(X', ids; quality_index = :dunn))
+        catch _
+            nothing
+        end
+    else
+        q["silhouettes"]     = nothing
+        q["silhouette_mean"] = nothing
+        q["dunn"]            = nothing
     end
 
     # Indices that need cluster centers
