@@ -124,6 +124,9 @@
         end
     end
 
+    # Replace NaN/Inf with column means before smoothing and clustering
+    curves = _fill_nan_colmean(curves)
+
     # ------------------------------------------------------------------
     # Smoothing via KinBiont preprocess
     # ------------------------------------------------------------------
@@ -231,16 +234,16 @@
     end
     quality["silhouette_per_cluster"] = sil_per_cluster
 
-    # Per-series silhouette (same order as labels_all, NaN for noise)
-    sil_per_series = fill(NaN, n_series)
+    # Per-series silhouette (same order as labels_all, null for noise/skipped)
     if quality["silhouettes"] !== nothing
-        sil_vals   = quality["silhouettes"]
-        nonnoise_i = findall(noise_mask)
+        sil_vals       = quality["silhouettes"]
+        sil_per_series = Vector{Union{Float64,Nothing}}(nothing, n_series)
+        nonnoise_i     = findall(noise_mask)
         for (j, gi) in enumerate(nonnoise_i)
             sil_per_series[gi] = sil_vals[j]
         end
+        quality["silhouettes"] = sil_per_series
     end
-    quality["silhouettes"]   = sil_per_series
     quality["series_labels"] = labels_all
 
     return Dict(
