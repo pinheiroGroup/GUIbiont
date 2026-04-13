@@ -149,6 +149,10 @@ async function plotReplicates() {
         const GROUP_COLORS = ['#4facfe', '#e74c3c', '#2ecc71', '#e67e22', '#9b59b6', '#1abc9c', '#f39c12', '#3498db'];
         let colorIdx = 0;
 
+        // Track trace indices so the average can be updated when individual traces are toggled
+        const traceGroupMeta = {};
+        let traceIdx = 0;
+
         // Collect unique channels across selected replicate groups for multi-axis
         const repChannelList = [...new Set(
             [...state.selectedReplicateKeys].map(k => state.allReplicates[k].channel || 1)
@@ -173,6 +177,8 @@ async function plotReplicates() {
                 line: { width: 3, color },
                 marker: { size: 5, color }
             });
+            traceGroupMeta[key] = { avgIdx: traceIdx, individualIdxs: [] };
+            traceIdx++;
 
             const validY = avg.y.filter(v => !isNaN(v));
             stats.push({
@@ -194,6 +200,8 @@ async function plotReplicates() {
                         line: { width: 1, color, dash: 'dot' },
                         opacity: 0.5
                     });
+                    traceGroupMeta[key].individualIdxs.push(traceIdx);
+                    traceIdx++;
                 });
             }
         });
@@ -207,6 +215,27 @@ async function plotReplicates() {
         Plotly.purge(plotDiv);
         await Plotly.newPlot(plotDiv, plotTraces, layout, config);
         displayStats(stats);
+
+        // Recalculate the group average whenever an individual trace is shown/hidden via the legend
+        plotDiv.on('plotly_restyle', function(eventData) {
+            if (!eventData || !eventData[0] || !eventData[0].hasOwnProperty('visible')) return;
+            const plotData = plotDiv.data;
+            Object.entries(traceGroupMeta).forEach(([key, meta]) => {
+                if (meta.individualIdxs.length === 0) return;
+                const visibleTraces = meta.individualIdxs
+                    .filter(i => plotData[i].visible !== 'legendonly')
+                    .map(i => ({ x: plotData[i].x, y: plotData[i].y }));
+                if (visibleTraces.length === 0) return;
+                const newAvg = computeReplicateAverage(visibleTraces);
+                const rep = state.allReplicates[key];
+                Plotly.restyle(plotDiv, {
+                    x: [newAvg.x],
+                    y: [newAvg.y],
+                    name: [`${rep.label} (avg, n=${visibleTraces.length})`]
+                }, [meta.avgIdx]);
+            });
+        });
+
         hideLoading();
     } catch (error) {
         console.error('Error plotting replicates:', error);
