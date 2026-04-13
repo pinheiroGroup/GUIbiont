@@ -24,12 +24,18 @@
     blank_labels_used = Vector{String}()
     blank_source      = "none"   # "annotated" | "auto" | "none"
 
-    if !isempty(body.csv)
-        df       = CSV.read(IOBuffer(body.csv), DataFrame)
-        csv_time = Float64.(df[!, names(df)[1]])
+    if !isempty(body.csv) || !isempty(body.csv_path)
+        df = if !isempty(body.csv_path)
+            p = body.csv_path
+            isfile(p) || return json(Dict("error" => "File not found: $p"); status=400)
+            CSV.read(p, DataFrame)
+        else
+            CSV.read(IOBuffer(body.csv), DataFrame)
+        end
+        csv_time = Float64.(coalesce.(df[!, names(df)[1]], NaN))
         for s in names(df)[2:end]
             push!(times_all,  csv_time)
-            push!(curves_all, Float64.(df[!, s]))
+            push!(curves_all, Float64.(coalesce.(df[!, s], NaN)))
             push!(labels_all, String(s))
         end
     else
@@ -275,12 +281,18 @@ end
     curves_all = Vector{Vector{Float64}}()
     labels_all = Vector{String}()
 
-    if !isempty(body.csv)
-        df       = CSV.read(IOBuffer(body.csv), DataFrame)
-        csv_time = Float64.(df[!, names(df)[1]])
+    if !isempty(body.csv) || !isempty(body.csv_path)
+        df = if !isempty(body.csv_path)
+            p = body.csv_path
+            isfile(p) || return json(Dict("error" => "File not found: $p"); status=400)
+            CSV.read(p, DataFrame)
+        else
+            CSV.read(IOBuffer(body.csv), DataFrame)
+        end
+        csv_time = Float64.(coalesce.(df[!, names(df)[1]], NaN))
         for s in names(df)[2:end]
             push!(times_all,  csv_time)
-            push!(curves_all, Float64.(df[!, s]))
+            push!(curves_all, Float64.(coalesce.(df[!, s], NaN)))
             push!(labels_all, String(s))
         end
     else
