@@ -24,14 +24,16 @@
     blank_labels_used = Vector{String}()
     blank_source      = "none"   # "annotated" | "auto" | "none"
 
-    if !isempty(body.csv)
-        df       = CSV.read(IOBuffer(body.csv), DataFrame)
-        csv_time = Float64.(df[!, names(df)[1]])
-        for s in names(df)[2:end]
-            push!(times_all,  csv_time)
-            push!(curves_all, Float64.(df[!, s]))
-            push!(labels_all, String(s))
+    if !isempty(body.csv) || !isempty(body.csv_path)
+        df = if !isempty(body.csv_path)
+            p = body.csv_path
+            isfile(p) || return json(Dict("error" => "File not found: $p"); status=400)
+            CSV.read(p, DataFrame)
+        else
+            CSV.read(IOBuffer(body.csv), DataFrame)
         end
+        ta, ca, la = _load_csv_curves(df)
+        append!(times_all, ta); append!(curves_all, ca); append!(labels_all, la)
     else
         for exp_name in body.experiments
             data_file       = joinpath(CLEAN_DATA_PATH, exp_name, "data_channel_1.csv")
@@ -121,6 +123,9 @@
             curves = _apply_blank_subtraction_matrix(curves, blank_ts_full, blank_method)
         end
     end
+
+    # Replace NaN/Inf with column means before smoothing and clustering
+    curves = _fill_nan_colmean(curves)
 
     # ------------------------------------------------------------------
     # Smoothing via KinBiont preprocess
@@ -229,16 +234,16 @@
     end
     quality["silhouette_per_cluster"] = sil_per_cluster
 
-    # Per-series silhouette (same order as labels_all, NaN for noise)
-    sil_per_series = fill(NaN, n_series)
+    # Per-series silhouette (same order as labels_all, null for noise/skipped)
     if quality["silhouettes"] !== nothing
-        sil_vals   = quality["silhouettes"]
-        nonnoise_i = findall(noise_mask)
+        sil_vals       = quality["silhouettes"]
+        sil_per_series = Vector{Union{Float64,Nothing}}(nothing, n_series)
+        nonnoise_i     = findall(noise_mask)
         for (j, gi) in enumerate(nonnoise_i)
             sil_per_series[gi] = sil_vals[j]
         end
+        quality["silhouettes"] = sil_per_series
     end
-    quality["silhouettes"]   = sil_per_series
     quality["series_labels"] = labels_all
 
     return Dict(
@@ -275,14 +280,16 @@ end
     curves_all = Vector{Vector{Float64}}()
     labels_all = Vector{String}()
 
-    if !isempty(body.csv)
-        df       = CSV.read(IOBuffer(body.csv), DataFrame)
-        csv_time = Float64.(df[!, names(df)[1]])
-        for s in names(df)[2:end]
-            push!(times_all,  csv_time)
-            push!(curves_all, Float64.(df[!, s]))
-            push!(labels_all, String(s))
+    if !isempty(body.csv) || !isempty(body.csv_path)
+        df = if !isempty(body.csv_path)
+            p = body.csv_path
+            isfile(p) || return json(Dict("error" => "File not found: $p"); status=400)
+            CSV.read(p, DataFrame)
+        else
+            CSV.read(IOBuffer(body.csv), DataFrame)
         end
+        ta, ca, la = _load_csv_curves(df)
+        append!(times_all, ta); append!(curves_all, ca); append!(labels_all, la)
     else
         for exp_name in body.experiments
             data_file       = joinpath(CLEAN_DATA_PATH, exp_name, "data_channel_1.csv")
