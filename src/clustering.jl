@@ -260,6 +260,71 @@ function _detect_blank_wells(
     return sort(candidates)
 end
 
+# Compute per-cluster centroid (mean) and SD over the time axis.
+function _centroid_with_sd(display_curves::Matrix{Float64}, mask::Vector{Int})
+    sub  = display_curves[mask, :]
+    n_tp = size(sub, 2)
+    centroid = Vector{Float64}(undef, n_tp)
+    sd_vec   = Vector{Float64}(undef, n_tp)
+    for t in 1:n_tp
+        col = filter(isfinite, sub[:, t])
+        if isempty(col)
+            centroid[t] = 0.0; sd_vec[t] = 0.0
+        elseif length(col) == 1
+            centroid[t] = col[1]; sd_vec[t] = 0.0
+        else
+            centroid[t] = mean(col); sd_vec[t] = std(col)
+        end
+    end
+    return centroid, sd_vec
+end
+
+# Interpolate curves onto a common grid using piecewise-linear interpolation.
+# Points outside a curve's time range are held at the nearest endpoint.
+function _interpolate_to_grid(
+    curves_all::Vector{Vector{Float64}},
+    times_all::Vector{Vector{Float64}},
+    grid::Vector{Float64},
+)::Matrix{Float64}
+    n      = length(curves_all)
+    n_grid = length(grid)
+    out    = Matrix{Float64}(undef, n, n_grid)
+    for (i, (y, t)) in enumerate(zip(curves_all, times_all))
+        ord = sortperm(t)
+        t_s = t[ord]; y_s = y[ord]; n_t = length(t_s)
+        for (j, tg) in enumerate(grid)
+            if n_t == 0
+                out[i, j] = NaN
+            elseif tg <= t_s[1]
+                out[i, j] = y_s[1]
+            elseif tg >= t_s[end]
+                out[i, j] = y_s[end]
+            else
+                k    = clamp(searchsortedlast(t_s, tg), 1, n_t - 1)
+                frac = (tg - t_s[k]) / (t_s[k+1] - t_s[k])
+                out[i, j] = y_s[k] + frac * (y_s[k+1] - y_s[k])
+            end
+        end
+    end
+    return out
+end
+
+# Build a uniform time grid using quantile-based endpoints to resist outlier lengths.
+function _build_interp_grid(
+    times_all::Vector{Vector{Float64}},
+    n_grid::Int,
+    q_lo::Float64,
+    q_hi::Float64,
+)::Vector{Float64}
+    t_starts = [minimum(t) for t in times_all if !isempty(t)]
+    t_ends   = [maximum(t) for t in times_all if !isempty(t)]
+    isempty(t_starts) && return Float64[]
+    t0 = quantile(t_starts, q_lo)
+    t1 = quantile(t_ends,   q_hi)
+    t0 >= t1 && (t0 = minimum(t_starts); t1 = maximum(t_ends))
+    return collect(range(t0, t1; length = n_grid))
+end
+
 # Remap arbitrary integer labels to 1..k preserving order.
 function _remap_ids(ids::Vector{Int})::Tuple{Vector{Int}, Vector{Int}}
     uniq  = sort(unique(ids))

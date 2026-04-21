@@ -38,7 +38,8 @@ import { setClusteringMode, populateClusteringExperiments,
          exportClusterCSV, exportAllClustersCSV, exportAllClustersPNG,
          renderQualityPanel, runClusterSweep, renderSweepPanel,
          saveCurrentClustering, clearSavedClusterings, refreshSavedClusteringSelects,
-         runClusterComparison, renderComparisonResult, hexToRgba } from './clustering.js';
+         runClusterComparison, renderComparisonResult, hexToRgba,
+         runBatchAverage } from './clustering.js';
 
 // ---------------------------------------------------------------------------
 // Initialization functions (wired here because they call many other modules)
@@ -250,12 +251,13 @@ Object.assign(window, {
     setClusteringMode, populateClusteringExperiments,
     selectAllClusteringExperiments, clearAllClusteringExperiments,
     onClusteringFileChange, updateClusteringRunBtn, toggleClusteringAdvanced,
-    onClusterSmoothChange, onClusterMethodChange, onClusterBlankChange,
+    onClusterSmoothChange, onClusterMethodChange, onClusterBlankChange, onClusterInterpolateChange,
     renderClusterBlankNotice, runClustering, renderClusterGrid,
     exportClusterCSV, exportAllClustersCSV, exportAllClustersPNG,
     renderQualityPanel, runClusterSweep, renderSweepPanel,
     saveCurrentClustering, clearSavedClusterings, refreshSavedClusteringSelects,
     runClusterComparison, renderComparisonResult, hexToRgba,
+    runBatchAverage,
     // Batch fitting
     initBatchFitTab, loadBatchFitModels, loadBatchFitExperiments,
     onBatchExperimentChange, updateBatchWellCount,

@@ -79,12 +79,31 @@
 
     isempty(curves_all) && return json(Dict("error" => "No data loaded"); status=400)
 
-    min_len  = minimum(length.(curves_all))
-    times    = times_all[1][1:min_len]
-    n_series = length(curves_all)
-    curves   = Matrix{Float64}(undef, n_series, min_len)
-    for (i, c) in enumerate(curves_all)
-        curves[i, :] = c[1:min_len]
+    # ------------------------------------------------------------------
+    # Build common time grid (interpolation or truncation)
+    # ------------------------------------------------------------------
+    do_interp  = Bool(body.interpolate)
+    interp_n   = max(10, Int(body.interp_n))
+    q_lo       = Float64(body.interp_quantile_lo)
+    q_hi       = Float64(body.interp_quantile_hi)
+
+    if do_interp && !isempty(curves_all)
+        grid = _build_interp_grid(times_all, interp_n, q_lo, q_hi)
+        if isempty(grid)
+            return json(Dict("error" => "Could not build interpolation grid"); status=400)
+        end
+        curves_interp = _interpolate_to_grid(curves_all, times_all, grid)
+        times    = grid
+        n_series = size(curves_interp, 1)
+        curves   = curves_interp
+    else
+        min_len  = minimum(length.(curves_all))
+        times    = times_all[1][1:min_len]
+        n_series = length(curves_all)
+        curves   = Matrix{Float64}(undef, n_series, min_len)
+        for (i, c) in enumerate(curves_all)
+            curves[i, :] = c[1:min_len]
+        end
     end
 
     # ------------------------------------------------------------------
@@ -204,11 +223,14 @@
         mask = findall(cluster_ids .== c)
         isempty(mask) && continue
         label = c == 0 ? "Noise" : string(c)
+        centroid, centroid_sd = _centroid_with_sd(display_curves, mask)
         push!(clusters, Dict(
             "id"            => c,
             "label"         => label,
             "series_labels" => labels_all[mask],
-            "series_data"   => [display_curves[i, :] for i in mask]
+            "series_data"   => [display_curves[i, :] for i in mask],
+            "centroid"      => centroid,
+            "centroid_sd"   => centroid_sd,
         ))
     end
 
@@ -328,12 +350,25 @@ end
 
     isempty(curves_all) && return json(Dict("error" => "No data loaded"); status=400)
 
-    min_len  = minimum(length.(curves_all))
-    times    = times_all[1][1:min_len]
-    n_series = length(curves_all)
-    curves   = Matrix{Float64}(undef, n_series, min_len)
-    for (i, c) in enumerate(curves_all)
-        curves[i, :] = c[1:min_len]
+    do_interp = Bool(body.interpolate)
+    interp_n  = max(10, Int(body.interp_n))
+    q_lo      = Float64(body.interp_quantile_lo)
+    q_hi      = Float64(body.interp_quantile_hi)
+
+    if do_interp && !isempty(curves_all)
+        grid = _build_interp_grid(times_all, interp_n, q_lo, q_hi)
+        isempty(grid) && return json(Dict("error" => "Could not build interpolation grid"); status=400)
+        curves   = _interpolate_to_grid(curves_all, times_all, grid)
+        times    = grid
+        n_series = size(curves, 1)
+    else
+        min_len  = minimum(length.(curves_all))
+        times    = times_all[1][1:min_len]
+        n_series = length(curves_all)
+        curves   = Matrix{Float64}(undef, n_series, min_len)
+        for (i, c) in enumerate(curves_all)
+            curves[i, :] = c[1:min_len]
+        end
     end
 
     # Smooth once, then sweep over k

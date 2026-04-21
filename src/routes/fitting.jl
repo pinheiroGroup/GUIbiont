@@ -326,3 +326,119 @@ end
                 return json(Dict("error" => "Batch fitting failed: $e"); status=500)
     end
 end
+
+# ---------------------------------------------------------------------------
+# POST /api/batch-average
+# ---------------------------------------------------------------------------
+# Reads a matrix CSV (time column + one series per column), groups series by
+# the value in `group_col` (a column in a companion metadata header row OR a
+# second header row), and returns the pointwise mean curve for each group as a
+# new CSV.
+#
+# Expected input CSV format (two-row header):
+#   Row 1: "Time", series_id_1, series_id_2, ...
+#   Row 2: "Group", group_label_1, group_label_2, ...   ← optional metadata row
+#   Row 3+: numeric data
+#
+# Alternatively, group_col can name a column in a separate metadata CSV
+# supplied inline.  For simplicity we support the two-header-row format
+# (matching the Keio atlas export) and the `group_col` field selects which
+# row-2 label column to use.  If `group_col` is blank, row 2 is assumed to be
+# the group labels.
+# ---------------------------------------------------------------------------
+@post "/api/batch-average" function(req::HTTP.Request, body::Json{BatchAverageRequest})
+    body      = body.payload
+    group_col = string(body.group_col)
+
+    df = try
+        if !isempty(body.csv_path)
+            p = string(body.csv_path)
+            isfile(p) || return json(Dict("error" => "File not found: $p"); status=400)
+            CSV.read(p, DataFrame, header=1, silencewarnings=true)
+        elseif !isempty(body.csv)
+            CSV.read(IOBuffer(string(body.csv)), DataFrame, header=1, silencewarnings=true)
+        else
+            return json(Dict("error" => "Provide csv or csv_path"); status=400)
+        end
+    catch e
+        return json(Dict("error" => "Could not parse CSV: $e"); status=400)
+    end
+
+    ncols = ncol(df)
+    ncols < 2 && return json(Dict("error" => "CSV must have at least 2 columns"); status=400)
+
+    col_names = names(df)
+    time_col  = col_names[1]
+
+    # Detect optional second-row metadata (non-numeric first column value)
+    time_raw = df[!, time_col]
+    first_val = string(time_raw[1])
+    has_meta_row = tryparse(Float64, first_val) === nothing
+
+    group_labels = Vector{String}(undef, ncols - 1)
+    data_start   = 1
+
+    if has_meta_row
+        # Row 1 is group labels
+        for (j, c) in enumerate(col_names[2:end])
+            group_labels[j] = string(df[1, c])
+        end
+        data_start = 2
+    else
+        # No metadata row — use column names as group labels
+        for (j, c) in enumerate(col_names[2:end])
+            group_labels[j] = string(c)
+        end
+    end
+
+    # Parse time and OD data (from data_start onward)
+    data_df   = df[data_start:end, :]
+    times_raw = Float64[]
+    for v in data_df[!, time_col]
+        p = tryparse(Float64, string(v))
+        push!(times_raw, p === nothing ? NaN : p)
+    end
+
+    n_tp   = length(times_raw)
+    n_ser  = ncols - 1
+    od_mat = Matrix{Float64}(undef, n_tp, n_ser)
+    for (j, c) in enumerate(col_names[2:end])
+        for (i, v) in enumerate(data_df[!, c])
+            p = tryparse(Float64, string(v))
+            od_mat[i, j] = p === nothing ? NaN : p
+        end
+    end
+
+    # Group series indices by label
+    groups = Dict{String, Vector{Int}}()
+    for (j, lbl) in enumerate(group_labels)
+        push!(get!(groups, lbl, Int[]), j)
+    end
+
+    # Compute pointwise mean per group (ignore NaN)
+    group_names = sort(collect(keys(groups)))
+    avg_mat = Matrix{Float64}(undef, n_tp, length(group_names))
+    for (g_idx, gname) in enumerate(group_names)
+        idxs = groups[gname]
+        for i in 1:n_tp
+            vals = filter(isfinite, [od_mat[i, j] for j in idxs])
+            avg_mat[i, g_idx] = isempty(vals) ? NaN : mean(vals)
+        end
+    end
+
+    # Build output CSV string
+    header = join(vcat("Time", group_names), ",")
+    rows   = [header]
+    for i in 1:n_tp
+        row = join(vcat(string(times_raw[i]), [string(avg_mat[i, g]) for g in 1:length(group_names)]), ",")
+        push!(rows, row)
+    end
+    out_csv = join(rows, "\n")
+
+    return Dict(
+        "csv"         => out_csv,
+        "n_groups"    => length(group_names),
+        "n_timepoints"=> n_tp,
+        "group_names" => group_names,
+    )
+end
