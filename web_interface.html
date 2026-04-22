@@ -410,6 +410,38 @@
                                     </div>
                                 </div>
 
+                                <!-- Constant pre-screening -->
+                                <div style="display:flex; flex-direction:column; gap:6px; border-left:2px solid #dee2e6; padding-left:12px;">
+                                    <label style="font-weight:600;">Non-growing pre-screen</label>
+                                    <p style="font-size:0.82em; color:#6c757d; margin:0;">
+                                        Before k-means, flag non-growing curves via a quantile-ratio test and assign them to a dedicated sentinel cluster. k-means then runs on the remaining dynamic curves using k−1 clusters.
+                                    </p>
+                                    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                                        <label style="display:flex; align-items:center; gap:4px; font-size:0.85em;">
+                                            <input type="checkbox" id="cluster-prescreen"> Enable
+                                        </label>
+                                        <label style="font-size:0.85em;">τ (tolerance)</label>
+                                        <input type="number" id="cluster-prescreen-tol" value="1.5" min="1.0" max="10.0" step="0.1"
+                                               style="width:70px; padding:4px 6px; font-size:0.85em; border:1px solid #ced4da; border-radius:4px;">
+                                    </div>
+                                </div>
+
+                                <!-- Post-hoc trend-test flat reassignment -->
+                                <div style="display:flex; flex-direction:column; gap:6px; border-left:2px solid #dee2e6; padding-left:12px;">
+                                    <label style="font-weight:600;">Post-hoc trend test</label>
+                                    <p style="font-size:0.82em; color:#6c757d; margin:0;">
+                                        After clustering, reassign curves with no significant OD vs time slope (t-test p ≥ threshold) to a flat cluster. Works with any clustering method; useful when blank annotation is unavailable.
+                                    </p>
+                                    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                                        <label style="display:flex; align-items:center; gap:4px; font-size:0.85em;">
+                                            <input type="checkbox" id="cluster-trend-test"> Enable
+                                        </label>
+                                        <label style="font-size:0.85em;">p threshold</label>
+                                        <input type="number" id="cluster-trend-p" value="0.05" min="0.001" max="0.5" step="0.005"
+                                               style="width:70px; padding:4px 6px; font-size:0.85em; border:1px solid #ced4da; border-radius:4px;">
+                                    </div>
+                                </div>
+
                                 <!-- maxiter / tol (kmeans + kmedoids) -->
                                 <div id="cluster-iter-params" style="display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end;">
                                     <div style="display:flex; flex-direction:column; gap:4px;">

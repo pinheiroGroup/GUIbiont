@@ -136,40 +136,39 @@
     end
 
     # ------------------------------------------------------------------
-    # Blank subtraction (before smoothing and clustering)
+    # Blank detection and subtraction
+    # Annotated blanks are always excluded from clustering (already separated
+    # during data loading above).  Auto-detected blanks are also always removed
+    # from the clustering matrix once found — consistent with annotated behaviour.
+    # Signal subtraction only happens when subtract_blank=true.
     # ------------------------------------------------------------------
-    if subtract_blank
-        # For CSV uploads or experiments without annotated blanks: auto-detect
-        if isempty(blank_curves_all)
-            blank_idxs = _detect_blank_indices(curves, times;
-                flat_range_thr = blank_range_thr,
-                od_percentile  = blank_od_pct)
-            if !isempty(blank_idxs)
-                blank_curves_all  = [curves[i, :] for i in blank_idxs]
-                blank_labels_used = labels_all[blank_idxs]
-                blank_source      = "auto"
-                # Remove detected blanks from the data to be clustered
-                keep       = setdiff(1:n_series, blank_idxs)
-                curves     = curves[keep, :]
-                labels_all = labels_all[keep]
-                n_series   = length(keep)
-                times_all  = times_all[keep]
-            end
+    if isempty(blank_curves_all)
+        blank_idxs = _detect_blank_indices(curves, times;
+            flat_range_thr = blank_range_thr,
+            od_percentile  = blank_od_pct)
+        if !isempty(blank_idxs)
+            blank_curves_all  = [curves[i, :] for i in blank_idxs]
+            blank_labels_used = labels_all[blank_idxs]
+            blank_source      = "auto"
+            keep       = setdiff(1:n_series, blank_idxs)
+            curves     = curves[keep, :]
+            labels_all = labels_all[keep]
+            n_series   = length(keep)
+            times_all  = times_all[keep]
         end
+    end
 
-        if !isempty(blank_curves_all)
-            blen      = min(min_len, minimum(length.(blank_curves_all)))
-            blank_mat = Matrix{Float64}(undef, length(blank_curves_all), blen)
-            for (i, bc) in enumerate(blank_curves_all)
-                blank_mat[i, :] = bc[1:blen]
-            end
-            # Mean blank timeseries (per timepoint)
-            blank_ts = [mean(filter(isfinite, blank_mat[:, t])) for t in 1:blen]
-            # Pad/trim to match curves width
-            blank_ts_full = length(blank_ts) >= min_len ? blank_ts[1:min_len] :
-                            vcat(blank_ts, fill(blank_ts[end], min_len - length(blank_ts)))
-            curves = _apply_blank_subtraction_matrix(curves, blank_ts_full, blank_method)
+    if subtract_blank && !isempty(blank_curves_all)
+        ncols     = size(curves, 2)
+        blen      = min(ncols, minimum(length.(blank_curves_all)))
+        blank_mat = Matrix{Float64}(undef, length(blank_curves_all), blen)
+        for (i, bc) in enumerate(blank_curves_all)
+            blank_mat[i, :] = bc[1:blen]
         end
+        blank_ts      = [mean(filter(isfinite, blank_mat[:, t])) for t in 1:blen]
+        blank_ts_full = length(blank_ts) >= ncols ? blank_ts[1:ncols] :
+                        vcat(blank_ts, fill(blank_ts[end], ncols - length(blank_ts)))
+        curves = _apply_blank_subtraction_matrix(curves, blank_ts_full, blank_method)
     end
 
     # Replace NaN/Inf with column means before smoothing and clustering
@@ -206,13 +205,34 @@
     zscored = _zscore_rows(curves_for_cluster)
 
     # ------------------------------------------------------------------
+    # Constant-curve pre-screening (optional, kmeans only)
+    # Flags non-growing curves before k-means and reserves the last
+    # cluster label for them; k-means runs on the dynamic subset only.
+    # ------------------------------------------------------------------
+    do_prescreen = Bool(body.prescreen_constant)
+    tol_const    = Float64(body.prescreen_tol_const)
+    const_mask   = do_prescreen ? _prescreen_constant(curves_for_cluster; tol_const) :
+                                  falses(n_series)
+    dynamic_idx  = findall(.!const_mask)
+
+    # ------------------------------------------------------------------
     # Clustering
     # ------------------------------------------------------------------
     k_eff = min(k_input, n_series)
 
     cluster_ids = if cluster_method == "kmeans"
-        res = Clustering.kmeans(zscored', k_eff; maxiter, tol)
-        Clustering.assignments(res)
+        if do_prescreen && !isempty(dynamic_idx) && k_eff > 1
+            k_dyn = k_eff - 1
+            ids   = fill(k_eff, n_series)
+            sub   = zscored[dynamic_idx, :]
+            res   = Clustering.kmeans(sub', min(k_dyn, length(dynamic_idx)); maxiter, tol)
+            for (pos, idx) in enumerate(dynamic_idx)
+                ids[idx] = Clustering.assignments(res)[pos]
+            end
+            ids
+        else
+            Clustering.assignments(Clustering.kmeans(zscored', k_eff; maxiter, tol))
+        end
 
     elseif cluster_method == "kmedoids"
         dmat = _pairwise_euclidean(zscored)
@@ -231,6 +251,16 @@
 
     else
         return json(Dict("error" => "Unknown cluster_method: $cluster_method"); status=400)
+    end
+
+    # ------------------------------------------------------------------
+    # Post-hoc trend-test flat reassignment (optional)
+    # ------------------------------------------------------------------
+    if Bool(body.trend_test_flat)
+        cluster_ids = _apply_trend_test_flat(
+            curves_for_cluster, times, cluster_ids;
+            p_thr = Float64(body.trend_p_thr),
+        )
     end
 
     # ------------------------------------------------------------------
@@ -436,14 +466,33 @@ end
     end
     zscored = _zscore_rows(curves_for)
 
+    do_prescreen = Bool(body.prescreen_constant)
+    tol_const_sw = Float64(body.prescreen_tol_const)
+    const_mask   = do_prescreen ? _prescreen_constant(curves_for; tol_const = tol_const_sw) :
+                                  falses(n_series)
+    dynamic_idx  = findall(.!const_mask)
+    zscored_dyn  = isempty(dynamic_idx) ? zscored : zscored[dynamic_idx, :]
+
     _wcss(data, ids) = sum(sum((data[ids .== c, :] .- mean(data[ids .== c, :], dims=1)).^2) for c in unique(ids))
 
+    # With pre-screening k is total clusters including the sentinel; sweep starts at 3
+    # (minimum 2 dynamic + 1 constant sentinel). Without pre-screening start at 2.
+    k_min = do_prescreen ? 3 : 2
+
     sweep_results = []
-    for k in 2:min(k_max, n_series)
+    for k in k_min:min(k_max, n_series)
         ids, wcss = try
             if cluster_method == "kmeans"
-                km = Clustering.kmeans(zscored', k; maxiter, tol)
-                Clustering.assignments(km), km.totalcost
+                if do_prescreen && !isempty(dynamic_idx) && k > 1
+                    k_dyn = k - 1
+                    full  = fill(k, n_series)
+                    km    = Clustering.kmeans(zscored_dyn', min(k_dyn, length(dynamic_idx)); maxiter, tol)
+                    for (pos, idx) in enumerate(dynamic_idx); full[idx] = Clustering.assignments(km)[pos]; end
+                    full, km.totalcost
+                else
+                    km = Clustering.kmeans(zscored', k; maxiter, tol)
+                    Clustering.assignments(km), km.totalcost
+                end
             elseif cluster_method == "kmedoids"
                 dmat = _pairwise_euclidean(zscored)
                 asgn = Clustering.assignments(Clustering.kmedoids(dmat, k; maxiter, tol))

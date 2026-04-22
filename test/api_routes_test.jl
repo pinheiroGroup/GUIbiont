@@ -497,3 +497,64 @@ end
     @test status == 400
     @test haskey(body, :error)
 end
+
+# ---------------------------------------------------------------------------
+# Constant pre-screening and post-hoc trend-test flat reassignment
+# CSV with 2 flat curves (F1, F2) and 4 growing curves (G1-G4).
+# ---------------------------------------------------------------------------
+
+const PRESCREEN_CSV = """Time,F1,F2,G1,G2,G3,G4
+0.0,0.10,0.11,0.01,0.01,0.01,0.01
+1.0,0.10,0.11,0.05,0.05,0.06,0.05
+2.0,0.10,0.11,0.15,0.14,0.16,0.15
+3.0,0.10,0.10,0.35,0.34,0.37,0.35
+4.0,0.10,0.11,0.65,0.63,0.67,0.65
+5.0,0.10,0.10,0.90,0.88,0.92,0.90
+6.0,0.10,0.11,1.05,1.03,1.07,1.05
+7.0,0.10,0.10,1.10,1.08,1.12,1.10
+8.0,0.10,0.11,1.12,1.10,1.14,1.12
+9.0,0.10,0.10,1.12,1.10,1.14,1.12
+"""
+
+@testset "POST /api/cluster — prescreen_constant assigns flat curves to sentinel" begin
+    status, body = post_json("/api/cluster",
+                             Dict("csv" => PRESCREEN_CSV, "k" => 3,
+                                  "smooth_method" => "none",
+                                  "prescreen_constant" => true,
+                                  "prescreen_tol_const" => 1.5))
+    @test status == 200
+    asgn   = Int.(body[:assignments])
+    labels = String.(body[:series_labels])
+    flat_ids  = asgn[[findfirst(==(l), labels) for l in ["F1","F2"]]]
+    grow_ids  = asgn[[findfirst(==(l), labels) for l in ["G1","G2","G3","G4"]]]
+    # All flat curves should share the sentinel label (k=3)
+    @test all(==(3), flat_ids)
+    # Growing curves should NOT be in the sentinel cluster
+    @test all(!=(3), grow_ids)
+end
+
+@testset "POST /api/cluster — trend_test_flat reassigns flat curves" begin
+    status, body = post_json("/api/cluster",
+                             Dict("csv" => PRESCREEN_CSV, "k" => 2,
+                                  "smooth_method" => "none",
+                                  "trend_test_flat" => true,
+                                  "trend_p_thr" => 0.05))
+    @test status == 200
+    asgn   = Int.(body[:assignments])
+    labels = String.(body[:series_labels])
+    flat_ids = asgn[[findfirst(==(l), labels) for l in ["F1","F2"]]]
+    grow_ids = asgn[[findfirst(==(l), labels) for l in ["G1","G2","G3","G4"]]]
+    sentinel = maximum(asgn)
+    @test all(==(sentinel), flat_ids)
+    @test all(!=(sentinel), grow_ids)
+end
+
+@testset "POST /api/cluster-sweep — prescreen_constant accepted, sweep starts at k=3" begin
+    status, body = post_json("/api/cluster-sweep",
+                             Dict("csv" => PRESCREEN_CSV, "k_max" => 5,
+                                  "smooth_method" => "none",
+                                  "prescreen_constant" => true))
+    @test status == 200
+    ks = Int.([r[:k] for r in body[:sweep]])
+    @test minimum(ks) == 3
+end

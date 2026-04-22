@@ -77,3 +77,71 @@ end
     @test length(grid) == 6
     @test grid ≈ collect(range(0.0, 10.0; length=6)) atol=1e-10
 end
+
+# ---------------------------------------------------------------------------
+# _prescreen_constant
+# ---------------------------------------------------------------------------
+
+@testset "_prescreen_constant — flat curve flagged" begin
+    # Row 1: completely flat (q0.9 / q0.1 ≈ 1 < 1.5) → constant
+    # Row 2: growing (q0.9 >> q0.1)                  → dynamic
+    curves = [0.1  0.1  0.1  0.1  0.1;
+              0.1  0.2  0.4  0.8  1.0]
+    mask = _prescreen_constant(curves; tol_const=1.5)
+    @test mask[1] == true
+    @test mask[2] == false
+end
+
+@testset "_prescreen_constant — zero baseline flagged as flat" begin
+    # Baseline near zero with negligible range
+    curves = reshape([0.0, 1e-8, 0.0, 1e-8, 0.0], 1, 5)
+    mask = _prescreen_constant(curves; tol_const=1.5)
+    @test mask[1] == true
+end
+
+@testset "_prescreen_constant — tolerance controls threshold" begin
+    # q0.1=0.5, q0.9=1.0 → ratio=2.0; flagged at tol=2.5, not at tol=1.5
+    curves = reshape([0.5, 0.6, 0.7, 0.8, 1.0], 1, 5)
+    @test _prescreen_constant(curves; tol_const=2.5)[1] == true
+    @test _prescreen_constant(curves; tol_const=1.5)[1] == false
+end
+
+@testset "_prescreen_constant — all rows dynamic" begin
+    curves = [0.0  0.5  1.0;
+              0.0  0.4  0.9]
+    mask = _prescreen_constant(curves; tol_const=1.5)
+    @test all(.!mask)
+end
+
+# ---------------------------------------------------------------------------
+# _apply_trend_test_flat
+# ---------------------------------------------------------------------------
+
+@testset "_apply_trend_test_flat — flat curve reassigned" begin
+    times = collect(0.0:0.5:5.0)   # 11 points
+    # Row 1: genuinely flat (no slope)
+    # Row 2: strong positive slope
+    curves = [fill(0.5, 11)';
+              collect(range(0.0, 1.0; length=11))']
+    ids = [1, 2]
+    new_ids = _apply_trend_test_flat(curves, times, ids; p_thr=0.05)
+    @test new_ids[1] == 3    # reassigned to flat sentinel
+    @test new_ids[2] == 2    # growing curve unchanged
+end
+
+@testset "_apply_trend_test_flat — growing curves unchanged" begin
+    times = collect(0.0:1.0:9.0)
+    curves = [collect(range(0.0, 1.0; length=10))';
+              collect(range(0.0, 2.0; length=10))']
+    ids = [1, 1]
+    new_ids = _apply_trend_test_flat(curves, times, ids; p_thr=0.05)
+    @test new_ids == [1, 1]
+end
+
+@testset "_apply_trend_test_flat — sentinel label is max+1" begin
+    times = collect(0.0:1.0:9.0)
+    curves = [fill(0.3, 10)'; fill(0.5, 10)']
+    ids = [3, 5]
+    new_ids = _apply_trend_test_flat(curves, times, ids; p_thr=0.05)
+    @test maximum(new_ids) == 6   # sentinel = max(3,5)+1
+end
