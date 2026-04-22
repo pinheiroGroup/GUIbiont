@@ -1,3 +1,5 @@
+_nan_to_null(v::Vector{Float64}) = Union{Float64,Nothing}[isnan(x) ? nothing : x for x in v]
+
 @post "/api/plot-data" function(req::HTTP.Request)
     request_data = JSON3.read(String(req.body))
 
@@ -112,7 +114,7 @@
                             "condition"  => condition,
                             "antibiotic" => antibiotic,
                             "x"          => time_numeric,
-                            "y"          => od_data
+                            "y"          => _nan_to_null(od_data)
                         ))
 
                         push!(stats, Dict(
@@ -246,7 +248,7 @@
                         "condition"  => condition,
                         "antibiotic" => antibiotic,
                         "x"          => time_numeric,
-                        "y"          => od_data
+                        "y"          => _nan_to_null(od_data)
                     ))
 
                     push!(stats, Dict(

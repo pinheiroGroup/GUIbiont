@@ -79,12 +79,60 @@
 
     isempty(curves_all) && return json(Dict("error" => "No data loaded"); status=400)
 
-    min_len  = minimum(length.(curves_all))
-    times    = times_all[1][1:min_len]
-    n_series = length(curves_all)
-    curves   = Matrix{Float64}(undef, n_series, min_len)
-    for (i, c) in enumerate(curves_all)
-        curves[i, :] = c[1:min_len]
+    # ------------------------------------------------------------------
+    # Build common time grid
+    #   do_interp=true          → quantile-based real-time interpolation
+    #   do_interp=false, NaN    → IrregularGrowthData (normalized [0,1])
+    #   do_interp=false, no NaN → truncate to shortest curve
+    # ------------------------------------------------------------------
+    do_interp     = Bool(body.interpolate)
+    interp_n      = max(10, Int(body.interp_n))
+    q_lo          = Float64(body.interp_quantile_lo)
+    q_hi          = Float64(body.interp_quantile_hi)
+    has_irregular = any(c -> any(isnan, c), curves_all)
+    time_normalized = false
+
+    if do_interp
+        grid = _build_interp_grid(times_all, interp_n, q_lo, q_hi)
+        if isempty(grid)
+            return json(Dict("error" => "Could not build interpolation grid"); status=400)
+        end
+        curves_interp = _interpolate_to_grid(curves_all, times_all, grid)
+        times    = grid
+        n_series = size(curves_interp, 1)
+        curves   = curves_interp
+
+    elseif has_irregular
+        # Strip NaN tails, then use KinBiont IrregularGrowthData to resample
+        # each curve onto a normalized [0, 1] union grid.
+        clean_times  = Vector{Vector{Float64}}()
+        clean_curves = Vector{Vector{Float64}}()
+        valid_labels = Vector{String}()
+        for i in eachindex(curves_all)
+            ct, cy = _strip_nan_tail(times_all[i], curves_all[i])
+            length(ct) < 2 && continue
+            push!(clean_times,  ct)
+            push!(clean_curves, cy)
+            push!(valid_labels, labels_all[i])
+        end
+        isempty(clean_curves) &&
+            return json(Dict("error" => "No valid curves after NaN removal"); status=400)
+        igd          = IrregularGrowthData(clean_curves, clean_times, valid_labels; step=0.01)
+        times        = igd.times
+        n_series     = size(igd.curves, 1)
+        curves       = igd.curves
+        labels_all   = valid_labels
+        blank_curves_all = Vector{Vector{Float64}}()   # blanks not supported on this path
+        time_normalized  = true
+
+    else
+        min_len  = minimum(length.(curves_all))
+        times    = times_all[1][1:min_len]
+        n_series = length(curves_all)
+        curves   = Matrix{Float64}(undef, n_series, min_len)
+        for (i, c) in enumerate(curves_all)
+            curves[i, :] = c[1:min_len]
+        end
     end
 
     # ------------------------------------------------------------------
@@ -204,11 +252,14 @@
         mask = findall(cluster_ids .== c)
         isempty(mask) && continue
         label = c == 0 ? "Noise" : string(c)
+        centroid, centroid_sd = _centroid_with_sd(display_curves, mask)
         push!(clusters, Dict(
             "id"            => c,
             "label"         => label,
             "series_labels" => labels_all[mask],
-            "series_data"   => [display_curves[i, :] for i in mask]
+            "series_data"   => [display_curves[i, :] for i in mask],
+            "centroid"      => centroid,
+            "centroid_sd"   => centroid_sd,
         ))
     end
 
@@ -248,6 +299,7 @@
 
     return Dict(
         "time"             => times,
+        "time_normalized"  => time_normalized,
         "clusters"         => clusters,
         "cluster_method"   => cluster_method,
         "smooth_method"    => string(smooth_method),
@@ -328,12 +380,46 @@ end
 
     isempty(curves_all) && return json(Dict("error" => "No data loaded"); status=400)
 
-    min_len  = minimum(length.(curves_all))
-    times    = times_all[1][1:min_len]
-    n_series = length(curves_all)
-    curves   = Matrix{Float64}(undef, n_series, min_len)
-    for (i, c) in enumerate(curves_all)
-        curves[i, :] = c[1:min_len]
+    do_interp     = Bool(body.interpolate)
+    interp_n      = max(10, Int(body.interp_n))
+    q_lo          = Float64(body.interp_quantile_lo)
+    q_hi          = Float64(body.interp_quantile_hi)
+    has_irregular = any(c -> any(isnan, c), curves_all)
+
+    if do_interp
+        grid = _build_interp_grid(times_all, interp_n, q_lo, q_hi)
+        isempty(grid) && return json(Dict("error" => "Could not build interpolation grid"); status=400)
+        curves   = _interpolate_to_grid(curves_all, times_all, grid)
+        times    = grid
+        n_series = size(curves, 1)
+
+    elseif has_irregular
+        clean_times  = Vector{Vector{Float64}}()
+        clean_curves = Vector{Vector{Float64}}()
+        valid_labels = Vector{String}()
+        for i in eachindex(curves_all)
+            ct, cy = _strip_nan_tail(times_all[i], curves_all[i])
+            length(ct) < 2 && continue
+            push!(clean_times,  ct)
+            push!(clean_curves, cy)
+            push!(valid_labels, labels_all[i])
+        end
+        isempty(clean_curves) &&
+            return json(Dict("error" => "No valid curves after NaN removal"); status=400)
+        igd        = IrregularGrowthData(clean_curves, clean_times, valid_labels; step=0.01)
+        times      = igd.times
+        n_series   = size(igd.curves, 1)
+        curves     = igd.curves
+        labels_all = valid_labels
+
+    else
+        min_len  = minimum(length.(curves_all))
+        times    = times_all[1][1:min_len]
+        n_series = length(curves_all)
+        curves   = Matrix{Float64}(undef, n_series, min_len)
+        for (i, c) in enumerate(curves_all)
+            curves[i, :] = c[1:min_len]
+        end
     end
 
     # Smooth once, then sweep over k

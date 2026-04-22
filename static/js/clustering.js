@@ -144,8 +144,10 @@ async function runClustering() {
         blank_method:         document.getElementById('cluster-blank-method').value,
         blank_range_thr:      parseFloat(document.getElementById('cluster-blank-range-thr').value),
         blank_od_percentile:  parseFloat(document.getElementById('cluster-blank-od-pct').value),
-        interpolate:          document.getElementById('cluster-interpolate').checked,
-        interp_n:             parseInt(document.getElementById('cluster-interp-n').value) || 100,
+        interpolate:           document.getElementById('cluster-interpolate').checked,
+        interp_n:              parseInt(document.getElementById('cluster-interp-n').value) || 100,
+        interp_quantile_lo:    parseFloat(document.getElementById('cluster-interp-qlo').value) || 0.05,
+        interp_quantile_hi:    parseFloat(document.getElementById('cluster-interp-qhi').value) || 0.95,
     });
 
     document.getElementById('loading').style.display = 'flex';
@@ -327,22 +329,45 @@ function renderClusterGrid(data) {
             });
         });
 
-        // Point-wise average — red, thinner
-        const avgY = time.map((_, ti) => {
-            const vals = seriesData.map(s => s[ti]).filter(v => isFinite(v));
-            return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
-        });
-        traces.push({
-            x: time, y: avgY,
-            mode: 'lines', type: 'scatter',
-            name: 'Average',
-            line: { width: 1.5, color: 'red' },
-            showlegend: true
-        });
+        // SD band (filled area between centroid−SD and centroid+SD)
+        const centroid   = cluster.centroid;
+        const centroidSd = cluster.centroid_sd;
+        if (centroid && centroidSd) {
+            const upper = centroid.map((v, i) => v + centroidSd[i]);
+            const lower = centroid.map((v, i) => v - centroidSd[i]);
+            traces.push({
+                x: [...time, ...time.slice().reverse()],
+                y: [...upper, ...lower.slice().reverse()],
+                fill: 'toself', fillcolor: 'rgba(180,0,0,0.10)',
+                line: { color: 'transparent' },
+                type: 'scatter', mode: 'lines',
+                name: '±SD', showlegend: false, hoverinfo: 'skip',
+            });
+            traces.push({
+                x: time, y: centroid,
+                mode: 'lines', type: 'scatter',
+                name: 'Mean ± SD',
+                line: { width: 2, color: 'rgb(180,0,0)' },
+                showlegend: true,
+            });
+        } else {
+            // Fallback: compute mean client-side if backend didn't supply centroid
+            const avgY = time.map((_, ti) => {
+                const vals = seriesData.map(s => s[ti]).filter(v => isFinite(v));
+                return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+            });
+            traces.push({
+                x: time, y: avgY,
+                mode: 'lines', type: 'scatter',
+                name: 'Mean',
+                line: { width: 2, color: 'rgb(180,0,0)' },
+                showlegend: true,
+            });
+        }
 
         const layout = {
             margin: { t: 10, r: 10, b: 40, l: 50 },
-            xaxis: { title: 'Time' },
+            xaxis: { title: data.time_normalized ? 'Normalized time [0–1]' : 'Time' },
             yaxis: { title: 'Value' },
             legend: { x: 0, y: 1 }
         };
@@ -728,6 +753,50 @@ function renderComparisonResult(data, cA, cB) {
 }
 
 
+// ----------------------------------------------------------------
+// Batch replicate averaging
+// ----------------------------------------------------------------
+
+async function runBatchAverage() {
+    const fileInput  = document.getElementById('batch-avg-file');
+    const serverPath = document.getElementById('batch-avg-server-path').value.trim();
+    const groupCol   = document.getElementById('batch-avg-group-col').value.trim();
+    const statusEl   = document.getElementById('batch-avg-status');
+
+    let body = { group_col: groupCol };
+    if (serverPath) {
+        body.csv_path = serverPath;
+    } else if (fileInput.files[0]) {
+        body.csv = await fileInput.files[0].text();
+    } else {
+        statusEl.textContent = 'Provide a CSV file or server path.';
+        return;
+    }
+
+    statusEl.textContent = 'Running…';
+    try {
+        const res = await fetch(`${API_BASE}/api/batch-average`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!res.ok) { statusEl.textContent = 'Error: ' + (data.error || res.statusText); return; }
+
+        statusEl.textContent =
+            `Done — ${data.n_groups} groups × ${data.n_timepoints} time points. Downloading…`;
+
+        const blob = new Blob([data.csv], { type: 'text/csv' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'averaged_curves.csv';
+        a.click();
+        URL.revokeObjectURL(a.href);
+    } catch (e) {
+        statusEl.textContent = 'Error: ' + e.message;
+    }
+}
+
 export {
     setClusteringMode, populateClusteringExperiments,
     selectAllClusteringExperiments, clearAllClusteringExperiments,
@@ -738,4 +807,5 @@ export {
     renderQualityPanel, runClusterSweep, renderSweepPanel,
     saveCurrentClustering, clearSavedClusterings, refreshSavedClusteringSelects,
     runClusterComparison, renderComparisonResult, hexToRgba,
+    runBatchAverage,
 };

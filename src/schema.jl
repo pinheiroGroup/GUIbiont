@@ -85,6 +85,10 @@ Base.@kwdef mutable struct ClusterRequest
     blank_method::String = "pointbypoint"
     blank_range_thr::Float64 = 0.005
     blank_od_percentile::Float64 = 0.10
+    interpolate::Bool = false
+    interp_n::Int = 100
+    interp_quantile_lo::Float64 = 0.05
+    interp_quantile_hi::Float64 = 0.95
 end
 
 Base.@kwdef mutable struct ClusterSweepRequest
@@ -99,6 +103,16 @@ Base.@kwdef mutable struct ClusterSweepRequest
     maxiter::Int = 100
     tol::Float64 = 1e-6
     hclust_linkage::String = "ward"
+    interpolate::Bool = false
+    interp_n::Int = 100
+    interp_quantile_lo::Float64 = 0.05
+    interp_quantile_hi::Float64 = 0.95
+end
+
+Base.@kwdef mutable struct BatchAverageRequest
+    csv::String = ""
+    csv_path::String = ""
+    group_col::String = ""
 end
 
 Base.@kwdef mutable struct ClusterCompareRequest
@@ -120,3 +134,4 @@ StructTypes.StructType(::Type{PlotDataRequest}) = StructTypes.Mutable()
 StructTypes.StructType(::Type{ClusterRequest}) = StructTypes.Mutable()
 StructTypes.StructType(::Type{ClusterSweepRequest}) = StructTypes.Mutable()
 StructTypes.StructType(::Type{ClusterCompareRequest}) = StructTypes.Mutable()
+StructTypes.StructType(::Type{BatchAverageRequest})   = StructTypes.Mutable()

@@ -15,8 +15,14 @@ const CLEAN_DATA_PATH = get(ENV, "CLEAN_DATA_PATH",
 include(joinpath(@__DIR__, "..", "src", "data.jl"))
 include(joinpath(@__DIR__, "..", "src", "experiment_store.jl"))
 
+# Load clustering helpers (needs Statistics only — no Kinbiont/HTTP)
+using Distributions: Normal, cdf
+import Clustering
+include(joinpath(@__DIR__, "..", "src", "clustering.jl"))
+
 include("data_helpers_test.jl")
 include("experiment_store_test.jl")
+include("clustering_helpers_test.jl")
 
 # ---------------------------------------------------------------------------
 # Paths to fixtures — prefer committed test/fixtures, fall back to local data
