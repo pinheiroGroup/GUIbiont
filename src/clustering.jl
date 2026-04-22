@@ -164,6 +164,59 @@ function _detect_blank_indices(
             if flat_flags[i] && isfinite(mean_ods[i]) && mean_ods[i] <= od_thr]
 end
 
+# Quantile-ratio pre-screening: flag curves with no meaningful growth.
+# Curve i is constant when q0.9 <= tol_const * q0.1 (or OD range negligible when baseline <= 0).
+# Returns a BitVector (true = constant/non-growing).
+function _prescreen_constant(
+    curves::Matrix{Float64};
+    tol_const::Float64 = 1.5,
+)::BitVector
+    n = size(curves, 1)
+    mask = falses(n)
+    for i in 1:n
+        row = filter(isfinite, curves[i, :])
+        isempty(row) && continue
+        lm = quantile(row, 0.10)
+        hm = quantile(row, 0.90)
+        mask[i] = lm > 0 ? hm <= tol_const * lm :
+                            abs(hm - lm) < 1e-6 * (abs(lm) + 1.0)
+    end
+    return mask
+end
+
+# Post-hoc trend-test flat reassignment: after any clustering algorithm, identify
+# curves whose OD vs time slope is not significantly different from zero (p >= p_thr)
+# and reassign them to a dedicated "flat" cluster (max existing id + 1).
+# Useful when flatness is better characterised by absence of temporal trend than
+# by amplitude alone — particularly for users without blank annotation.
+function _apply_trend_test_flat(
+    curves::Matrix{Float64},
+    times::Vector{Float64},
+    cluster_ids::Vector{Int};
+    p_thr::Float64 = 0.05,
+)::Vector{Int}
+    flat_label = maximum(cluster_ids) + 1
+    ids  = copy(cluster_ids)
+    t_c  = times .- mean(times)
+    for i in axes(curves, 1)
+        y = curves[i, :]
+        fm = isfinite.(y)
+        nf = sum(fm)
+        nf < 3 && continue
+        yf  = y[fm];  tcf = t_c[fm]
+        sst2 = sum(tcf .^ 2)
+        sst2 < 1e-12 && continue
+        slope = sum(tcf .* yf) / sst2
+        yhat  = mean(yf) .+ slope .* tcf
+        s2    = sum((yf .- yhat) .^ 2) / (nf - 2)
+        se    = sqrt(max(s2, 0.0) / sst2)
+        t_stat = se < 1e-12 ? Inf : abs(slope / se)
+        p = 2 * (1 - cdf(Normal(), t_stat))
+        p >= p_thr && (ids[i] = flat_label)
+    end
+    return ids
+end
+
 # Apply blank subtraction to a curves matrix using the given blank timeseries.
 # method: "pointbypoint" | "shift" | "clip"
 function _apply_blank_subtraction_matrix(
