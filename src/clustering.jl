@@ -41,6 +41,15 @@ function _load_csv_curves(df::DataFrame)
     return times_all, curves_all, labels_all
 end
 
+# Strip NaN tail from a (times, values) pair: drop all points from the last
+# non-NaN value onward, so IrregularGrowthData receives clean vectors.
+function _strip_nan_tail(t::Vector{Float64}, y::Vector{Float64})
+    last_valid = findlast(!isnan, y)
+    last_valid === nothing && return t[1:min(2,end)], fill(0.0, min(2,length(y)))
+    last_valid = max(last_valid, 2)   # IrregularGrowthData requires ≥ 2 points
+    return t[1:last_valid], y[1:last_valid]
+end
+
 # Pairwise Euclidean distance matrix (n × n) for a matrix with rows = observations.
 function _pairwise_euclidean(X::Matrix{Float64})::Matrix{Float64}
     n = size(X, 1)

@@ -367,7 +367,7 @@ function renderClusterGrid(data) {
 
         const layout = {
             margin: { t: 10, r: 10, b: 40, l: 50 },
-            xaxis: { title: 'Time' },
+            xaxis: { title: data.time_normalized ? 'Normalized time [0–1]' : 'Time' },
             yaxis: { title: 'Value' },
             legend: { x: 0, y: 1 }
         };
