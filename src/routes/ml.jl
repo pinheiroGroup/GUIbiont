@@ -136,40 +136,39 @@
     end
 
     # ------------------------------------------------------------------
-    # Blank subtraction (before smoothing and clustering)
+    # Blank detection and subtraction
+    # Annotated blanks are always excluded from clustering (already separated
+    # during data loading above).  Auto-detected blanks are also always removed
+    # from the clustering matrix once found — consistent with annotated behaviour.
+    # Signal subtraction only happens when subtract_blank=true.
     # ------------------------------------------------------------------
-    if subtract_blank
-        # For CSV uploads or experiments without annotated blanks: auto-detect
-        if isempty(blank_curves_all)
-            blank_idxs = _detect_blank_indices(curves, times;
-                flat_range_thr = blank_range_thr,
-                od_percentile  = blank_od_pct)
-            if !isempty(blank_idxs)
-                blank_curves_all  = [curves[i, :] for i in blank_idxs]
-                blank_labels_used = labels_all[blank_idxs]
-                blank_source      = "auto"
-                # Remove detected blanks from the data to be clustered
-                keep       = setdiff(1:n_series, blank_idxs)
-                curves     = curves[keep, :]
-                labels_all = labels_all[keep]
-                n_series   = length(keep)
-                times_all  = times_all[keep]
-            end
+    if isempty(blank_curves_all)
+        blank_idxs = _detect_blank_indices(curves, times;
+            flat_range_thr = blank_range_thr,
+            od_percentile  = blank_od_pct)
+        if !isempty(blank_idxs)
+            blank_curves_all  = [curves[i, :] for i in blank_idxs]
+            blank_labels_used = labels_all[blank_idxs]
+            blank_source      = "auto"
+            keep       = setdiff(1:n_series, blank_idxs)
+            curves     = curves[keep, :]
+            labels_all = labels_all[keep]
+            n_series   = length(keep)
+            times_all  = times_all[keep]
         end
+    end
 
-        if !isempty(blank_curves_all)
-            blen      = min(min_len, minimum(length.(blank_curves_all)))
-            blank_mat = Matrix{Float64}(undef, length(blank_curves_all), blen)
-            for (i, bc) in enumerate(blank_curves_all)
-                blank_mat[i, :] = bc[1:blen]
-            end
-            # Mean blank timeseries (per timepoint)
-            blank_ts = [mean(filter(isfinite, blank_mat[:, t])) for t in 1:blen]
-            # Pad/trim to match curves width
-            blank_ts_full = length(blank_ts) >= min_len ? blank_ts[1:min_len] :
-                            vcat(blank_ts, fill(blank_ts[end], min_len - length(blank_ts)))
-            curves = _apply_blank_subtraction_matrix(curves, blank_ts_full, blank_method)
+    if subtract_blank && !isempty(blank_curves_all)
+        ncols     = size(curves, 2)
+        blen      = min(ncols, minimum(length.(blank_curves_all)))
+        blank_mat = Matrix{Float64}(undef, length(blank_curves_all), blen)
+        for (i, bc) in enumerate(blank_curves_all)
+            blank_mat[i, :] = bc[1:blen]
         end
+        blank_ts      = [mean(filter(isfinite, blank_mat[:, t])) for t in 1:blen]
+        blank_ts_full = length(blank_ts) >= ncols ? blank_ts[1:ncols] :
+                        vcat(blank_ts, fill(blank_ts[end], ncols - length(blank_ts)))
+        curves = _apply_blank_subtraction_matrix(curves, blank_ts_full, blank_method)
     end
 
     # Replace NaN/Inf with column means before smoothing and clustering
@@ -201,37 +200,29 @@
     end
 
     # ------------------------------------------------------------------
-    # Z-score for clustering (always)
-    # ------------------------------------------------------------------
-    zscored = _zscore_rows(curves_for_cluster)
-
-    # ------------------------------------------------------------------
-    # Clustering
+    # Clustering — delegate entirely to KinBiont preprocess
     # ------------------------------------------------------------------
     k_eff = min(k_input, n_series)
-
-    cluster_ids = if cluster_method == "kmeans"
-        res = Clustering.kmeans(zscored', k_eff; maxiter, tol)
-        Clustering.assignments(res)
-
-    elseif cluster_method == "kmedoids"
-        dmat = _pairwise_euclidean(zscored)
-        res  = Clustering.kmedoids(dmat, k_eff; maxiter, tol)
-        Clustering.assignments(res)
-
-    elseif cluster_method == "hclust"
-        dmat = _pairwise_euclidean(zscored)
-        hc   = Clustering.hclust(dmat; linkage = hclust_linkage)
-        Clustering.cutree(hc; k = k_eff)
-
-    elseif cluster_method == "dbscan"
-        res = Clustering.dbscan(zscored', dbscan_eps, min_neighbors = dbscan_minpts)
-        raw = Clustering.assignments(res)
-        raw   # 0 = noise
-
-    else
-        return json(Dict("error" => "Unknown cluster_method: $cluster_method"); status=400)
+    cluster_opts = FitOptions(
+        cluster                    = true,
+        n_clusters                 = k_eff,
+        cluster_method             = Symbol(cluster_method),
+        cluster_trend_test         = Bool(body.trend_test_flat),
+        cluster_prescreen_constant = Bool(body.prescreen_constant),
+        cluster_tol_const          = Float64(body.prescreen_tol_const),
+        cluster_hclust_linkage     = Symbol(hclust_linkage),
+        cluster_dbscan_eps         = Float64(dbscan_eps),
+        cluster_dbscan_minpts      = Int(dbscan_minpts),
+        kmeans_max_iters           = maxiter,
+        kmeans_tol                 = tol,
+    )
+    gd_for_cluster = GrowthData(curves_for_cluster, times, labels_all)
+    gd_clustered   = try
+        preprocess(gd_for_cluster, cluster_opts)
+    catch e
+        return json(Dict("error" => "Clustering failed: $e"); status=400)
     end
+    cluster_ids = gd_clustered.clusters
 
     # ------------------------------------------------------------------
     # Display curves (optionally z-scored)
@@ -434,34 +425,34 @@ end
     else
         curves_for = curves
     end
-    zscored = _zscore_rows(curves_for)
-
-    _wcss(data, ids) = sum(sum((data[ids .== c, :] .- mean(data[ids .== c, :], dims=1)).^2) for c in unique(ids))
+    do_prescreen = Bool(body.prescreen_constant)
+    k_min        = do_prescreen ? 3 : 2
 
     sweep_results = []
-    for k in 2:min(k_max, n_series)
-        ids, wcss = try
-            if cluster_method == "kmeans"
-                km = Clustering.kmeans(zscored', k; maxiter, tol)
-                Clustering.assignments(km), km.totalcost
-            elseif cluster_method == "kmedoids"
-                dmat = _pairwise_euclidean(zscored)
-                asgn = Clustering.assignments(Clustering.kmedoids(dmat, k; maxiter, tol))
-                asgn, _wcss(zscored, asgn)
-            elseif cluster_method == "hclust"
-                dmat = _pairwise_euclidean(zscored)
-                asgn = Clustering.cutree(Clustering.hclust(dmat; linkage=hclust_linkage); k)
-                asgn, _wcss(zscored, asgn)
-            else
-                km = Clustering.kmeans(zscored', k; maxiter, tol)
-                Clustering.assignments(km), km.totalcost
-            end
+    for k in k_min:min(k_max, n_series)
+        gd_sw   = GrowthData(curves_for, times, labels_all)
+        sw_opts = FitOptions(
+            cluster                    = true,
+            n_clusters                 = k,
+            cluster_method             = Symbol(cluster_method),
+            cluster_trend_test         = Bool(body.trend_test_flat),
+            cluster_prescreen_constant = do_prescreen,
+            cluster_tol_const          = Float64(body.prescreen_tol_const),
+            cluster_hclust_linkage     = Symbol(hLink),
+            kmeans_max_iters           = maxiter,
+            kmeans_tol                 = tol,
+        )
+        gd_result = try
+            preprocess(gd_sw, sw_opts)
         catch e
             @warn "Sweep k=$k error: $e"
             continue
         end
+        ids   = gd_result.clusters
+        wcss  = something(gd_result.wcss, 0.0)
 
         ids_r, _ = _remap_ids(ids)
+        zscored   = _zscore_rows(curves_for)
         q = _cluster_quality_indices(zscored, ids_r)
         push!(sweep_results, Dict(
             "k"                 => k,

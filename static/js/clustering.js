@@ -148,6 +148,10 @@ async function runClustering() {
         interp_n:              parseInt(document.getElementById('cluster-interp-n').value) || 100,
         interp_quantile_lo:    parseFloat(document.getElementById('cluster-interp-qlo').value) || 0.05,
         interp_quantile_hi:    parseFloat(document.getElementById('cluster-interp-qhi').value) || 0.95,
+        prescreen_constant:    document.getElementById('cluster-prescreen').checked,
+        prescreen_tol_const:   parseFloat(document.getElementById('cluster-prescreen-tol').value) || 1.5,
+        trend_test_flat:       document.getElementById('cluster-trend-test').checked,
+        trend_p_thr:           parseFloat(document.getElementById('cluster-trend-p').value) || 0.05,
     });
 
     document.getElementById('loading').style.display = 'flex';
@@ -550,6 +554,14 @@ async function runClusterSweep() {
     Object.assign(body, {
         smooth_method: smooth, lowess_frac: lowess, gaussian_h_mult: gHmult,
         cluster_method: method, maxiter, tol, hclust_linkage: hLink,
+        interpolate:         document.getElementById('cluster-interpolate').checked,
+        interp_n:            parseInt(document.getElementById('cluster-interp-n').value) || 100,
+        interp_quantile_lo:  parseFloat(document.getElementById('cluster-interp-qlo').value) || 0.05,
+        interp_quantile_hi:  parseFloat(document.getElementById('cluster-interp-qhi').value) || 0.95,
+        prescreen_constant:  document.getElementById('cluster-prescreen').checked,
+        prescreen_tol_const: parseFloat(document.getElementById('cluster-prescreen-tol').value) || 1.5,
+        trend_test_flat:     document.getElementById('cluster-trend-test').checked,
+        trend_p_thr:         parseFloat(document.getElementById('cluster-trend-p').value) || 0.05,
     });
 
     document.getElementById('loading').style.display = 'flex';

@@ -77,3 +77,4 @@ end
     @test length(grid) == 6
     @test grid ≈ collect(range(0.0, 10.0; length=6)) atol=1e-10
 end
+
