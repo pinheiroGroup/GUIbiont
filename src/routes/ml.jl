@@ -200,68 +200,29 @@
     end
 
     # ------------------------------------------------------------------
-    # Z-score for clustering (always)
-    # ------------------------------------------------------------------
-    zscored = _zscore_rows(curves_for_cluster)
-
-    # ------------------------------------------------------------------
-    # Constant-curve pre-screening (optional, kmeans only)
-    # Flags non-growing curves before k-means and reserves the last
-    # cluster label for them; k-means runs on the dynamic subset only.
-    # ------------------------------------------------------------------
-    do_prescreen = Bool(body.prescreen_constant)
-    tol_const    = Float64(body.prescreen_tol_const)
-    const_mask   = do_prescreen ? _prescreen_constant(curves_for_cluster; tol_const) :
-                                  falses(n_series)
-    dynamic_idx  = findall(.!const_mask)
-
-    # ------------------------------------------------------------------
-    # Clustering
+    # Clustering — delegate entirely to KinBiont preprocess
     # ------------------------------------------------------------------
     k_eff = min(k_input, n_series)
-
-    cluster_ids = if cluster_method == "kmeans"
-        if do_prescreen && !isempty(dynamic_idx) && k_eff > 1
-            k_dyn = k_eff - 1
-            ids   = fill(k_eff, n_series)
-            sub   = zscored[dynamic_idx, :]
-            res   = Clustering.kmeans(sub', min(k_dyn, length(dynamic_idx)); maxiter, tol)
-            for (pos, idx) in enumerate(dynamic_idx)
-                ids[idx] = Clustering.assignments(res)[pos]
-            end
-            ids
-        else
-            Clustering.assignments(Clustering.kmeans(zscored', k_eff; maxiter, tol))
-        end
-
-    elseif cluster_method == "kmedoids"
-        dmat = _pairwise_euclidean(zscored)
-        res  = Clustering.kmedoids(dmat, k_eff; maxiter, tol)
-        Clustering.assignments(res)
-
-    elseif cluster_method == "hclust"
-        dmat = _pairwise_euclidean(zscored)
-        hc   = Clustering.hclust(dmat; linkage = hclust_linkage)
-        Clustering.cutree(hc; k = k_eff)
-
-    elseif cluster_method == "dbscan"
-        res = Clustering.dbscan(zscored', dbscan_eps, min_neighbors = dbscan_minpts)
-        raw = Clustering.assignments(res)
-        raw   # 0 = noise
-
-    else
-        return json(Dict("error" => "Unknown cluster_method: $cluster_method"); status=400)
+    cluster_opts = FitOptions(
+        cluster                    = true,
+        n_clusters                 = k_eff,
+        cluster_method             = Symbol(cluster_method),
+        cluster_trend_test         = Bool(body.trend_test_flat),
+        cluster_prescreen_constant = Bool(body.prescreen_constant),
+        cluster_tol_const          = Float64(body.prescreen_tol_const),
+        cluster_hclust_linkage     = Symbol(hclust_linkage),
+        cluster_dbscan_eps         = Float64(dbscan_eps),
+        cluster_dbscan_minpts      = Int(dbscan_minpts),
+        kmeans_max_iters           = maxiter,
+        kmeans_tol                 = tol,
+    )
+    gd_for_cluster = GrowthData(curves_for_cluster, times, labels_all)
+    gd_clustered   = try
+        preprocess(gd_for_cluster, cluster_opts)
+    catch e
+        return json(Dict("error" => "Clustering failed: $e"); status=400)
     end
-
-    # ------------------------------------------------------------------
-    # Post-hoc trend-test flat reassignment (optional)
-    # ------------------------------------------------------------------
-    if Bool(body.trend_test_flat)
-        cluster_ids = _apply_trend_test_flat(
-            curves_for_cluster, times, cluster_ids;
-            p_thr = Float64(body.trend_p_thr),
-        )
-    end
+    cluster_ids = gd_clustered.clusters
 
     # ------------------------------------------------------------------
     # Display curves (optionally z-scored)
@@ -464,53 +425,34 @@ end
     else
         curves_for = curves
     end
-    zscored = _zscore_rows(curves_for)
-
     do_prescreen = Bool(body.prescreen_constant)
-    tol_const_sw = Float64(body.prescreen_tol_const)
-    const_mask   = do_prescreen ? _prescreen_constant(curves_for; tol_const = tol_const_sw) :
-                                  falses(n_series)
-    dynamic_idx  = findall(.!const_mask)
-    zscored_dyn  = isempty(dynamic_idx) ? zscored : zscored[dynamic_idx, :]
-
-    _wcss(data, ids) = sum(sum((data[ids .== c, :] .- mean(data[ids .== c, :], dims=1)).^2) for c in unique(ids))
-
-    # With pre-screening k is total clusters including the sentinel; sweep starts at 3
-    # (minimum 2 dynamic + 1 constant sentinel). Without pre-screening start at 2.
-    k_min = do_prescreen ? 3 : 2
+    k_min        = do_prescreen ? 3 : 2
 
     sweep_results = []
     for k in k_min:min(k_max, n_series)
-        ids, wcss = try
-            if cluster_method == "kmeans"
-                if do_prescreen && !isempty(dynamic_idx) && k > 1
-                    k_dyn = k - 1
-                    full  = fill(k, n_series)
-                    km    = Clustering.kmeans(zscored_dyn', min(k_dyn, length(dynamic_idx)); maxiter, tol)
-                    for (pos, idx) in enumerate(dynamic_idx); full[idx] = Clustering.assignments(km)[pos]; end
-                    full, km.totalcost
-                else
-                    km = Clustering.kmeans(zscored', k; maxiter, tol)
-                    Clustering.assignments(km), km.totalcost
-                end
-            elseif cluster_method == "kmedoids"
-                dmat = _pairwise_euclidean(zscored)
-                asgn = Clustering.assignments(Clustering.kmedoids(dmat, k; maxiter, tol))
-                asgn, _wcss(zscored, asgn)
-            elseif cluster_method == "hclust"
-                dmat = _pairwise_euclidean(zscored)
-                asgn = Clustering.cutree(Clustering.hclust(dmat; linkage=hclust_linkage); k)
-                asgn, _wcss(zscored, asgn)
-            else
-                km = Clustering.kmeans(zscored', k; maxiter, tol)
-                Clustering.assignments(km), km.totalcost
-            end
+        gd_sw   = GrowthData(curves_for, times, labels_all)
+        sw_opts = FitOptions(
+            cluster                    = true,
+            n_clusters                 = k,
+            cluster_method             = Symbol(cluster_method),
+            cluster_trend_test         = Bool(body.trend_test_flat),
+            cluster_prescreen_constant = do_prescreen,
+            cluster_tol_const          = Float64(body.prescreen_tol_const),
+            cluster_hclust_linkage     = Symbol(hLink),
+            kmeans_max_iters           = maxiter,
+            kmeans_tol                 = tol,
+        )
+        gd_result = try
+            preprocess(gd_sw, sw_opts)
         catch e
             @warn "Sweep k=$k error: $e"
             continue
         end
+        ids   = gd_result.clusters
+        wcss  = something(gd_result.wcss, 0.0)
 
         ids_r, _ = _remap_ids(ids)
+        zscored   = _zscore_rows(curves_for)
         q = _cluster_quality_indices(zscored, ids_r)
         push!(sweep_results, Dict(
             "k"                 => k,
