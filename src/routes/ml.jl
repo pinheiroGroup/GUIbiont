@@ -438,7 +438,7 @@ end
             cluster_trend_test         = Bool(body.trend_test_flat),
             cluster_prescreen_constant = do_prescreen,
             cluster_tol_const          = Float64(body.prescreen_tol_const),
-            cluster_hclust_linkage     = Symbol(hLink),
+            cluster_hclust_linkage     = hclust_linkage,
             kmeans_max_iters           = maxiter,
             kmeans_tol                 = tol,
         )
