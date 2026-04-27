@@ -1,0 +1,5 @@
+A1,b,M9+glucose,,,,
+A2,X,M9+glucose,,,,
+B1,WT,M9+glucose,Glucose_0.5,,ref,10
+B2,WT,M9+glucose,Glucose_0.5,AmpR_2,ref,10
+C1,mutant,M9+glucose,Glucose_0.5,,ref,10
