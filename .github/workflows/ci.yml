@@ -29,6 +29,7 @@ jobs:
           julia --project=. -e "
             import Pkg
             Pkg.add(url=\"https://github.com/pinheiroGroup/Kinbiont.jl\")
+            Pkg.resolve()
             Pkg.instantiate()
           "
 
@@ -57,6 +58,7 @@ jobs:
           julia --project=. -e "
             import Pkg
             Pkg.add(url=\"https://github.com/pinheiroGroup/Kinbiont.jl\")
+            Pkg.resolve()
             Pkg.instantiate()
           "
 
