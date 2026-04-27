@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  unit-tests:
+    name: Unit tests (Julia ${{ matrix.julia-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        julia-version: ["1.10", "1.11"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: ${{ matrix.julia-version }}
+
+      - uses: julia-actions/cache@v2
+
+      - name: Install dependencies
+        run: julia --project=. -e "import Pkg; Pkg.instantiate()"
+
+      - name: Run unit tests (no server required)
+        run: julia --project=. test/runtests.jl
+        # API tests are skipped automatically when no server is reachable.
+        # To run them locally: start the server first, then run with SERVER_URL=http://localhost:8080.
+
+  integration-tests:
+    name: Integration tests (server)
+    runs-on: ubuntu-latest
+    # Only run if the unit job passes; integration needs a live server.
+    needs: unit-tests
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: "1.11"
+
+      - uses: julia-actions/cache@v2
+
+      - name: Install dependencies
+        run: julia --project=. -e "import Pkg; Pkg.instantiate()"
+
+      - name: Start server in background
+        env:
+          PORT: 9090
+          CLEAN_DATA_PATH: ${{ github.workspace }}/test/fixtures/clean/
+          RAW_DATA_PATH: ${{ github.workspace }}/raw_data/
+        run: |
+          julia --project=. web_server.jl &
+          echo "SERVER_PID=$!" >> "$GITHUB_ENV"
+
+      - name: Wait for server to be ready
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:9090/ > /dev/null 2>&1; then
+              echo "Server ready after ${i}s"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Server did not start within 300s" >&2
+          exit 1
+
+      - name: Run integration tests
+        env:
+          SERVER_URL: http://localhost:9090
+        run: julia --project=. test/runtests.jl
+
+      - name: Stop server
+        if: always()
+        run: kill "$SERVER_PID" || true

@@ -64,15 +64,22 @@ end
         @test detect_csv_separator(semi_file)  == ';'
     end
 
-    # Real LG281 data file uses semicolons
-    @test detect_csv_separator(joinpath(RAW_LG281, "data.csv"))  == ';'
-    @test detect_csv_separator(joinpath(RAW_LG281, "plate.csv")) == ';'
+    if isdir(RAW_LG281)
+        # Real LG281 data file uses semicolons
+        @test detect_csv_separator(joinpath(RAW_LG281, "data.csv"))  == ';'
+        @test detect_csv_separator(joinpath(RAW_LG281, "plate.csv")) == ';'
+    else
+        @info "Skipping LG281 real-data checks for detect_csv_separator — fixture not found at $RAW_LG281"
+    end
 end
 
 # ---------------------------------------------------------------------------
 # cleaning_data_synergy — run against LG281 and compare to golden output
 # ---------------------------------------------------------------------------
 
+if !isdir(RAW_LG281) || !isdir(GOLDEN_LG281)
+    @info "Skipping cleaning_data_synergy tests — LG281 fixture not found (raw: $RAW_LG281, golden: $GOLDEN_LG281)"
+else
 @testset "cleaning_data_synergy" begin
     mktempdir() do out_dir
         out_path = out_dir * "/"
@@ -133,11 +140,15 @@ end
         end
     end
 end
+end # isdir(RAW_LG281)
 
 # ---------------------------------------------------------------------------
 # read_labguru_annotation — run against LG281 and compare to golden output
 # ---------------------------------------------------------------------------
 
+if !isdir(RAW_LG281) || !isdir(GOLDEN_LG281)
+    @info "Skipping read_labguru_annotation tests — LG281 fixture not found"
+else
 @testset "read_labguru_annotation" begin
     mktempdir() do out_dir
         out_path = out_dir * "/"
@@ -196,6 +207,7 @@ end
         end
     end
 end
+end # isdir(RAW_LG281)
 
 # ---------------------------------------------------------------------------
 # web_server.jl API endpoints
@@ -473,4 +485,7 @@ else
     end
 
 end # @testset "web_server.jl API"
+
+include("api_routes_test.jl")
+
 end # if server_available()
