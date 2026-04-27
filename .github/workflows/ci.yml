@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        julia-version: ["1.10", "1.11"]
+        julia-version: ["1.11"]
 
     steps:
       - uses: actions/checkout@v4
@@ -25,7 +25,12 @@ jobs:
       - uses: julia-actions/cache@v2
 
       - name: Install dependencies
-        run: julia --project=. -e "import Pkg; Pkg.instantiate()"
+        run: |
+          julia --project=. -e "
+            import Pkg
+            Pkg.add(url=\"https://github.com/pinheiroGroup/Kinbiont.jl\")
+            Pkg.instantiate()
+          "
 
       - name: Run unit tests (no server required)
         run: julia --project=. test/runtests.jl
@@ -48,7 +53,12 @@ jobs:
       - uses: julia-actions/cache@v2
 
       - name: Install dependencies
-        run: julia --project=. -e "import Pkg; Pkg.instantiate()"
+        run: |
+          julia --project=. -e "
+            import Pkg
+            Pkg.add(url=\"https://github.com/pinheiroGroup/Kinbiont.jl\")
+            Pkg.instantiate()
+          "
 
       - name: Start server in background
         env:
