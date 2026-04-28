@@ -77,6 +77,7 @@ end
     well_selections  = body.well_selections
     label            = string(body.label)
     experiment_name  = string(body.experiment)
+    model_name       = string(body.model_name)
     calibration_file = "./cal_curve_avg.csv"
 
     try
@@ -121,7 +122,8 @@ end
 
         return fit_well_data(
             avg_time[valid_indices], avg_od[valid_indices],
-            0.0, calibration_file, label, experiment_name,
+            0.0, calibration_file, label, experiment_name;
+            model_name = model_name,
         )
     catch e
                 return json(Dict("error" => "Replicate fitting failed: $e"); status=500)
