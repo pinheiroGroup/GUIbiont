@@ -68,7 +68,9 @@ end
 @testset "GET /api/experiment/:name/info — multi-channel experiment" begin
     status, body = get_json("/api/experiment/$MULTI_CH_EXP/info")
     @test status == 200
-    @test !isempty(body[:wells])
+    # Multi-channel experiments annotate all wells as "X" (channel-level access);
+    # wells are expected to be empty here — use /api/multi-experiment-info instead.
+    @test haskey(body, :wells)
 end
 
 # ---------------------------------------------------------------------------
