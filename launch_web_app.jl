@@ -1,5 +1,12 @@
 #!/usr/bin/env julia
 
+# Re-exec with --threads=auto if Julia was started single-threaded.
+if Threads.nthreads() == 1 && Sys.CPU_THREADS > 1
+    cmd = `$(Base.julia_cmd()) --threads=auto --project=. $(PROGRAM_FILE) $(ARGS...)`
+    run(cmd)
+    exit()
+end
+
 # Simple launcher for the Growth Curve Web App
 println("🧫 Growth Curve Web App Launcher")
 println("=" ^ 40)
