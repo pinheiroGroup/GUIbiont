@@ -27,6 +27,7 @@ function fit_well_data(
     blank_well_names::Vector{String} = String[],
     model_name::String = "aHPM",
     model_names::Vector{String} = String[],
+    optimizer::String = "BOBYQA",
 )
     if subtract_blank && blank_value > 0.0
         if blank_method == "pointbypoint" && length(blank_timeseries) == length(od_raw)
@@ -87,7 +88,7 @@ function fit_well_data(
         stationary_pt_smooth_derivative = 10,
         stationary_win_size             = 5,
         loss                            = "RE",
-        optimizer                       = :BOBYQA,
+        optimizer                       = Symbol(optimizer),
     )
 
     fit_results = kinbiont_fit(data, spec, opts)

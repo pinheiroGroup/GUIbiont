@@ -9,6 +9,7 @@ const BATCH_JOBS_LOCK = ReentrantLock()
     blank_method   = string(body.blank_method)
     model_name     = string(body.model_name)
     model_names    = String[string(m) for m in body.model_names]
+    optimizer      = string(body.optimizer)
 
     data_file        = joinpath(CLEAN_DATA_PATH, experiment, "data_channel_1.csv")
     annotation_file  = joinpath(CLEAN_DATA_PATH, experiment, "annotation_clean.csv")
@@ -66,6 +67,7 @@ const BATCH_JOBS_LOCK = ReentrantLock()
             blank_well_names = blank_well_names,
             model_name       = model_name,
             model_names      = model_names,
+            optimizer        = optimizer,
         )
     catch e
                 return json(Dict("error" => "Curve fitting failed: $e"); status=500)
@@ -78,6 +80,7 @@ end
     label            = string(body.label)
     experiment_name  = string(body.experiment)
     model_name       = string(body.model_name)
+    optimizer        = string(body.optimizer)
     calibration_file = "./cal_curve_avg.csv"
 
     try
@@ -124,6 +127,7 @@ end
             avg_time[valid_indices], avg_od[valid_indices],
             0.0, calibration_file, label, experiment_name;
             model_name = model_name,
+            optimizer  = optimizer,
         )
     catch e
                 return json(Dict("error" => "Replicate fitting failed: $e"); status=500)
@@ -259,6 +263,7 @@ end
     blank_method    = string(body.blank_method)
     cal_override    = string(body.calibration_file)
     requested_wells = isempty(body.wells) ? nothing : String[string(w) for w in body.wells]
+    optimizer       = string(body.optimizer)
 
     if isempty(model_names_req)
         if !haskey(MODEL_REGISTRY, model_name)
@@ -343,6 +348,7 @@ end
                                     blank_well_names = blank_well_names,
                                     model_name       = model_name,
                                     model_names      = model_names_req,
+                                    optimizer        = optimizer,
                                 )
                                 lock(local_lock) do push!(results, fit_result) end
                             end
