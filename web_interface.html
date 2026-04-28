@@ -180,6 +180,20 @@
                             </select>
                         </div>
                         <div id="model-info-card" class="model-info-card"></div>
+                        <div style="margin-top: 6px; display: flex; align-items: center; gap: 8px; font-size: 0.9em;">
+                            <label for="fit-optimizer" style="white-space: nowrap;">Optimizer:</label>
+                            <select id="fit-optimizer" style="font-size: 0.9em; padding: 2px 6px;">
+                                <option value="BOBYQA" selected>BOBYQA (default)</option>
+                                <option value="NelderMead">Nelder-Mead</option>
+                                <option value="LBFGS">L-BFGS</option>
+                                <option value="COBYLA">COBYLA</option>
+                                <option value="BBO_adaptive_de_rand_1_bin_radiuslimited">BBO Adaptive DE</option>
+                                <option value="SimulatedAnnealing">Simulated Annealing</option>
+                                <option value="ParticleSwarm">Particle Swarm</option>
+                                <option value="GN_ISRES">GN ISRES</option>
+                                <option value="GN_DIRECT_L">GN DIRECT-L</option>
+                            </select>
+                        </div>
 
                         <div style="margin-top: 8px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
                             <label style="display: flex; align-items: center; gap: 8px; font-size: 0.9em; cursor: pointer;">
@@ -686,6 +700,20 @@
                         <div style="margin-top: 6px; display: flex; align-items: center; gap: 8px; font-size: 0.85em; color: #6c757d;">
                             <label for="batch-fit-calibration-file" style="white-space: nowrap;">Custom calibration file:</label>
                             <input type="text" id="batch-fit-calibration-file" placeholder="auto-detected (leave blank)" style="font-size: 0.9em; padding: 2px 6px; border: 1px solid #ced4da; border-radius: 4px; width: 280px; color: #495057;">
+                        </div>
+                        <div style="margin-top: 6px; display: flex; align-items: center; gap: 8px; font-size: 0.9em;">
+                            <label for="batch-fit-optimizer" style="white-space: nowrap;">Optimizer:</label>
+                            <select id="batch-fit-optimizer" style="font-size: 0.9em; padding: 2px 6px;">
+                                <option value="BOBYQA" selected>BOBYQA (default)</option>
+                                <option value="NelderMead">Nelder-Mead</option>
+                                <option value="LBFGS">L-BFGS</option>
+                                <option value="COBYLA">COBYLA</option>
+                                <option value="BBO_adaptive_de_rand_1_bin_radiuslimited">BBO Adaptive DE</option>
+                                <option value="SimulatedAnnealing">Simulated Annealing</option>
+                                <option value="ParticleSwarm">Particle Swarm</option>
+                                <option value="GN_ISRES">GN ISRES</option>
+                                <option value="GN_DIRECT_L">GN DIRECT-L</option>
+                            </select>
                         </div>
 
                         <div style="margin-top: 14px;">

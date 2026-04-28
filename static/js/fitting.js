@@ -63,6 +63,7 @@ async function fitReplicateAverage() {
                 label: label,
                 experiment: experiment,
                 model_name: document.getElementById('fitting-model').value || 'aHPM',
+                optimizer: document.getElementById('fit-optimizer').value || 'BOBYQA',
                 ...(fitCalFile ? { calibration_file: fitCalFile } : {}),
             })
         });
@@ -435,15 +436,16 @@ async function fitGrowthCurve() {
                 blank_subtraction: document.getElementById('fit-blank-subtraction').checked,
                 blank_method: document.getElementById('fit-blank-method').value,
                 model_name: document.getElementById('fitting-model').value || 'aHPM',
+                optimizer: document.getElementById('fit-optimizer').value || 'BOBYQA',
                 ...(calFile ? { calibration_file: calFile } : {}),
             })
         });
-        
+
         if (!response.ok) {
             const errorData = await response.json();
             throw new Error(errorData.error || 'Fitting failed');
         }
-        
+
         const fitData = await response.json();
         
         // Display fitting results

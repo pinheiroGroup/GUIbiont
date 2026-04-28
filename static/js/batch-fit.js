@@ -187,6 +187,7 @@ async function runBatchFit() {
                 ...modelPayload,
                 blank_subtraction: document.getElementById('batch-fit-blank-subtraction').checked,
                 blank_method: document.getElementById('batch-fit-blank-method').value,
+                optimizer: document.getElementById('batch-fit-optimizer').value || 'BOBYQA',
                 ...(batchCalFile ? { calibration_file: batchCalFile } : {}),
             }),
         });
