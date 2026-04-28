@@ -180,7 +180,7 @@ function get_calibration_file(experiment::String; override::String="")::String
         meta       = JSON3.read(read(metadata_file, String))
         well_count = Int(get(meta, :well_count, 48))
     else
-        well_count = detect_and_save_well_count(experiment_path)
+        well_count = isdir(experiment_path) ? detect_and_save_well_count(experiment_path) : 48
     end
     cal96 = joinpath(@__DIR__, "..", "calibration", "cal_curve_avg96.csv")
     cal48 = joinpath(@__DIR__, "..", "calibration", "cal_curve_avg.csv")

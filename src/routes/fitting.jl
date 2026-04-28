@@ -1,3 +1,6 @@
+const BATCH_JOBS      = Dict{String, Dict{String, Any}}()
+const BATCH_JOBS_LOCK = ReentrantLock()
+
 @post "/api/fit-curve" function(req::HTTP.Request, body::Json{FitCurveRequest})
     body = body.payload
     experiment     = string(body.experiment)
@@ -10,6 +13,17 @@
     data_file        = joinpath(CLEAN_DATA_PATH, experiment, "data_channel_1.csv")
     annotation_file  = joinpath(CLEAN_DATA_PATH, experiment, "annotation_clean.csv")
     calibration_file = get_calibration_file(experiment; override=string(body.calibration_file))
+
+    if isempty(model_names)
+        if !haskey(MODEL_REGISTRY, model_name)
+            return json(Dict("error" => "Unknown model: $model_name"); status=400)
+        end
+    else
+        unknown = filter(m -> !haskey(MODEL_REGISTRY, m), model_names)
+        if !isempty(unknown)
+            return json(Dict("error" => "Unknown models: $(join(unknown, ", "))"); status=400)
+        end
+    end
 
     if !isfile(data_file) || !isfile(annotation_file)
         return json(Dict("error" => "Data files not found"); status=404)
@@ -277,53 +291,104 @@ end
         wells_to_fit = requested_wells !== nothing ? requested_wells :
             filter(w -> w in column_names_str && !(w in excluded_wells), column_names_str[2:end])
 
-        results = Dict{String, Any}[]
-        errors  = String[]
-
-        for well in wells_to_fit
-            if !(well in column_names_str)
-                push!(errors, "Well '$well' not found"); continue
-            end
-            if well in excluded_wells
-                push!(errors, "Well '$well' is blank/excluded"); continue
-            end
-            try
-                od_raw        = parse_od_column(growth_data, Symbol(well))
-                valid_indices = findall(.!isnan.(od_raw))
-                if length(valid_indices) < 10
-                    push!(errors, "Well '$well': insufficient data points"); continue
-                end
-                blank_ts_valid = isempty(blank_ts) ? Float64[] : blank_ts[valid_indices]
-                fit_result = fit_well_data(
-                    time_numeric[valid_indices], od_raw[valid_indices],
-                    blank_value, calibration_file, well, experiment;
-                    subtract_blank   = subtract_blank,
-                    blank_method     = blank_method,
-                    blank_timeseries = blank_ts_valid,
-                    blank_well_names = blank_well_names,
-                    model_name       = model_name,
-                    model_names      = model_names_req,
-                )
-                push!(results, fit_result)
-            catch e
-                push!(errors, "Well '$well': $(string(e))")
-            end
-        end
-
-        return Dict(
+        job_id = string(time_ns(), base=16)
+        job = Dict{String, Any}(
+            "status"       => "running",
             "experiment"   => experiment,
             "model"        => isempty(model_names_req) ? model_name : "multi",
             "model_names"  => isempty(model_names_req) ? [model_name] : model_names_req,
-            "results"      => results,
-            "summary"      => Dict(
-                "total"   => length(wells_to_fit),
-                "success" => length(results),
-                "failed"  => length(errors),
-                "errors"  => errors,
-            ),
+            "total"        => length(wells_to_fit),
+            "completed"    => 0,
+            "current_well" => "",
+            "results"      => Dict{String, Any}[],
+            "errors"       => String[],
         )
+        lock(BATCH_JOBS_LOCK) do
+            BATCH_JOBS[job_id] = job
+        end
+
+        Threads.@spawn begin
+            results = Dict{String, Any}[]
+            errors  = String[]
+            for well in wells_to_fit
+                lock(BATCH_JOBS_LOCK) do
+                    job["current_well"] = well
+                end
+                if !(well in column_names_str)
+                    push!(errors, "Well '$well' not found")
+                elseif well in excluded_wells
+                    push!(errors, "Well '$well' is blank/excluded")
+                else
+                    try
+                        od_raw        = parse_od_column(growth_data, Symbol(well))
+                        valid_indices = findall(.!isnan.(od_raw))
+                        if length(valid_indices) < 10
+                            push!(errors, "Well '$well': insufficient data points")
+                        else
+                            blank_ts_valid = isempty(blank_ts) ? Float64[] : blank_ts[valid_indices]
+                            fit_result = fit_well_data(
+                                time_numeric[valid_indices], od_raw[valid_indices],
+                                blank_value, calibration_file, well, experiment;
+                                subtract_blank   = subtract_blank,
+                                blank_method     = blank_method,
+                                blank_timeseries = blank_ts_valid,
+                                blank_well_names = blank_well_names,
+                                model_name       = model_name,
+                                model_names      = model_names_req,
+                            )
+                            push!(results, fit_result)
+                        end
+                    catch e
+                        push!(errors, "Well '$well': $(string(e))")
+                    end
+                end
+                lock(BATCH_JOBS_LOCK) do
+                    job["completed"] += 1
+                end
+            end
+            lock(BATCH_JOBS_LOCK) do
+                job["status"]   = "done"
+                job["results"]  = results
+                job["errors"]   = errors
+                job["summary"]  = Dict(
+                    "total"   => length(wells_to_fit),
+                    "success" => length(results),
+                    "failed"  => length(errors),
+                    "errors"  => errors,
+                )
+                job["current_well"] = ""
+            end
+        end
+
+        return json(Dict("job_id" => job_id, "total" => length(wells_to_fit)))
     catch e
-                return json(Dict("error" => "Batch fitting failed: $e"); status=500)
+        return json(Dict("error" => "Batch fitting failed: $e"); status=500)
+    end
+end
+
+@get "/api/batch-fit/progress/{job_id}" function(req::HTTP.Request, job_id::String)
+    job = lock(BATCH_JOBS_LOCK) do
+        get(BATCH_JOBS, job_id, nothing)
+    end
+    if job === nothing
+        return json(Dict("error" => "Job not found"); status=404)
+    end
+    lock(BATCH_JOBS_LOCK) do
+        resp = Dict{String, Any}(
+            "status"       => job["status"],
+            "total"        => job["total"],
+            "completed"    => job["completed"],
+            "current_well" => job["current_well"],
+        )
+        if job["status"] == "done"
+            resp["experiment"]  = job["experiment"]
+            resp["model"]       = job["model"]
+            resp["model_names"] = job["model_names"]
+            resp["results"]     = job["results"]
+            resp["summary"]     = job["summary"]
+            delete!(BATCH_JOBS, job_id)
+        end
+        return json(resp)
     end
 end
 
