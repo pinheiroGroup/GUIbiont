@@ -316,15 +316,15 @@ end
                     job["current_well"] = well
                 end
                 if !(well in column_names_str)
-                    lock(local_lock) do push!(errors, "Well '$well' not found") end
+                    lock(local_lock) do; push!(errors, "Well '$well' not found"); end
                 elseif well in excluded_wells
-                    lock(local_lock) do push!(errors, "Well '$well' is blank/excluded") end
+                    lock(local_lock) do; push!(errors, "Well '$well' is blank/excluded"); end
                 else
                     try
                         od_raw        = parse_od_column(growth_data, Symbol(well))
                         valid_indices = findall(.!isnan.(od_raw))
                         if length(valid_indices) < 10
-                            lock(local_lock) do push!(errors, "Well '$well': insufficient data points") end
+                            lock(local_lock) do; push!(errors, "Well '$well': insufficient data points"); end
                         else
                             blank_ts_valid = isempty(blank_ts) ? Float64[] : blank_ts[valid_indices]
                             fit_result = fit_well_data(
@@ -337,10 +337,10 @@ end
                                 model_name       = model_name,
                                 model_names      = model_names_req,
                             )
-                            lock(local_lock) do push!(results, fit_result) end
+                            lock(local_lock) do; push!(results, fit_result); end
                         end
                     catch e
-                        lock(local_lock) do push!(errors, "Well '$well': $(string(e))") end
+                        lock(local_lock) do; push!(errors, "Well '$well': $(string(e))"); end
                     end
                 end
                 lock(BATCH_JOBS_LOCK) do
