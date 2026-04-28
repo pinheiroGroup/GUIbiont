@@ -701,7 +701,13 @@
                         <div style="margin-top: 14px; display: flex; align-items: center; gap: 12px;">
                             <button class="btn fit-btn" id="batch-fit-run-btn" onclick="runBatchFit()" disabled>⚡ Run Batch Fit</button>
                             <button class="btn" id="batch-export-btn" onclick="openBatchCodeExport()" style="display:none;">📋 Export Julia code</button>
-                            <span id="batch-fit-progress" style="display:none; font-size: 0.9em; color: #6c757d;"></span>
+                            <div id="batch-fit-progress" style="display:none; flex: 1; min-width: 0;">
+                                <div style="display: flex; justify-content: space-between; font-size: 0.85em; color: #6c757d; margin-bottom: 3px;">
+                                    <span id="batch-fit-progress-label">Fitting…</span>
+                                    <span id="batch-fit-progress-pct"></span>
+                                </div>
+                                <progress id="batch-fit-progress-bar" value="0" max="100" style="width: 100%; height: 8px;"></progress>
+                            </div>
                         </div>
                     </div>
                 </div>

@@ -142,14 +142,16 @@ async function runBatchFit() {
     const mode = document.querySelector('input[name="batch-fit-mode"]:checked').value;
     const wells = Array.from(document.querySelectorAll('.batch-well-cb:checked')).map(cb => cb.value);
     const runBtn = document.getElementById('batch-fit-run-btn');
-    const progressEl = document.getElementById('batch-fit-progress');
+    const progressEl  = document.getElementById('batch-fit-progress');
+    const progressBar = document.getElementById('batch-fit-progress-bar');
+    const progressLbl = document.getElementById('batch-fit-progress-label');
+    const progressPct = document.getElementById('batch-fit-progress-pct');
 
     if (!experiment || wells.length === 0) {
         alert('Please select an experiment and at least one well.');
         return;
     }
 
-    // Build model payload depending on mode
     let modelPayload = {};
     if (mode === 'single') {
         modelPayload.model_name = document.getElementById('batch-fit-model').value || 'aHPM';
@@ -166,14 +168,17 @@ async function runBatchFit() {
     runBtn.disabled = true;
     runBtn.textContent = '⏳ Fitting…';
     progressEl.style.display = 'block';
-    progressEl.textContent = `Fitting ${wells.length} wells — this may take a moment…`;
+    progressBar.value = 0;
+    progressBar.max = 100;
+    progressLbl.textContent = `Starting…`;
+    progressPct.textContent = '';
     document.getElementById('batch-fit-results').style.display = 'none';
     const batchExportBtn = document.getElementById('batch-export-btn');
     if (batchExportBtn) batchExportBtn.style.display = 'none';
 
     try {
         const batchCalFile = (document.getElementById('batch-fit-calibration-file')?.value || '').trim();
-        const response = await fetch(`${API_BASE}/api/batch-fit`, {
+        const startResp = await fetch(`${API_BASE}/api/batch-fit`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -186,14 +191,44 @@ async function runBatchFit() {
             }),
         });
 
-        if (!response.ok) {
-            const err = await response.json();
+        if (!startResp.ok) {
+            const err = await startResp.json();
             throw new Error(err.error || 'Batch fitting failed');
         }
 
-        const data = await response.json();
-        state.lastBatchFitData = data;
-        displayBatchResults(data);
+        const { job_id, total } = await startResp.json();
+
+        await new Promise((resolve, reject) => {
+            const poll = setInterval(async () => {
+                try {
+                    const progResp = await fetch(`${API_BASE}/api/batch-fit/progress/${job_id}`);
+                    if (!progResp.ok) { clearInterval(poll); reject(new Error('Progress check failed')); return; }
+                    const p = await progResp.json();
+
+                    const pct = total > 0 ? Math.round((p.completed / total) * 100) : 0;
+                    progressBar.value = pct;
+                    progressPct.textContent = `${pct}%`;
+                    if (p.current_well) {
+                        progressLbl.textContent = `Fitting ${p.current_well} (${p.completed + 1}/${total})`;
+                    } else {
+                        progressLbl.textContent = `${p.completed}/${total} fitted`;
+                    }
+
+                    if (p.status === 'done') {
+                        clearInterval(poll);
+                        progressBar.value = 100;
+                        progressPct.textContent = '100%';
+                        progressLbl.textContent = `Done — ${p.summary.success}/${total} converged`;
+                        state.lastBatchFitData = p;
+                        displayBatchResults(p);
+                        resolve();
+                    }
+                } catch (e) {
+                    clearInterval(poll);
+                    reject(e);
+                }
+            }, 500);
+        });
 
     } catch (e) {
         console.error('Batch fit error:', e);
@@ -201,7 +236,7 @@ async function runBatchFit() {
     } finally {
         runBtn.disabled = false;
         runBtn.textContent = '⚡ Run Batch Fit';
-        progressEl.style.display = 'none';
+        setTimeout(() => { progressEl.style.display = 'none'; }, 2000);
     }
 }
 

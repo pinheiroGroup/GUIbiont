@@ -23,7 +23,7 @@ A web platform for large-scale microbial growth curve analysis, built on KinBion
 
    **Option A: Automatic (Recommended)**
    ```bash
-   julia launch_web_app.jl
+   julia --project=. --threads=auto web_server.jl
    ```
    Dependencies will be installed automatically on first run.
 
@@ -45,7 +45,7 @@ A web platform for large-scale microbial growth curve analysis, built on KinBion
 
 4. **Start the web application** (if not already started):
    ```bash
-   julia launch_web_app.jl
+   julia --project=. --threads=auto web_server.jl
    ```
 
 5. **Open your browser** to: http://localhost:8080
@@ -111,7 +111,7 @@ Example:
 export CLEAN_DATA_PATH="/path/to/your/clean/data"
 export RAW_DATA_PATH="/path/to/your/raw/data"
 export PORT=3000
-julia launch_web_app.jl
+julia --project=. --threads=auto web_server.jl
 ```
 
 ## Dependencies
@@ -170,7 +170,7 @@ See `Project.toml` for complete dependency list and version constraints.
 **Port already in use**
 ```bash
 export PORT=3000
-julia launch_web_app.jl
+julia --project=. --threads=auto web_server.jl
 ```
 
 **Missing data files**  
