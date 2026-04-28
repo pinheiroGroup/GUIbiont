@@ -2,6 +2,23 @@
 # ---------------------------------------------------------------------------
 # Shared growth curve fitting using the KinBiont.jl new API
 # ---------------------------------------------------------------------------
+using OptimizationBBO: BBO_adaptive_de_rand_1_bin_radiuslimited
+using OptimizationNLopt: NLopt
+
+# Map of optimizer name strings to actual Optimization.jl algorithm instances.
+# Only optimizers that support box constraints (lb/ub) are included.
+# NLopt algorithms are enum values; calling them with () is a no-op identity (see OptimizationNLopt.jl:7).
+const OPTIMIZER_MAP = Dict{String, Any}(
+    "LN_BOBYQA"                                 => NLopt.LN_BOBYQA,
+    "LN_COBYLA"                                 => NLopt.LN_COBYLA,
+    "GN_ISRES"                                  => NLopt.GN_ISRES,
+    "GN_DIRECT_L"                               => NLopt.GN_DIRECT_L,
+    "BBO_adaptive_de_rand_1_bin_radiuslimited"  => BBO_adaptive_de_rand_1_bin_radiuslimited(),
+)
+
+function resolve_optimizer(name::String)
+    get(OPTIMIZER_MAP, name, NLopt.LN_BOBYQA)
+end
 
 # Replace non-finite floats with nothing so JSON3 can serialise the result.
 _finite(x::Float64) = isfinite(x) ? x : nothing
@@ -88,7 +105,7 @@ function fit_well_data(
         stationary_pt_smooth_derivative = 10,
         stationary_win_size             = 5,
         loss                            = "RE",
-        optimizer                       = Symbol(optimizer),
+        optimizer                       = resolve_optimizer(optimizer),
     )
 
     fit_results = kinbiont_fit(data, spec, opts)
