@@ -87,6 +87,7 @@ function fit_well_data(
         stationary_pt_smooth_derivative = 10,
         stationary_win_size             = 5,
         loss                            = "RE",
+        optimizer                       = :BOBYQA,
     )
 
     fit_results = kinbiont_fit(data, spec, opts)
