@@ -2,6 +2,16 @@
 # ---------------------------------------------------------------------------
 # Shared growth curve fitting using the KinBiont.jl new API
 # ---------------------------------------------------------------------------
+
+# Replace non-finite floats with nothing so JSON3 can serialise the result.
+_finite(x::Float64) = isfinite(x) ? x : nothing
+_finite(x::AbstractFloat) = isfinite(x) ? x : nothing
+_finite(x::AbstractVector) = [_finite(v) for v in x]
+_finite(x) = x
+
+function sanitize_for_json(d::Dict)
+    Dict(k => _finite(v) for (k, v) in d)
+end
 # Accepts already-validated, NaN-filtered time and raw OD vectors plus the
 # computed blank value. Returns a Dict ready to serialise as JSON.
 function fit_well_data(
@@ -124,6 +134,6 @@ function fit_well_data(
         result["experimental_od_subtracted"] = od_subtracted_display
     end
 
-    return result
+    return sanitize_for_json(result)
 end
 
