@@ -145,9 +145,9 @@ end
     @test haskey(body, :param_names)
     @test haskey(body, :parameters)
     @test length(body[:param_names]) == length(body[:parameters])
-    @test haskey(body, :fit_curve)
-    @test haskey(body, :od_data)
-    @test !isempty(body[:fit_curve])
+    @test haskey(body, :fit_od)
+    @test haskey(body, :experimental_od)
+    @test !isempty(body[:fit_od])
     @test string(body[:model]) == "logistic"
 end
 
