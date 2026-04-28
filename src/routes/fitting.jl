@@ -83,6 +83,10 @@ end
     optimizer        = string(body.optimizer)
     calibration_file = "./cal_curve_avg.csv"
 
+    if !haskey(MODEL_REGISTRY, model_name)
+        return json(Dict("error" => "Unknown model: $model_name"); status=400)
+    end
+
     try
         all_od_data   = Vector{Vector{Float64}}()
         all_time_data = Vector{Vector{Float64}}()
@@ -458,18 +462,26 @@ end
     first_val = string(time_raw[1])
     has_meta_row = tryparse(Float64, first_val) === nothing
 
-    group_labels = Vector{String}(undef, ncols - 1)
+    series_cols = col_names[2:end]
+    group_labels = Vector{String}(undef, length(series_cols))
     data_start   = 1
 
     if has_meta_row
         # Row 1 is group labels
-        for (j, c) in enumerate(col_names[2:end])
-            group_labels[j] = string(df[1, c])
+        raw_labels = [string(df[1, c]) for c in series_cols]
+        if !isempty(raw_labels) && (isempty(raw_labels[1]) || raw_labels[1] == "missing")
+            raw_labels = vcat(raw_labels[2:end], raw_labels[1])
+        end
+        for (j, c) in enumerate(series_cols)
+            lbl = raw_labels[j]
+            group_labels[j] = (isempty(lbl) || lbl == "missing") ?
+                replace(string(c), r"_rep.*$" => "") :
+                lbl
         end
         data_start = 2
     else
         # No metadata row — use column names as group labels
-        for (j, c) in enumerate(col_names[2:end])
+        for (j, c) in enumerate(series_cols)
             group_labels[j] = string(c)
         end
     end
@@ -483,9 +495,9 @@ end
     end
 
     n_tp   = length(times_raw)
-    n_ser  = ncols - 1
+    n_ser  = length(series_cols)
     od_mat = Matrix{Float64}(undef, n_tp, n_ser)
-    for (j, c) in enumerate(col_names[2:end])
+    for (j, c) in enumerate(series_cols)
         for (i, v) in enumerate(data_df[!, c])
             p = tryparse(Float64, string(v))
             od_mat[i, j] = p === nothing ? NaN : p
@@ -495,6 +507,7 @@ end
     # Group series indices by label
     groups = Dict{String, Vector{Int}}()
     for (j, lbl) in enumerate(group_labels)
+        any(isfinite, od_mat[:, j]) || continue
         push!(get!(groups, lbl, Int[]), j)
     end
 

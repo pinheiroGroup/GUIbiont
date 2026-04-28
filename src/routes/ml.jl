@@ -142,7 +142,7 @@
     # from the clustering matrix once found — consistent with annotated behaviour.
     # Signal subtraction only happens when subtract_blank=true.
     # ------------------------------------------------------------------
-    if isempty(blank_curves_all)
+    if isempty(blank_curves_all) && !Bool(body.prescreen_constant) && !Bool(body.trend_test_flat)
         blank_idxs = _detect_blank_indices(curves, times;
             flat_range_thr = blank_range_thr,
             od_percentile  = blank_od_pct)
@@ -465,7 +465,7 @@ end
         ))
     end
 
-    return Dict("sweep" => sweep_results)
+    return sanitize_for_json(Dict("sweep" => sweep_results))
 end
 
 # ------------------------------------------------------------------

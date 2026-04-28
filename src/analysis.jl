@@ -24,6 +24,7 @@ end
 _finite(x::Float64) = isfinite(x) ? x : nothing
 _finite(x::AbstractFloat) = isfinite(x) ? x : nothing
 _finite(x::AbstractVector) = [_finite(v) for v in x]
+_finite(x::AbstractDict) = Dict(k => _finite(v) for (k, v) in x)
 _finite(x) = x
 
 function sanitize_for_json(d::Dict)

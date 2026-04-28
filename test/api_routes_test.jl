@@ -476,8 +476,8 @@ const BATCH_AVG_SIMPLE_CSV = """Time,geneA,geneA,geneB,geneB
     @test haskey(body, :n_groups)
     @test haskey(body, :group_names)
     @test Int(body[:n_groups]) == 2
-    names = sort([string(n) for n in body[:group_names]])
-    @test names == ["gene_A", "gene_B"]
+    group_names = sort([string(n) for n in body[:group_names]])
+    @test group_names == ["gene_A", "gene_B"]
     # Parse the returned CSV and verify averages
     df = CSV.read(IOBuffer(string(body[:csv])), DataFrame)
     @test "gene_A" in names(df)
