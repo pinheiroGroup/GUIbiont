@@ -242,6 +242,20 @@ function post_json(path, body)
     return r.status, JSON3.read(String(r.body))
 end
 
+function batch_fit_and_wait(req; timeout=120)
+    status, body = post_json("/api/batch-fit", req)
+    status == 200 || return status, body
+    haskey(body, :job_id) || return status, body
+    job_id = string(body[:job_id])
+    deadline = time() + timeout
+    while time() < deadline
+        s, b = get_json("/api/batch-fit/progress/$job_id")
+        s == 200 && string(get(b, :status, "")) == "done" && return s, b
+        sleep(1)
+    end
+    error("batch-fit job $job_id did not complete within $(timeout)s")
+end
+
 const SINGLE_CH_EXP  = "LG166"
 const SINGLE_CH_WELL = "A3"
 const MULTI_CH_EXP   = "LG298"
@@ -387,10 +401,10 @@ else
     end
 
     @testset "POST /api/batch-fit — explicit model" begin
-        status, body = post_json("/api/batch-fit",
-                                 Dict("experiment" => SINGLE_CH_EXP,
-                                      "wells"      => [SINGLE_CH_WELL, "A4"],
-                                      "model_name" => "logistic"))
+        status, body = batch_fit_and_wait(
+                           Dict("experiment" => SINGLE_CH_EXP,
+                                "wells"      => [SINGLE_CH_WELL, "A4"],
+                                "model_name" => "logistic"))
         @test status == 200
         @test haskey(body, :results)
         @test haskey(body, :summary)
@@ -406,23 +420,22 @@ else
     end
 
     @testset "POST /api/batch-fit — all wells (no wells key)" begin
-        status, body = post_json("/api/batch-fit",
-                                 Dict("experiment" => SINGLE_CH_EXP,
-                                      "model_name" => "logistic"))
+        status, body = batch_fit_and_wait(
+                           Dict("experiment" => SINGLE_CH_EXP,
+                                "model_name" => "logistic"))
         @test status == 200
         @test Int(body[:summary][:total]) > 2
         @test Int(body[:summary][:success]) >= 1
     end
 
     @testset "POST /api/batch-fit — multi-model AICc selection" begin
-        status, body = post_json("/api/batch-fit",
-                                 Dict("experiment"   => SINGLE_CH_EXP,
-                                      "wells"        => [SINGLE_CH_WELL],
-                                      "model_names"  => ["logistic", "gompertz"]))
+        status, body = batch_fit_and_wait(
+                           Dict("experiment"  => SINGLE_CH_EXP,
+                                "wells"       => [SINGLE_CH_WELL],
+                                "model_names" => ["logistic", "gompertz"]))
         @test status == 200
         @test Int(body[:summary][:success]) >= 1
         r = first(body[:results])
-        # best model should be one of the two candidates
         @test string(r[:model]) in ["logistic", "gompertz"]
         @test haskey(r, :aic)
         @test string(body[:model]) == "multi"
