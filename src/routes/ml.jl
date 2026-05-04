@@ -540,12 +540,12 @@ end
             ]
         end
 
-        return Dict(
+        return sanitize_for_json(Dict(
             "correlations" => corr,
             "importance"   => importance,
             "pdp"          => pdp,
             "n_wells"      => nrow(joined),
-        )
+        ))
     catch e
                 return json(Dict("error" => "ML analysis failed: $e"); status=500)
     end
