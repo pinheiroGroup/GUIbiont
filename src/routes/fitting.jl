@@ -11,6 +11,7 @@ const BATCH_JOBS_LOCK = ReentrantLock()
     model_names    = String[string(m) for m in body.model_names]
     optimizer      = string(body.optimizer)
     maxiters       = body.maxiters > 0 ? body.maxiters : DEFAULT_FIT_MAXITERS
+    abstol         = body.abstol > 0.0 ? body.abstol : 0.0
 
     data_file        = joinpath(CLEAN_DATA_PATH, experiment, "data_channel_1.csv")
     annotation_file  = joinpath(CLEAN_DATA_PATH, experiment, "annotation_clean.csv")
@@ -70,6 +71,7 @@ const BATCH_JOBS_LOCK = ReentrantLock()
             model_names      = model_names,
             optimizer        = optimizer,
             maxiters         = maxiters,
+            abstol           = abstol,
         )
     catch e
                 return json(Dict("error" => "Curve fitting failed: $e"); status=500)
@@ -84,6 +86,7 @@ end
     model_name       = string(body.model_name)
     optimizer        = string(body.optimizer)
     maxiters         = body.maxiters > 0 ? body.maxiters : DEFAULT_FIT_MAXITERS
+    abstol           = body.abstol > 0.0 ? body.abstol : 0.0
     calibration_file = "./cal_curve_avg.csv"
 
     if !haskey(MODEL_REGISTRY, model_name)
@@ -136,6 +139,7 @@ end
             model_name = model_name,
             optimizer  = optimizer,
             maxiters   = maxiters,
+            abstol     = abstol,
         )
     catch e
                 return json(Dict("error" => "Replicate fitting failed: $e"); status=500)
@@ -273,6 +277,7 @@ end
     requested_wells = isempty(body.wells) ? nothing : String[string(w) for w in body.wells]
     optimizer       = string(body.optimizer)
     maxiters        = body.maxiters > 0 ? body.maxiters : DEFAULT_FIT_MAXITERS
+    abstol          = body.abstol > 0.0 ? body.abstol : 0.0
 
     if isempty(model_names_req)
         if !haskey(MODEL_REGISTRY, model_name)
@@ -314,6 +319,7 @@ end
             "model"        => isempty(model_names_req) ? model_name : "multi",
             "model_names"  => isempty(model_names_req) ? [model_name] : model_names_req,
             "maxiters"     => maxiters,
+            "abstol"       => abstol,
             "total"        => length(wells_to_fit),
             "completed"    => 0,
             "current_well" => "",
@@ -360,6 +366,7 @@ end
                                     model_names      = model_names_req,
                                     optimizer        = optimizer,
                                     maxiters         = maxiters,
+                                    abstol           = abstol,
                                 )
                                 lock(local_lock) do; push!(results, fit_result); end
                             end
@@ -413,6 +420,8 @@ end
             resp["experiment"]  = job["experiment"]
             resp["model"]       = job["model"]
             resp["model_names"] = job["model_names"]
+            resp["maxiters"]    = job["maxiters"]
+            resp["abstol"]      = job["abstol"]
             resp["results"]     = job["results"]
             resp["summary"]     = job["summary"]
             delete!(BATCH_JOBS, job_id)

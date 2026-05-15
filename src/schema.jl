@@ -24,6 +24,7 @@ Base.@kwdef mutable struct FitCurveRequest
     model_names::Vector{String} = String[]
     optimizer::String = "LN_BOBYQA"
     maxiters::Int = DEFAULT_FIT_MAXITERS
+    abstol::Float64 = 1e-6
 end
 
 Base.@kwdef mutable struct BatchFitRequest
@@ -36,6 +37,7 @@ Base.@kwdef mutable struct BatchFitRequest
     wells::Vector{String} = String[]
     optimizer::String = "LN_BOBYQA"
     maxiters::Int = DEFAULT_FIT_MAXITERS
+    abstol::Float64 = 1e-6
 end
 
 Base.@kwdef mutable struct MLDownstreamRequest
@@ -59,6 +61,7 @@ Base.@kwdef mutable struct FitReplicateRequest
     calibration_file::String = ""
     optimizer::String = "LN_BOBYQA"
     maxiters::Int = DEFAULT_FIT_MAXITERS
+    abstol::Float64 = 1e-6
 end
 
 Base.@kwdef mutable struct BlankAnalysisRequest

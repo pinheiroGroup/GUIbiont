@@ -190,6 +190,11 @@ export function generateBatchCode(batchData, withComments) {
     const modelNames = req.model_names || [];
     const blankSub   = req.blank_subtraction || false;
     const blankMethod= req.blank_method      || 'pointbypoint';
+    const maxiters   = req.maxiters ?? batchData.maxiters ?? 20000;
+    const abstol     = req.abstol ?? batchData.abstol ?? 1e-6;
+    const optParams  = abstol > 0
+        ? `(maxiters = ${maxiters}, abstol = ${abstol})`
+        : `(maxiters = ${maxiters},)`;
     const isMulti    = modelNames.length > 1;
 
     const wellSubset = wells.length > 0
@@ -254,6 +259,7 @@ opts = FitOptions(
     stationary_win_size             = 5,
     # Loss function: "RE" = relative error (also: "L2", "L2_derivative")
     loss                            = "RE",
+    opt_params                      = ${optParams},
 ${blankLine}
 )
 
