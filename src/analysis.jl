@@ -5,6 +5,8 @@
 using OptimizationBBO: BBO_adaptive_de_rand_1_bin_radiuslimited
 using OptimizationNLopt: NLopt
 
+const DEFAULT_FIT_MAXITERS = 2000
+
 # Map of optimizer name strings to actual Optimization.jl algorithm instances.
 # Only optimizers that support box constraints (lb/ub) are included.
 # NLopt algorithms are enum values; calling them with () is a no-op identity (see OptimizationNLopt.jl:7).
@@ -46,6 +48,7 @@ function fit_well_data(
     model_name::String = "aHPM",
     model_names::Vector{String} = String[],
     optimizer::String = "BOBYQA",
+    maxiters::Int = DEFAULT_FIT_MAXITERS,
 )
     if subtract_blank && blank_value > 0.0
         if blank_method == "pointbypoint" && length(blank_timeseries) == length(od_raw)
@@ -107,6 +110,7 @@ function fit_well_data(
         stationary_win_size             = 5,
         loss                            = "RE",
         optimizer                       = resolve_optimizer(optimizer),
+        opt_params                      = (maxiters = maxiters,),
     )
 
     fit_results = kinbiont_fit(data, spec, opts)

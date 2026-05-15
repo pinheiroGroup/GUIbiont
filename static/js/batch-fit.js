@@ -178,6 +178,7 @@ async function runBatchFit() {
 
     try {
         const batchCalFile = (document.getElementById('batch-fit-calibration-file')?.value || '').trim();
+        const maxiters = Math.max(1, parseInt(document.getElementById('batch-fit-maxiters')?.value || '2000', 10) || 2000);
         const startResp = await fetch(`${API_BASE}/api/batch-fit`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -188,6 +189,7 @@ async function runBatchFit() {
                 blank_subtraction: document.getElementById('batch-fit-blank-subtraction').checked,
                 blank_method: document.getElementById('batch-fit-blank-method').value,
                 optimizer: document.getElementById('batch-fit-optimizer').value || 'BOBYQA',
+                maxiters,
                 ...(batchCalFile ? { calibration_file: batchCalFile } : {}),
             }),
         });
