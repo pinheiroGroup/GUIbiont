@@ -413,7 +413,10 @@ end
         end
     end
 
-    # Smooth once, then sweep over k
+    # Smooth once, then sweep over k. Match /api/cluster: when the smoother
+    # shortens the series (rolling_avg drops smooth_pt_avg-1 points), update
+    # `times` to match so the per-k GrowthData(curves_for, times, ...) calls
+    # below don't fail on a dimension mismatch.
     if smooth_method != :none
         gd_smooth   = GrowthData(curves, times, labels_all)
         smooth_opts = FitOptions(smooth=true, smooth_method=smooth_method,
@@ -422,6 +425,7 @@ end
         gd_proc    = preprocess(gd_smooth, smooth_opts)
         tlen       = min(size(gd_proc.curves, 2), length(times))
         curves_for = gd_proc.curves[:, 1:tlen]
+        times      = gd_proc.times[1:tlen]
     else
         curves_for = curves
     end
