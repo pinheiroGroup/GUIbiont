@@ -23,6 +23,7 @@ include(joinpath(@__DIR__, "..", "src", "clustering.jl"))
 include("data_helpers_test.jl")
 include("experiment_store_test.jl")
 include("clustering_helpers_test.jl")
+include("analysis_helpers_test.jl")
 
 # ---------------------------------------------------------------------------
 # Paths to fixtures — prefer committed test/fixtures, fall back to local data
@@ -398,6 +399,29 @@ else
                                       "model_name" => "not_a_real_model"))
         @test status == 400
         @test haskey(body, :error)
+    end
+
+    @testset "POST /api/fit-curve — oversized maxiters is clamped" begin
+        status, body = post_json("/api/fit-curve",
+                                 Dict("experiment" => SINGLE_CH_EXP, "well" => SINGLE_CH_WELL,
+                                      "model_name" => "logistic", "maxiters" => 999_999_999))
+        # Server must accept the request (not reject it) and return a valid fit
+        @test status == 200
+        @test haskey(body, :parameters)
+        @test !isempty(body[:parameters])
+    end
+
+    @testset "POST /api/fit-curve — initial_parameters returned in response" begin
+        status, body = post_json("/api/fit-curve",
+                                 Dict("experiment" => SINGLE_CH_EXP, "well" => SINGLE_CH_WELL,
+                                      "model_name" => "logistic"))
+        @test status == 200
+        @test haskey(body, :initial_parameters)
+        ip = body[:initial_parameters]
+        @test ip isa AbstractVector
+        @test length(ip) == 1           # one model
+        @test length(ip[1]) == 2        # logistic has 2 params (gr, N_max)
+        @test all(isfinite, Float64.(ip[1]))
     end
 
     @testset "POST /api/batch-fit — explicit model" begin
