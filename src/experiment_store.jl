@@ -1,7 +1,7 @@
 # ExperimentStore — single source of truth for loading experiment data.
 #
 # Eliminates the repeated ~50-line CSV/annotation loading block that previously
-# appeared in 5+ endpoints of routes.jl.
+# appeared in 5+ endpoints under src/routes/.
 #
 # Design:  WellMeta  (metadata only, cheap)
 #          WellData   (metadata + time + OD vectors, loaded on demand)

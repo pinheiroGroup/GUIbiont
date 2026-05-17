@@ -310,6 +310,18 @@ end
     @test all(diff(wcsses) .<= 1e-6)
 end
 
+@testset "POST /api/cluster-sweep — rolling_avg smoothing returns results" begin
+    # Regression: rolling_avg shortens the series (drops smooth_pt_avg-1 points).
+    # Before the fix, the sweep kept the original-length `times` vector and the
+    # per-k GrowthData(curves_for, times, ...) call threw a dimension mismatch,
+    # bubbling up as a generic HTTP 500.
+    status, body = post_json("/api/cluster-sweep",
+                             Dict("csv" => CLUSTER_CSV, "k_max" => 4,
+                                  "smooth_method" => "rolling_avg"))
+    @test status == 200
+    @test !isempty(body[:sweep])
+end
+
 # ---------------------------------------------------------------------------
 # POST /api/cluster-compare
 # ---------------------------------------------------------------------------
