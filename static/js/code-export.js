@@ -122,6 +122,11 @@ export function generateFitCode(fitData, withComments) {
     blank_value                     = ${blankValue.toFixed(6)},  # method: "${blankMethod}"`
         : `    blank_subtraction               = false,`;
 
+    const p0        = fitData.initial_parameters?.[0];
+    const initParam = p0 && p0.length > 0
+        ? `[${JSON.stringify(p0)}]`
+        : `fill(1.0, n_params)`;
+
     const code = `\
 # ================================================================
 # Growth curve fitting — exported from GUIbiont
@@ -145,9 +150,11 @@ data_well = data[["${well}"]]
 model = MODEL_REGISTRY["${model}"]
 n_params = length(model.param_names)
 
+# Initial parameters computed by GUIbiont's data-driven smart initialisation.
+# These match the values used for this fit — change to explore the parameter space.
 spec = ModelSpec(
     [model],
-    [fill(1.0, n_params)];
+    [${initParam}];
     lower = [fill(0.0, n_params)],
     upper = [fill(50.0, n_params)],
 )
@@ -190,6 +197,11 @@ export function generateBatchCode(batchData, withComments) {
     const modelNames = req.model_names || [];
     const blankSub   = req.blank_subtraction || false;
     const blankMethod= req.blank_method      || 'pointbypoint';
+    const maxiters   = req.maxiters ?? batchData.maxiters ?? 20000;
+    const abstol     = req.abstol ?? batchData.abstol ?? 1e-6;
+    const optParams  = abstol > 0
+        ? `(maxiters = ${maxiters}, abstol = ${abstol})`
+        : `(maxiters = ${maxiters},)`;
     const isMulti    = modelNames.length > 1;
 
     const wellSubset = wells.length > 0
@@ -205,6 +217,8 @@ data_subset = data[[${wells.map(w => `"${w}"`).join(', ')}]]\n`
 models = [MODEL_REGISTRY[m] for m in [
 ${modelNames.map(m => `    "${m}"`).join(',\n')},
 ]]
+# GUIbiont uses data-driven smart initialisation per well; batch export uses
+# uniform starting points as a reproducible baseline across all wells.
 spec = ModelSpec(
     models,
     [fill(1.0, length(m.param_names)) for m in models];
@@ -216,6 +230,8 @@ spec = ModelSpec(
 # List all available models: collect(keys(MODEL_REGISTRY))
 model = MODEL_REGISTRY["${modelName}"]
 n_params = length(model.param_names)
+# GUIbiont uses data-driven smart initialisation per well; batch export uses
+# uniform starting points as a reproducible baseline across all wells.
 spec = ModelSpec(
     [model],
     [fill(1.0, n_params)];
@@ -254,6 +270,7 @@ opts = FitOptions(
     stationary_win_size             = 5,
     # Loss function: "RE" = relative error (also: "L2", "L2_derivative")
     loss                            = "RE",
+    opt_params                      = ${optParams},
 ${blankLine}
 )
 

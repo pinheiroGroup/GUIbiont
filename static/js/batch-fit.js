@@ -178,20 +178,23 @@ async function runBatchFit() {
 
     try {
         const batchCalFile = (document.getElementById('batch-fit-calibration-file')?.value || '').trim();
-        const maxiters = Math.max(1, parseInt(document.getElementById('batch-fit-maxiters')?.value || '2000', 10) || 2000);
+        const maxiters = Math.max(1, parseInt(document.getElementById('batch-fit-maxiters')?.value || '20000', 10) || 20000);
+        const abstol = parseFloat(document.getElementById('batch-fit-abstol')?.value || '1e-6') || 1e-6;
+        const requestPayload = {
+            experiment,
+            wells,
+            ...modelPayload,
+            blank_subtraction: document.getElementById('batch-fit-blank-subtraction').checked,
+            blank_method: document.getElementById('batch-fit-blank-method').value,
+            optimizer: document.getElementById('batch-fit-optimizer').value || 'BOBYQA',
+            maxiters,
+            abstol,
+            ...(batchCalFile ? { calibration_file: batchCalFile } : {}),
+        };
         const startResp = await fetch(`${API_BASE}/api/batch-fit`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                experiment,
-                wells,
-                ...modelPayload,
-                blank_subtraction: document.getElementById('batch-fit-blank-subtraction').checked,
-                blank_method: document.getElementById('batch-fit-blank-method').value,
-                optimizer: document.getElementById('batch-fit-optimizer').value || 'BOBYQA',
-                maxiters,
-                ...(batchCalFile ? { calibration_file: batchCalFile } : {}),
-            }),
+            body: JSON.stringify(requestPayload),
         });
 
         if (!startResp.ok) {
@@ -222,8 +225,8 @@ async function runBatchFit() {
                         progressBar.value = 100;
                         progressPct.textContent = '100%';
                         progressLbl.textContent = `Done — ${p.summary.success}/${total} converged`;
-                        state.lastBatchFitData = p;
-                        displayBatchResults(p);
+                        state.lastBatchFitData = { ...p, _request: requestPayload };
+                        displayBatchResults(state.lastBatchFitData);
                         resolve();
                     }
                 } catch (e) {
