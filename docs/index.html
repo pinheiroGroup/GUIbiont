@@ -1,0 +1,971 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GUIbiont: Reproducible Microbial Growth Phenotyping</title>
+  <meta name="description" content="GUIbiont makes Kinbiont.jl workflows available through a browser interface for cleaning, fitting, clustering and interpreting plate-reader curves, with full Julia code export." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    /* ── Tokens ──────────────────────────────────────────────── */
+    :root {
+      --bg:        #07091a;
+      --bg-2:      #0d1220;
+      --bg-3:      #141c2e;
+      --card:      #111827;
+      --card-2:    #1a2235;
+      --border:    #1e2d4a;
+      --border-2:  #2a3b5c;
+      --accent:    #00d4b8;
+      --accent-dim:#00906e;
+      --amber:     #f59e0b;
+      --violet:    #818cf8;
+      --text:      #e8edf8;
+      --muted:     #6b7a99;
+      --muted-2:   #4a5878;
+      --radius:    12px;
+      --radius-lg: 20px;
+      --shadow:    0 4px 32px rgba(0,212,184,0.06);
+    }
+
+    /* ── Reset ───────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+    a { color: inherit; text-decoration: none; }
+    img { display: block; max-width: 100%; }
+
+    /* ── Utility ─────────────────────────────────────────────── */
+    .container { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+    .tag {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 11px; font-weight: 600; letter-spacing: .08em;
+      text-transform: uppercase; color: var(--accent);
+      background: rgba(0,212,184,.08); border: 1px solid rgba(0,212,184,.2);
+      border-radius: 999px; padding: 4px 12px;
+    }
+    .section-label {
+      font-size: 12px; font-weight: 600; letter-spacing: .12em;
+      text-transform: uppercase; color: var(--accent); margin-bottom: 12px;
+    }
+    .section-heading {
+      font-size: clamp(1.75rem, 3vw, 2.5rem);
+      font-weight: 700; line-height: 1.2; color: var(--text);
+    }
+    .section-sub {
+      font-size: 1.05rem; color: var(--muted); max-width: 600px; margin-top: 12px;
+    }
+    .mono {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: .85em; color: var(--accent);
+    }
+
+    /* ── Noise / grid overlay ────────────────────────────────── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      background-image:
+        radial-gradient(ellipse 80% 60% at 50% -10%, rgba(0,212,184,.08) 0%, transparent 70%),
+        linear-gradient(rgba(255,255,255,.015) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.015) 1px, transparent 1px);
+      background-size: 100% 100%, 40px 40px, 40px 40px;
+    }
+    body > * { position: relative; z-index: 1; }
+
+    /* ── NAV ─────────────────────────────────────────────────── */
+    nav {
+      position: sticky; top: 0; z-index: 100;
+      border-bottom: 1px solid var(--border);
+      background: rgba(7,9,26,.82);
+      backdrop-filter: blur(20px);
+    }
+    .nav-inner {
+      display: flex; align-items: center; justify-content: space-between;
+      height: 60px; gap: 24px;
+    }
+    .nav-logo {
+      font-size: 1.1rem; font-weight: 700; color: var(--text);
+    }
+    .nav-logo span { color: var(--accent); }
+    .nav-links {
+      display: flex; align-items: center; gap: 24px;
+      font-size: .875rem; color: var(--muted);
+    }
+    .nav-links a:hover { color: var(--text); }
+    .nav-cta {
+      display: flex; align-items: center; gap: 10px;
+    }
+    .btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 8px 18px; border-radius: 8px; font-size: .875rem;
+      font-weight: 600; cursor: pointer; transition: all .15s;
+      border: none;
+    }
+    .btn-ghost {
+      background: transparent; color: var(--muted);
+      border: 1px solid var(--border-2);
+    }
+    .btn-ghost:hover { color: var(--text); border-color: var(--border-2); background: var(--card); }
+    .btn-primary {
+      background: var(--accent); color: #07091a;
+    }
+    .btn-primary:hover { background: #00ffe6; }
+    .btn-outline {
+      background: transparent; color: var(--accent);
+      border: 1px solid rgba(0,212,184,.4);
+    }
+    .btn-outline:hover { background: rgba(0,212,184,.08); }
+
+    /* ── HERO ────────────────────────────────────────────────── */
+    .hero {
+      padding: clamp(80px, 12vw, 140px) 0 clamp(60px, 8vw, 100px);
+      text-align: center;
+    }
+    .hero-badge {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-size: .8rem; color: var(--muted);
+      border: 1px solid var(--border); border-radius: 999px;
+      padding: 5px 14px; margin-bottom: 28px;
+      background: var(--card);
+    }
+    .hero-badge strong { color: var(--accent); }
+    .hero h1 {
+      font-size: clamp(2.4rem, 6vw, 4.5rem);
+      font-weight: 800; line-height: 1.1;
+      letter-spacing: -.02em;
+      background: linear-gradient(135deg, #e8edf8 30%, #00d4b8 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+      max-width: 900px; margin: 0 auto 20px;
+    }
+    .hero p {
+      font-size: clamp(1rem, 2vw, 1.2rem);
+      color: var(--muted); max-width: 640px; margin: 0 auto 36px;
+    }
+    .hero-actions {
+      display: flex; align-items: center; justify-content: center;
+      gap: 12px; flex-wrap: wrap;
+    }
+    .hero-actions .btn { padding: 12px 24px; font-size: .95rem; }
+
+    /* plate-reader microplate illustration */
+    .hero-art {
+      margin: 60px auto 0; max-width: 760px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      box-shadow: 0 0 80px rgba(0,212,184,.08), var(--shadow);
+    }
+    .plate-grid {
+      display: grid; grid-template-columns: repeat(12,1fr);
+      gap: 5px; padding: 28px; background: var(--card);
+    }
+    .plate-well {
+      aspect-ratio: 1; border-radius: 50%;
+      background: var(--bg-3); border: 1px solid var(--border);
+      position: relative; overflow: hidden;
+    }
+    .plate-well::after {
+      content: ''; position: absolute; inset: 0; border-radius: 50%;
+      opacity: 0;
+      background: radial-gradient(circle, var(--accent) 0%, transparent 70%);
+      animation: pulse-well var(--d, 3s) ease-in-out infinite var(--delay, 0s);
+    }
+    @keyframes pulse-well {
+      0%,100% { opacity: 0; transform: scale(.6); }
+      50%      { opacity: var(--op,.5); transform: scale(1); }
+    }
+
+    /* curve mini-chart in hero */
+    .hero-chart {
+      background: var(--bg-2); padding: 24px 28px; border-top: 1px solid var(--border);
+    }
+    .curve-svg { width: 100%; height: 200px; }
+
+    /* ── PIPELINE ─────────────────────────────────────────────── */
+    .pipeline { padding: clamp(60px, 8vw, 100px) 0; }
+    .pipeline-steps {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 0; margin-top: 48px;
+      border: 1px solid var(--border); border-radius: var(--radius-lg);
+      overflow: hidden;
+    }
+    .pipeline-step {
+      padding: 28px 20px; text-align: center;
+      border-right: 1px solid var(--border);
+      position: relative; background: var(--card);
+      transition: background .2s;
+    }
+    .pipeline-step:last-child { border-right: none; }
+    .pipeline-step:hover { background: var(--card-2); }
+    .pipeline-step::after {
+      content: '→';
+      position: absolute; right: -10px; top: 50%; transform: translateY(-50%);
+      color: var(--muted-2); font-size: 1.1rem; z-index: 1;
+    }
+    .pipeline-step:last-child::after { display: none; }
+    .step-icon {
+      width: 44px; height: 44px; margin: 0 auto 12px;
+      border-radius: 10px; display: flex; align-items: center; justify-content: center;
+      font-size: 1.3rem;
+      background: rgba(0,212,184,.1); border: 1px solid rgba(0,212,184,.2);
+    }
+    .step-name { font-size: .875rem; font-weight: 600; color: var(--text); }
+    .step-desc { font-size: .75rem; color: var(--muted); margin-top: 4px; }
+
+    /* ── FEATURES ─────────────────────────────────────────────── */
+    .features { padding: clamp(60px, 8vw, 100px) 0; }
+    .features-header { margin-bottom: 52px; }
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 20px;
+    }
+    .feature-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 28px; transition: border-color .2s, transform .2s;
+      position: relative; overflow: hidden;
+    }
+    .feature-card::before {
+      content: ''; position: absolute;
+      top: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, transparent, var(--accent-color, var(--accent)), transparent);
+      opacity: 0; transition: opacity .2s;
+    }
+    .feature-card:hover { border-color: var(--border-2); transform: translateY(-2px); }
+    .feature-card:hover::before { opacity: 1; }
+    .feature-icon {
+      width: 48px; height: 48px; border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.4rem; margin-bottom: 16px;
+      background: rgba(0,212,184,.08); border: 1px solid rgba(0,212,184,.15);
+    }
+    .feature-title { font-size: 1rem; font-weight: 700; color: var(--text); margin-bottom: 8px; }
+    .feature-desc { font-size: .875rem; color: var(--muted); line-height: 1.65; }
+    .feature-pills {
+      display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px;
+    }
+    .pill {
+      font-size: .7rem; font-weight: 500; color: var(--muted);
+      background: var(--bg-3); border: 1px solid var(--border);
+      border-radius: 999px; padding: 3px 10px;
+    }
+
+    /* Feature cards with color variants */
+    .feature-card[data-color="teal"]   .feature-icon { background: rgba(0,212,184,.1);  border-color: rgba(0,212,184,.2); }
+    .feature-card[data-color="amber"]  .feature-icon { background: rgba(245,158,11,.1); border-color: rgba(245,158,11,.2); }
+    .feature-card[data-color="violet"] .feature-icon { background: rgba(129,140,248,.1);border-color: rgba(129,140,248,.2);}
+    .feature-card[data-color="rose"]   .feature-icon { background: rgba(251,113,133,.1);border-color: rgba(251,113,133,.2);}
+    .feature-card[data-color="sky"]    .feature-icon { background: rgba(56,189,248,.1); border-color: rgba(56,189,248,.2);}
+    .feature-card[data-color="lime"]   .feature-icon { background: rgba(163,230,53,.1); border-color: rgba(163,230,53,.2);}
+
+    .feature-card[data-color="teal"]   { --accent-color: #00d4b8; }
+    .feature-card[data-color="amber"]  { --accent-color: #f59e0b; }
+    .feature-card[data-color="violet"] { --accent-color: #818cf8; }
+    .feature-card[data-color="rose"]   { --accent-color: #fb7185; }
+    .feature-card[data-color="sky"]    { --accent-color: #38bdf8; }
+    .feature-card[data-color="lime"]   { --accent-color: #a3e635; }
+
+    /* ── KINBIONT ─────────────────────────────────────────────── */
+    .kinbiont {
+      padding: clamp(60px, 8vw, 100px) 0;
+      background: var(--bg-2);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+    .kinbiont-inner {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: center;
+    }
+    .kinbiont-code {
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); padding: 28px;
+      overflow-x: auto;
+    }
+    .kinbiont-code pre {
+      font-family: 'JetBrains Mono', monospace; font-size: .8rem;
+      line-height: 1.8; white-space: pre; color: #a8b4cc;
+    }
+    .kinbiont-code .kw  { color: #c084fc; }
+    .kinbiont-code .fn  { color: #38bdf8; }
+    .kinbiont-code .str { color: #86efac; }
+    .kinbiont-code .num { color: #f59e0b; }
+    .kinbiont-code .cmt { color: var(--muted-2); font-style: italic; }
+    .kinbiont-code .acc { color: var(--accent); }
+    .kinbiont-points { list-style: none; display: flex; flex-direction: column; gap: 16px; margin-top: 28px; }
+    .kinbiont-points li {
+      display: flex; gap: 12px; font-size: .9rem; color: var(--muted);
+    }
+    .kinbiont-points li::before {
+      content: ''; width: 20px; height: 20px; min-width: 20px;
+      border-radius: 50%; background: rgba(0,212,184,.15);
+      border: 1px solid rgba(0,212,184,.3);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .kinbiont-points li span { color: var(--text); font-weight: 600; }
+
+    /* ── MODELS ──────────────────────────────────────────────── */
+    .models { padding: clamp(60px, 8vw, 100px) 0; }
+    .models-header { margin-bottom: 48px; }
+    .models-equation {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); padding: 32px;
+      margin: 32px 0; font-family: 'JetBrains Mono', monospace;
+      font-size: .85rem; line-height: 2;
+    }
+    .models-equation .eq-label {
+      font-size: .7rem; font-weight: 600; letter-spacing: .1em;
+      text-transform: uppercase; color: var(--accent); margin-bottom: 8px;
+    }
+    .models-equation .eq { color: var(--text); }
+    .models-equation .eq-var { color: #c084fc; }
+    .models-equation .eq-param { color: var(--amber); }
+    .models-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px;
+    }
+    .model-chip {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 8px; padding: 10px 14px;
+      font-size: .78rem; color: var(--muted);
+      transition: border-color .15s, color .15s;
+    }
+    .model-chip:hover { border-color: rgba(0,212,184,.3); color: var(--text); }
+    .model-chip strong { color: var(--accent); display: block; font-size: .7rem; margin-bottom: 2px; }
+
+    /* ── CASE STUDY ──────────────────────────────────────────── */
+    .case-study {
+      padding: clamp(60px, 8vw, 100px) 0;
+      background: var(--bg-2);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+    .case-inner {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: start;
+    }
+    .case-numbers {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 32px;
+    }
+    .case-number {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 20px;
+    }
+    .case-number .n { font-size: 1.8rem; font-weight: 800; color: var(--accent); line-height: 1; }
+    .case-number .l { font-size: .75rem; color: var(--muted); margin-top: 4px; }
+    .case-timeline {
+      display: flex; flex-direction: column; gap: 0;
+    }
+    .case-step {
+      display: flex; gap: 16px; padding: 20px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .case-step:last-child { border-bottom: none; }
+    .case-step-num {
+      width: 28px; height: 28px; min-width: 28px;
+      border-radius: 50%; background: rgba(0,212,184,.1);
+      border: 1px solid rgba(0,212,184,.3);
+      color: var(--accent); font-size: .75rem; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .case-step-body strong { font-size: .875rem; font-weight: 600; color: var(--text); display: block; }
+    .case-step-body p { font-size: .8rem; color: var(--muted); margin-top: 3px; }
+
+    /* ── CODE EXPORT ─────────────────────────────────────────── */
+    .code-export { padding: clamp(60px, 8vw, 100px) 0; }
+    .code-export-inner { display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: center; }
+    .export-code {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); overflow: hidden;
+    }
+    .export-code-header {
+      background: var(--bg-3); border-bottom: 1px solid var(--border);
+      padding: 12px 20px; display: flex; align-items: center; gap: 8px;
+    }
+    .dot { width: 10px; height: 10px; border-radius: 50%; }
+    .dot-red   { background: #ef4444; }
+    .dot-amber { background: #f59e0b; }
+    .dot-green { background: #22c55e; }
+    .filename  { font-family: 'JetBrains Mono', monospace; font-size: .75rem; color: var(--muted); margin-left: 8px; }
+    .export-code pre {
+      font-family: 'JetBrains Mono', monospace; font-size: .78rem;
+      line-height: 1.85; padding: 24px; overflow-x: auto; color: #a8b4cc;
+    }
+    .export-code .kw  { color: #c084fc; }
+    .export-code .fn  { color: #38bdf8; }
+    .export-code .str { color: #86efac; }
+    .export-code .num { color: #f59e0b; }
+    .export-code .cmt { color: var(--muted-2); font-style: italic; }
+    .export-code .acc { color: var(--accent); }
+
+    /* ── CTA ──────────────────────────────────────────────────── */
+    .cta {
+      padding: clamp(80px, 10vw, 120px) 0;
+      text-align: center;
+    }
+    .cta h2 {
+      font-size: clamp(2rem, 4vw, 3rem); font-weight: 800;
+      line-height: 1.15; letter-spacing: -.02em;
+      background: linear-gradient(135deg, #e8edf8 30%, #00d4b8 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text; max-width: 680px; margin: 0 auto 16px;
+    }
+    .cta p { font-size: 1rem; color: var(--muted); max-width: 480px; margin: 0 auto 36px; }
+    .cta-buttons { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+    .cta-buttons .btn { padding: 14px 28px; font-size: 1rem; }
+
+    /* ── FOOTER ──────────────────────────────────────────────── */
+    footer {
+      border-top: 1px solid var(--border);
+      background: var(--bg-2);
+      padding: 40px 0;
+    }
+    .footer-inner {
+      display: flex; flex-direction: column; gap: 20px; align-items: center; text-align: center;
+    }
+    .footer-logo { font-size: 1.1rem; font-weight: 700; }
+    .footer-logo span { color: var(--accent); }
+.footer-links { display: flex; gap: 24px; }
+    .footer-links a { font-size: .8rem; color: var(--muted); transition: color .15s; }
+    .footer-links a:hover { color: var(--text); }
+    .footer-bottom { font-size: .75rem; color: var(--muted-2); }
+
+    /* ── Responsive ──────────────────────────────────────────── */
+    @media (max-width: 768px) {
+      .nav-links { display: none; }
+      .kinbiont-inner,
+      .case-inner,
+      .code-export-inner { grid-template-columns: 1fr; gap: 40px; }
+.pipeline-steps { grid-template-columns: repeat(2, 1fr); }
+      .pipeline-step::after { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── NAV ────────────────────────────────────────────────────── -->
+<nav>
+  <div class="container">
+    <div class="nav-inner">
+      <a href="/" class="nav-logo">GUI<span>biont</span></a>
+      <div class="nav-links">
+        <a href="#features">Features</a>
+        <a href="#models">Models</a>
+        <a href="#case-study">Case Study</a>
+        <a href="docs/">Documentation</a>
+      </div>
+      <div class="nav-cta">
+        <a href="https://github.com/pinheiroGroup/GUIbiont" class="btn btn-ghost" target="_blank" rel="noopener">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+          GitHub
+        </a>
+        <a href="#cta" class="btn btn-primary">Get Started</a>
+      </div>
+    </div>
+  </div>
+</nav>
+
+<!-- ── HERO ───────────────────────────────────────────────────── -->
+<section class="hero">
+  <div class="container">
+    <div class="hero-badge">
+      <strong>New</strong> &nbsp;·&nbsp; Powered by Kinbiont.jl &nbsp;·&nbsp; Julia backend
+    </div>
+    <h1>Reproducible microbial growth phenotyping, in your browser</h1>
+    <p>GUIbiont brings Kinbiont.jl's full analytical power to experimentalists through a clean browser interface. Clean, inspect, fit, cluster, and interpret plate-reader data, then export executable Julia scripts for every result.</p>
+    <div class="hero-actions">
+      <a href="https://github.com/pinheiroGroup/GUIbiont" class="btn btn-primary" target="_blank" rel="noopener">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+        View on GitHub
+      </a>
+      <a href="#features" class="btn btn-outline">Explore features</a>
+    </div>
+
+    <!-- Microplate art -->
+    <div class="hero-art">
+      <div class="hero-chart">
+        <svg class="curve-svg" viewBox="0 0 700 200" preserveAspectRatio="none" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <!-- Cluster 1: fast growers — rise early, plateau from ~x=220 -->
+          <path d="M10,158 C50,156 90,138 130,100 C160,72 190,52 220,46 C260,46 350,46 690,46" stroke="#00d4b8" stroke-width="2" stroke-linecap="round" opacity=".9"/>
+          <path d="M10,158 C55,156 95,136 135,97 C165,70 195,50 225,44 C265,44 355,44 690,44" stroke="#00d4b8" stroke-width="1.5" stroke-linecap="round" opacity=".4"/>
+          <!-- Cluster 2: slow growers — rise later, plateau from ~x=450 -->
+          <path d="M10,160 C80,159 150,155 220,144 C290,130 340,108 400,88 C450,72 510,65 690,65" stroke="#818cf8" stroke-width="2" stroke-linecap="round" opacity=".9"/>
+          <path d="M10,161 C85,160 155,156 225,144 C295,130 345,107 405,86 C455,70 515,63 690,63" stroke="#818cf8" stroke-width="1.5" stroke-linecap="round" opacity=".4"/>
+          <!-- Cluster 3: non-growing -->
+          <path d="M10,163 C200,163 500,163 690,163" stroke="#f59e0b" stroke-width="1.5" stroke-linecap="round" opacity=".6" stroke-dasharray="4 3"/>
+          <!-- Data points -->
+          <circle cx="130" cy="100" r="3" fill="#00d4b8" opacity=".8"/>
+          <circle cx="260" cy="46"  r="3" fill="#00d4b8" opacity=".6"/>
+          <circle cx="220" cy="144" r="3" fill="#818cf8" opacity=".8"/>
+          <circle cx="400" cy="88"  r="3" fill="#818cf8" opacity=".8"/>
+          <circle cx="510" cy="65"  r="3" fill="#818cf8" opacity=".6"/>
+          <!-- Teal stationary phase — x=220, exact start of flat segment in teal path -->
+          <line x1="220" y1="10" x2="220" y2="168" stroke="rgba(0,212,184,.3)" stroke-width="1" stroke-dasharray="3 3"/>
+          <text x="226" y="22" font-family="JetBrains Mono, monospace" font-size="9" fill="rgba(0,212,184,.6)">stationary phase</text>
+          <!-- Violet stationary phase — x=510, where violet path reaches its plateau y=65 -->
+          <line x1="510" y1="10" x2="510" y2="168" stroke="rgba(129,140,248,.3)" stroke-width="1" stroke-dasharray="3 3"/>
+          <text x="516" y="22" font-family="JetBrains Mono, monospace" font-size="9" fill="rgba(129,140,248,.6)">stationary phase</text>
+          <!-- Legend — bottom strip, clear of all curves -->
+          <circle cx="30"  cy="187" r="5" fill="#00d4b8"/>
+          <text x="40"  y="191" font-family="Inter, sans-serif" font-size="11" fill="#6b7a99">Fast growers</text>
+          <circle cx="145" cy="187" r="5" fill="#818cf8"/>
+          <text x="155" y="191" font-family="Inter, sans-serif" font-size="11" fill="#6b7a99">Slow growers</text>
+          <line x1="265" y1="187" x2="282" y2="187" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="3 2"/>
+          <text x="287" y="191" font-family="Inter, sans-serif" font-size="11" fill="#6b7a99">Non-growing</text>
+        </svg>
+      </div>
+      <div class="plate-grid" id="plateGrid"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ── PIPELINE ──────────────────────────────────────────────── -->
+<section class="pipeline">
+  <div class="container">
+    <p class="section-label">End-to-end workflow</p>
+    <h2 class="section-heading">From raw plate-reader files<br/>to interpretable screen-level summaries</h2>
+    <p class="section-sub">No scripting required. Every step is interactive and auditable, and every result can be exported as reproducible Julia code.</p>
+
+    <div class="pipeline-steps">
+      <div class="pipeline-step">
+        <div class="step-icon">🧫</div>
+        <div class="step-name">Raw data</div>
+        <div class="step-desc">BioTek Synergy plate-reader exports</div>
+      </div>
+      <div class="pipeline-step">
+        <div class="step-icon">🧹</div>
+        <div class="step-name">Clean</div>
+        <div class="step-desc">Parse, standardize, annotate wells</div>
+      </div>
+      <div class="pipeline-step">
+        <div class="step-icon">📈</div>
+        <div class="step-name">Inspect</div>
+        <div class="step-desc">Visualize curves, replicates, AUC</div>
+      </div>
+      <div class="pipeline-step">
+        <div class="step-icon">⚙️</div>
+        <div class="step-name">Fit</div>
+        <div class="step-desc">40+ Kinbiont.jl models, AICc selection</div>
+      </div>
+      <div class="pipeline-step">
+        <div class="step-icon">🔵</div>
+        <div class="step-name">Cluster</div>
+        <div class="step-desc">k-means/medoids/hierarchical/DBSCAN</div>
+      </div>
+      <div class="pipeline-step">
+        <div class="step-icon">🔬</div>
+        <div class="step-name">Interpret</div>
+        <div class="step-desc">ML, Spearman, partial dependence</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── FEATURES ──────────────────────────────────────────────── -->
+<section class="features" id="features">
+  <div class="container">
+    <div class="features-header">
+      <p class="section-label">Six analysis modules</p>
+      <h2 class="section-heading">Everything you need in one interface</h2>
+      <p class="section-sub">Each tab is a fully interactive analysis environment. Combine them or use any one independently.</p>
+    </div>
+    <div class="features-grid">
+
+      <div class="feature-card" data-color="teal">
+        <div class="feature-icon">🧹</div>
+        <div class="feature-title">Data Cleaning</div>
+        <div class="feature-desc">Import BioTek Synergy exports and plate layout annotations. GUIbiont parses multi-channel files and writes standardized CSVs ready for every downstream module.</div>
+        <div class="feature-pills">
+          <span class="pill">6/48/96-well plates</span>
+          <span class="pill">Multi-channel</span>
+          <span class="pill">Plate annotations</span>
+        </div>
+      </div>
+
+      <div class="feature-card" data-color="sky">
+        <div class="feature-icon">📊</div>
+        <div class="feature-title">Curve Inspection</div>
+        <div class="feature-desc">Interactively browse individual wells or replicate averages across multiple experiments. Report max OD, final OD, and area under the curve at a glance.</div>
+        <div class="feature-pills">
+          <span class="pill">Multi-experiment</span>
+          <span class="pill">Replicate averaging</span>
+          <span class="pill">AUC / max OD</span>
+        </div>
+      </div>
+
+      <div class="feature-card" data-color="violet">
+        <div class="feature-icon">⚙️</div>
+        <div class="feature-title">Single-Curve Fitting</div>
+        <div class="feature-desc">Fit individual wells or consensus replicates to any Kinbiont.jl model with configurable preprocessing: rolling-average smoothing, stationary-phase truncation, and three modes of blank subtraction.</div>
+        <div class="feature-pills">
+          <span class="pill">Blank subtraction</span>
+          <span class="pill">Stationary phase</span>
+          <span class="pill">Multi-model AICc</span>
+          <span class="pill">Code export</span>
+        </div>
+      </div>
+
+      <div class="feature-card" data-color="amber">
+        <div class="feature-icon">🔵</div>
+        <div class="feature-title">Phenotypic Clustering</div>
+        <div class="feature-desc">Group entire screens by growth-shape similarity. Non-growing wells are identified and separated before dynamic-curve clustering. Quality metrics guide cluster number selection.</div>
+        <div class="feature-pills">
+          <span class="pill">k-means / k-medoids</span>
+          <span class="pill">Hierarchical / DBSCAN</span>
+          <span class="pill">Silhouette · Dunn · DB</span>
+          <span class="pill">WCSS elbow</span>
+        </div>
+      </div>
+
+      <div class="feature-card" data-color="rose">
+        <div class="feature-icon">🚀</div>
+        <div class="feature-title">Batch Fitting</div>
+        <div class="feature-desc">Fit all selected wells asynchronously with real-time progress tracking. Download a single CSV containing model name, parameters, stationary-phase estimate, and AICc score for every well.</div>
+        <div class="feature-pills">
+          <span class="pill">Async / threaded</span>
+          <span class="pill">Progress bar</span>
+          <span class="pill">CSV export</span>
+        </div>
+      </div>
+
+      <div class="feature-card" data-color="lime">
+        <div class="feature-icon">🤖</div>
+        <div class="feature-title">Machine Learning</div>
+        <div class="feature-desc">Link batch-fit growth parameters to any external feature matrix. Compute Spearman rank correlations, train random-forest regressors, and visualize partial dependence for top predictors.</div>
+        <div class="feature-pills">
+          <span class="pill">Spearman ρ</span>
+          <span class="pill">Random forest</span>
+          <span class="pill">Partial dependence</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ── KINBIONT ───────────────────────────────────────────────── -->
+<section class="kinbiont">
+  <div class="container">
+    <div class="kinbiont-inner">
+      <div>
+        <p class="section-label">Powered by Kinbiont.jl</p>
+        <h2 class="section-heading">Full analytical power, zero scripting barrier</h2>
+        <p class="section-sub" style="max-width:none; margin-top:12px;">
+          Kinbiont is a Julia package for microbial growth analysis integrating preprocessing, model-based inference, segmented fitting, and downstream ML. GUIbiont is its experimentalist-facing browser layer.
+        </p>
+        <ul class="kinbiont-points">
+          <li><div><span>Direct model calls</span> fitting and clustering route through Kinbiont's unified API, not reimplementations</div></li>
+          <li><div><span>Code transparency</span> every GUI action can be exported as a Kinbiont Julia script for auditing and scaling</div></li>
+          <li><div><span>Model registry</span> access all 40+ models in Kinbiont's MODEL_REGISTRY without writing a single line</div></li>
+          <li><div><span>Optimizer choice</span> BOBYQA, COBYLA, ISRES, DIRECT-L, and adaptive differential evolution</div></li>
+        </ul>
+      </div>
+      <div class="kinbiont-code"><pre><span class="cmt"># What GUIbiont calls under the hood</span>
+<span class="kw">using</span> <span class="acc">Kinbiont</span>
+
+<span class="cmt"># Load preprocessed data</span>
+<span class="acc">data</span> = <span class="fn">load_growth_data</span>(<span class="str">"well_A3.csv"</span>)
+
+<span class="cmt"># Fit with automatic model selection</span>
+<span class="acc">result</span> = <span class="fn">kinbiont_fit</span>(
+  <span class="acc">data</span>,
+  models    = <span class="fn">MODEL_REGISTRY</span>,
+  optimizer = <span class="str">:BOBYQA</span>,
+  smoothing = <span class="str">:rolling_avg</span>,
+  loss      = <span class="str">:RE</span>
+)
+
+<span class="cmt"># Best model selected by AICc</span>
+<span class="fn">println</span>(result.best_model)   <span class="cmt"># :aHPM</span>
+<span class="fn">println</span>(result.parameters)   <span class="cmt"># [μ, k₁, k₂, K]</span>
+<span class="fn">println</span>(result.aicc)         <span class="cmt"># -312.4</span>
+</pre></div>
+    </div>
+  </div>
+</section>
+
+<!-- ── MODELS ─────────────────────────────────────────────────── -->
+<section class="models" id="models">
+  <div class="container">
+    <div class="models-header">
+      <p class="section-label">Growth models</p>
+      <h2 class="section-heading">From logistic to heterogeneous population dynamics</h2>
+      <p class="section-sub">GUIbiont gives you access to every model in Kinbiont's registry, including the novel aHPM model for antibiotic-resistance studies.</p>
+    </div>
+
+    <div class="models-equation">
+      <div class="eq-label">aHPM: adjusted Heterogeneous Population Model</div>
+      <div class="eq">
+        d<span class="eq-var">u</span>₁/dt = −<span class="eq-var">u</span>₁ · <span class="eq-param">k₁</span><br/>
+        d<span class="eq-var">u</span>₂/dt = <span class="eq-var">u</span>₁ · <span class="eq-param">k₁</span> + <span class="eq-param">μ_max</span> · <span class="eq-var">u</span>₂ · (1 − (<span class="eq-var">u</span>₁+<span class="eq-var">u</span>₂) / <span class="eq-param">K</span>)<sup><span class="eq-param">k₂</span></sup>
+      </div>
+      <div style="font-size:.75rem; color:var(--muted); margin-top:12px;">
+        <span class="eq-param">μ_max</span>: max specific growth rate &nbsp;·&nbsp;
+        <span class="eq-param">k₁</span>: lag-phase transition rate &nbsp;·&nbsp;
+        <span class="eq-param">k₂</span>: density-dependence exponent &nbsp;·&nbsp;
+        <span class="eq-param">K</span>: carrying capacity
+      </div>
+    </div>
+
+    <div class="models-grid">
+      <div class="model-chip"><strong>ODE · Heterogeneous</strong>aHPM</div>
+      <div class="model-chip"><strong>ODE · Heterogeneous</strong>HPM</div>
+      <div class="model-chip"><strong>ODE · Inhibition</strong>aHPM_inhibition</div>
+      <div class="model-chip"><strong>ODE · Resistance</strong>HPM_3_death_resistance</div>
+      <div class="model-chip"><strong>ODE · Death</strong>aHPM_3_death</div>
+      <div class="model-chip"><strong>Non-linear</strong>logistic</div>
+      <div class="model-chip"><strong>Non-linear</strong>Gompertz</div>
+      <div class="model-chip"><strong>Non-linear</strong>Baranyi-Richards</div>
+      <div class="model-chip"><strong>Non-linear</strong>hyper-logistic</div>
+      <div class="model-chip"><strong>Non-linear</strong>hyper-Gompertz</div>
+      <div class="model-chip"><strong>Non-linear</strong>NL_logistic</div>
+      <div class="model-chip"><strong>Non-linear</strong>NL_gompertz</div>
+      <div class="model-chip"><strong>Piecewise</strong>triple_piecewise</div>
+      <div class="model-chip"><strong>Piecewise</strong>ODE_four_piecewise</div>
+      <div class="model-chip"><strong>Diauxic</strong>Diauxic_replicator_1</div>
+      <div class="model-chip"><strong>Diauxic</strong>Diauxic_piecewise</div>
+      <div class="model-chip"><strong>+ 24 more</strong>MODEL_REGISTRY</div>
+    </div>
+  </div>
+</section>
+
+<!-- ── CASE STUDY ─────────────────────────────────────────────── -->
+<section class="case-study" id="case-study">
+  <div class="container">
+    <div class="case-inner">
+      <div>
+        <p class="section-label">Applied research</p>
+        <h2 class="section-heading"><em>E. coli</em> Keio knockout atlas</h2>
+        <p class="section-sub" style="max-width:none; margin-top:12px;">
+          GUIbiont was applied to a genome-wide <em>E. coli</em> knockout growth atlas, clustering thousands of gene-level profiles across two growth media to identify medium-dependent phenotypic classes.
+        </p>
+        <div class="case-numbers">
+          <div class="case-number">
+            <div class="n">3,844</div>
+            <div class="l">LB gene profiles</div>
+          </div>
+          <div class="case-number">
+            <div class="n">3,806</div>
+            <div class="l">M63 gene profiles</div>
+          </div>
+          <div class="case-number">
+            <div class="n">88</div>
+            <div class="l">Non-growing in M63 (auxotrophs)</div>
+          </div>
+          <div class="case-number">
+            <div class="n">1,568</div>
+            <div class="l">Cross-media phenotype shifts</div>
+          </div>
+        </div>
+      </div>
+      <div class="case-timeline">
+        <div class="case-step">
+          <div class="case-step-num">1</div>
+          <div class="case-step-body">
+            <strong>Replicate averaging & QC</strong>
+            <p>Aggregate per-gene mean curves; exclude incomplete growth trajectories using LOCF plateau detection.</p>
+          </div>
+        </div>
+        <div class="case-step">
+          <div class="case-step-num">2</div>
+          <div class="case-step-body">
+            <strong>WCSS elbow clustering</strong>
+            <p>Sweep k=2–10 with non-growing pre-screening; elbow criterion selects k=3 in both LB and M63.</p>
+          </div>
+        </div>
+        <div class="case-step">
+          <div class="case-step-num">3</div>
+          <div class="case-step-body">
+            <strong>Phenotype discovery</strong>
+            <p>M63 non-growing cluster (n=88) enriched for amino-acid and cofactor biosynthesis knockouts, consistent with auxotrophic requirements.</p>
+          </div>
+        </div>
+        <div class="case-step">
+          <div class="case-step-num">4</div>
+          <div class="case-step-body">
+            <strong>COG enrichment analysis</strong>
+            <p>Medium-responsive genes enriched for amino acid transport (E, OR=1.43) and cell motility (N, OR=1.80); defense mechanisms depleted (V, OR=0.51).</p>
+          </div>
+        </div>
+        <div class="case-step">
+          <div class="case-step-num">5</div>
+          <div class="case-step-body">
+            <strong>Batch-fit parameter table</strong>
+            <p>Growth-rate and carrying-capacity estimates for all 7,770 gene-medium curves, ready for downstream ML analysis.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── CODE EXPORT ────────────────────────────────────────────── -->
+<section class="code-export">
+  <div class="container">
+    <div class="code-export-inner">
+      <div>
+        <p class="section-label">Reproducibility by design</p>
+        <h2 class="section-heading">Every analysis exports as executable Julia code</h2>
+        <p class="section-sub" style="max-width:none; margin-top:12px;">
+          GUI operations are not trapped in an opaque session. Single-curve fits, batch runs, and clustering analyses can all be downloaded as Julia scripts that reproduce the exact Kinbiont calls, making every result auditable, scriptable, and shareable.
+        </p>
+        <ul class="kinbiont-points" style="margin-top:24px;">
+          <li><div><span>Single-curve export</span> copy the fit with all preprocessing parameters</div></li>
+          <li><div><span>Batch-fit scripts</span> regenerate the full parameter table outside the GUI</div></li>
+          <li><div><span>Clustering export</span> reproduce cluster assignments with identical settings</div></li>
+        </ul>
+      </div>
+      <div class="export-code">
+        <div class="export-code-header">
+          <div class="dot dot-red"></div>
+          <div class="dot dot-amber"></div>
+          <div class="dot dot-green"></div>
+          <span class="filename">exported_fit_A3.jl</span>
+        </div>
+        <pre><span class="cmt"># Generated by GUIbiont · 2025-05-16</span>
+<span class="kw">using</span> <span class="acc">Kinbiont</span>
+
+<span class="acc">t</span>  = [<span class="num">0.0</span>, <span class="num">0.5</span>, <span class="num">1.0</span>, <span class="num">2.0</span>, <span class="num">4.0</span>, <span class="num">8.0</span>, <span class="num">16.0</span>]
+<span class="acc">od</span> = [<span class="num">0.04</span>, <span class="num">0.04</span>, <span class="num">0.05</span>, <span class="num">0.12</span>, <span class="num">0.45</span>, <span class="num">0.81</span>, <span class="num">0.92</span>]
+
+<span class="acc">result</span> = <span class="fn">kinbiont_fit</span>(
+  <span class="fn">GrowthData</span>(<span class="acc">t</span>, <span class="acc">od</span>),
+  model        = <span class="str">:aHPM</span>,
+  optimizer    = <span class="str">:BOBYQA</span>,
+  smoothing    = <span class="str">:rolling_avg</span>,
+  smooth_win   = <span class="num">14</span>,
+  blank_val    = <span class="num">0.038</span>,
+  blank_method = <span class="str">:point_by_point</span>,
+  stat_phase   = <span class="kw">true</span>,
+  loss         = <span class="str">:RE</span>
+)
+
+<span class="fn">println</span>(<span class="str">"μ_max = "</span>, result.params[<span class="num">1</span>])
+<span class="fn">println</span>(<span class="str">"AICc  = "</span>, result.aicc)</pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── CTA ────────────────────────────────────────────────────── -->
+<section class="cta" id="cta">
+  <div class="container">
+    <div class="tag">Open source · MIT license</div>
+    <h2 style="margin-top:20px;">Start phenotyping your screen today</h2>
+    <p>GUIbiont runs on any machine with Julia. Install it in minutes and bring your plate-reader data.</p>
+    <div class="cta-buttons">
+      <a href="https://github.com/pinheiroGroup/GUIbiont" class="btn btn-primary" target="_blank" rel="noopener">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+        Clone on GitHub
+      </a>
+      <a href="docs/" class="btn btn-outline">Read the docs</a>
+    </div>
+
+    <!-- Quick install -->
+    <div style="margin-top:40px; display:inline-block; background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:16px 24px; font-family:'JetBrains Mono',monospace; font-size:.85rem; color:var(--muted); text-align:left;">
+      <span style="color:var(--muted-2); user-select:none;">$ </span><span style="color:var(--accent);">julia</span> launch_web_app.jl
+      <span style="color:var(--muted-2); display:block; margin-top:4px;">→  Server running at http://localhost:8080</span>
+    </div>
+  </div>
+</section>
+
+<!-- ── FOOTER ─────────────────────────────────────────────────── -->
+<footer>
+  <div class="container">
+    <div class="footer-inner">
+      <div class="footer-logo">GUI<span>biont</span></div>
+      <div class="footer-links">
+        <a href="https://github.com/pinheiroGroup/GUIbiont" target="_blank" rel="noopener">GitHub</a>
+        <a href="docs/">Documentation</a>
+        <a href="https://github.com/pinheiroGroup/GUIbiont/issues" target="_blank" rel="noopener">Issues</a>
+      </div>
+      <div class="footer-bottom">
+        Built on <a href="https://github.com/pinheiroGroup/Kinbiont.jl" style="color:var(--accent)" target="_blank" rel="noopener">Kinbiont.jl</a> &nbsp;·&nbsp; MIT License
+      </div>
+      <a href="https://fuzue.tech" target="_blank" rel="noopener" style="opacity:.5; transition:opacity .2s;" onmouseover="this.style.opacity='.9'" onmouseout="this.style.opacity='.5'">
+        <svg height="28" viewBox="454 250 582 266" xmlns="http://www.w3.org/2000/svg" fill="white">
+          <g><path d="M853.3,255.7h51.5v197c0,11.3-1.8,20.4-5.3,27.4c-3.5,7.3-9.2,13.9-17.3,19.9c-10.9,7.9-24.1,11.8-39.6,11.8c-17.6,0-32.4-4.4-44.3-13.1c-15.1-11.1-22.7-28.9-22.7-53.3v-36.3L827,286.3v154.6c0,8.3,1,14.2,3,17.6s5.4,5.2,10.2,5.2c4.9,0,8.3-1.6,10.2-4.8c1.9-3.4,2.8-9.3,2.8-17.9V255.7z"/></g>
+          <polygon points="1030.8,255.8 1018.3,308 975.6,308 975.6,328.6 1002.1,328.6 1002.1,380.8 975.6,380.8 975.6,455.9 1030.8,455.9 1030.8,508 923.4,508.1 923.4,255.8"/>
+          <path d="M728.7,455.9l80.9-200.1l-350.5,0.1v254h51.7V434h20.5v-52.2h-20.5V308l209.3-0.1L638.5,508c0,0,85.8,0,133.8,0c-23.3-11.4-23.7-52.2-23.7-52.2H728.7z"/>
+          <path d="M679,329.9h-49.3V441c0,8.6-0.9,14.5-2.8,17.9c-1.9,3.2-5.3,4.8-10.2,4.8c-4.8,0-8.2-1.7-10.2-5.2c-2-3.5-3-9.3-3-17.6v-111h-51.5v115.5c0,24.4,7.6,42.2,22.7,53.3c8.9,6.5,19.3,10.5,31.3,12.2L679,329.9z"/>
+        </svg>
+      </a>
+    </div>
+  </div>
+</footer>
+
+<script>
+  /* ── Animated microplate grid ─────────────────────────────── */
+  const grid = document.getElementById('plateGrid');
+  const rows = 8, cols = 12;
+  const clusters = [
+    { color: '#00d4b8', op: .55, wells: [] },
+    { color: '#818cf8', op: .45, wells: [] },
+    { color: '#f59e0b', op: .3,  wells: [] },
+    { color: '#fb7185', op: .25, wells: [] },
+  ];
+
+  // Assign wells to clusters in a vaguely realistic pattern
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const i = r * cols + c;
+      let ci;
+      if (r < 2)       ci = 0; // fast growers - top rows
+      else if (r < 5)  ci = 1; // slow growers - middle
+      else if (r === 7 && c > 7) ci = 3; // rare phenotype
+      else if (c > 9)  ci = 2; // non-growing - last cols
+      else             ci = 1;
+      clusters[ci].wells.push(i);
+    }
+  }
+
+  for (let i = 0; i < rows * cols; i++) {
+    const well = document.createElement('div');
+    well.className = 'plate-well';
+    const cl = clusters.find(c => c.wells.includes(i));
+    const delay = (Math.random() * 3).toFixed(2);
+    const dur   = (2.5 + Math.random() * 2).toFixed(2);
+    well.style.cssText = `--delay:${delay}s; --d:${dur}s; --op:${cl.op};`;
+    well.style.setProperty('--glow', cl.color);
+    // inline style for the ::after pseudo element isn't possible, use data attr
+    well.dataset.color = cl.color;
+    grid.appendChild(well);
+  }
+
+  // Inject dynamic keyframe colors via a style tag
+  const styleEl = document.createElement('style');
+  const colorMap = {
+    '#00d4b8': '.plate-well[data-color="#00d4b8"]::after',
+    '#818cf8': '.plate-well[data-color="#818cf8"]::after',
+    '#f59e0b': '.plate-well[data-color="#f59e0b"]::after',
+    '#fb7185': '.plate-well[data-color="#fb7185"]::after',
+  };
+  styleEl.textContent = Object.entries(colorMap).map(([color, sel]) =>
+    `${sel} { background: radial-gradient(circle, ${color} 0%, transparent 70%); }`
+  ).join('\n');
+  document.head.appendChild(styleEl);
+
+  /* ── Nav active state ────────────────────────────────────── */
+  const sections = document.querySelectorAll('section[id]');
+  const navLinks = document.querySelectorAll('.nav-links a');
+  const io = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        navLinks.forEach(a => {
+          a.style.color = a.getAttribute('href') === `#${e.target.id}` ? 'var(--text)' : '';
+        });
+      }
+    });
+  }, { threshold: .4 });
+  sections.forEach(s => io.observe(s));
+</script>
+</body>
+</html>
