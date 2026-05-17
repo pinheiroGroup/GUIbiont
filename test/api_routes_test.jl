@@ -322,6 +322,32 @@ end
     @test !isempty(body[:sweep])
 end
 
+@testset "POST /api/cluster-sweep — NaN cells in input do not blank the sweep" begin
+    # Regression: previously /api/cluster-sweep did not sanitise NaN before
+    # smoothing (unlike /api/cluster which calls _fill_nan_colmean). Any NaN
+    # cell caused every per-k preprocess() call to throw inside a swallowed
+    # `try ... continue`, collapsing the response to {"sweep": []}.
+    csv_with_nan = """Time,S1,S2,S3,S4,S5,S6
+,0.01,0.01,0.5,0.5,0.9,0.9
+1.0,0.02,0.02,0.6,0.6,1.0,1.0
+2.0,0.05,,0.8,0.8,1.2,1.2
+3.0,0.10,0.09,1.0,1.0,1.3,1.3
+4.0,0.20,0.19,1.2,1.2,,1.4
+5.0,0.40,0.38,1.3,1.3,1.4,1.4
+6.0,0.70,0.68,1.4,1.4,1.4,1.4
+7.0,1.00,0.98,1.4,1.4,1.4,1.4
+8.0,1.20,1.18,1.4,1.4,1.4,1.4
+9.0,1.30,1.28,,1.4,1.4,1.4
+10.0,1.35,1.33,1.4,1.4,1.4,1.4
+11.0,1.38,1.36,1.4,1.4,1.4,1.4
+12.0,1.40,1.38,1.4,1.4,1.4,1.4
+"""
+    status, body = post_json("/api/cluster-sweep",
+                             Dict("csv" => csv_with_nan, "k_max" => 4))
+    @test status == 200
+    @test !isempty(body[:sweep])
+end
+
 # ---------------------------------------------------------------------------
 # POST /api/cluster-compare
 # ---------------------------------------------------------------------------

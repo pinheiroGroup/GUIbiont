@@ -413,6 +413,12 @@ end
         end
     end
 
+    # Replace NaN/Inf with column means before smoothing — matches /api/cluster
+    # (ml.jl:175). Without this, any NaN cell makes every per-k preprocess() call
+    # throw inside the `try ... continue` below, and the response silently
+    # collapses to {"sweep": []} with no error message.
+    curves = _fill_nan_colmean(curves)
+
     # Smooth once, then sweep over k. Match /api/cluster: when the smoother
     # shortens the series (rolling_avg drops smooth_pt_avg-1 points), update
     # `times` to match so the per-k GrowthData(curves_for, times, ...) calls
