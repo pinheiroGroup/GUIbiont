@@ -225,9 +225,8 @@ async function runBatchFit() {
                         progressBar.value = 100;
                         progressPct.textContent = '100%';
                         progressLbl.textContent = `Done — ${p.summary.success}/${total} converged`;
-                        p._request = requestPayload;
-                        state.lastBatchFitData = p;
-                        displayBatchResults(p);
+                        state.lastBatchFitData = { ...p, _request: requestPayload };
+                        displayBatchResults(state.lastBatchFitData);
                         resolve();
                     }
                 } catch (e) {
