@@ -4,7 +4,7 @@ import { state, API_BASE } from './state.js';
 const DEFAULT_COMPARE_MODELS = new Set([
     'aHPM', 'logistic', 'gompertz', 'baranyi_richards', 'NL_Gompertz', 'NL_logistic'
 ]);
-const DEFAULT_BATCH_FIT_ABSTOL = '1e-12';
+const DEFAULT_BATCH_FIT_ABSTOL = '1e-15';
 
 // ---------------------------------------------------------------------------
 // Batch fit tab — experiment / well selection
