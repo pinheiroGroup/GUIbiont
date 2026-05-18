@@ -6,6 +6,7 @@ using OptimizationBBO: BBO_adaptive_de_rand_1_bin_radiuslimited
 using OptimizationNLopt: NLopt
 
 const DEFAULT_FIT_MAXITERS = 100000
+const MAX_FIT_MAXITERS     = 200_000
 
 # Map of optimizer name strings to actual Optimization.jl algorithm instances.
 # Only optimizers that support box constraints (lb/ub) are included.
@@ -156,14 +157,14 @@ function _smart_initial_value(param_name, features::Dict{Symbol, Float64})
            occursin("initial", compact) || occursin("inoc", compact) ||
            occursin("baseline", compact)
         return features[:baseline]
+    elseif compact in ("lag", "tl", "tlag", "lagtime") ||
+           startswith(compact, "tlag") || occursin("lambda", compact) ||
+           occursin("delay", compact) || occursin("lag", compact)
+        return features[:lag_time]
     elseif occursin("mu", compact) || compact in ("r", "gr") ||
            occursin("growth", compact) || occursin("rate", compact) ||
            occursin("gr", compact)
         return features[:growth_rate]
-    elseif compact in ("lag", "tl", "tlag", "lagtime") ||
-           startswith(compact, "tlag") || occursin("lambda", compact) ||
-           occursin("delay", compact)
-        return features[:lag_time]
     elseif compact == "k" || occursin("nmax", compact) || occursin("ymax", compact) ||
            occursin("xmax", compact) || occursin("maxod", compact) ||
            occursin("carrying", compact) || occursin("capacity", compact) ||

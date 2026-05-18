@@ -10,7 +10,7 @@ const BATCH_JOBS_LOCK = ReentrantLock()
     model_name     = string(body.model_name)
     model_names    = String[string(m) for m in body.model_names]
     optimizer      = string(body.optimizer)
-    maxiters       = body.maxiters > 0 ? body.maxiters : DEFAULT_FIT_MAXITERS
+    maxiters       = clamp(body.maxiters > 0 ? body.maxiters : DEFAULT_FIT_MAXITERS, 1, MAX_FIT_MAXITERS)
     abstol         = body.abstol > 0.0 ? body.abstol : 0.0
 
     data_file        = joinpath(CLEAN_DATA_PATH, experiment, "data_channel_1.csv")
@@ -85,7 +85,7 @@ end
     experiment_name  = string(body.experiment)
     model_name       = string(body.model_name)
     optimizer        = string(body.optimizer)
-    maxiters         = body.maxiters > 0 ? body.maxiters : DEFAULT_FIT_MAXITERS
+    maxiters         = clamp(body.maxiters > 0 ? body.maxiters : DEFAULT_FIT_MAXITERS, 1, MAX_FIT_MAXITERS)
     abstol           = body.abstol > 0.0 ? body.abstol : 0.0
     calibration_file = "./cal_curve_avg.csv"
 
@@ -276,7 +276,7 @@ end
     cal_override    = string(body.calibration_file)
     requested_wells = isempty(body.wells) ? nothing : String[string(w) for w in body.wells]
     optimizer       = string(body.optimizer)
-    maxiters        = body.maxiters > 0 ? body.maxiters : DEFAULT_FIT_MAXITERS
+    maxiters        = clamp(body.maxiters > 0 ? body.maxiters : DEFAULT_FIT_MAXITERS, 1, MAX_FIT_MAXITERS)
     abstol          = body.abstol > 0.0 ? body.abstol : 0.0
 
     if isempty(model_names_req)
