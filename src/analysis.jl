@@ -5,7 +5,7 @@
 using OptimizationBBO: BBO_adaptive_de_rand_1_bin_radiuslimited
 using OptimizationNLopt: NLopt
 
-const DEFAULT_FIT_MAXITERS = 20000
+const DEFAULT_FIT_MAXITERS = 100000
 
 # Map of optimizer name strings to actual Optimization.jl algorithm instances.
 # Only optimizers that support box constraints (lb/ub) are included.

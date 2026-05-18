@@ -190,8 +190,8 @@ export function generateBatchCode(batchData, withComments) {
     const modelNames = req.model_names || [];
     const blankSub   = req.blank_subtraction || false;
     const blankMethod= req.blank_method      || 'pointbypoint';
-    const maxiters   = req.maxiters ?? batchData.maxiters ?? 20000;
-    const abstol     = req.abstol ?? batchData.abstol ?? 1e-6;
+    const maxiters   = req.maxiters ?? batchData.maxiters ?? 100000;
+    const abstol     = req.abstol ?? batchData.abstol ?? 1e-12;
     const optParams  = abstol > 0
         ? `(maxiters = ${maxiters}, abstol = ${abstol})`
         : `(maxiters = ${maxiters},)`;
