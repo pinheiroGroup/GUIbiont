@@ -233,12 +233,31 @@ function fit_well_data(
         shift = 0.0
     end
 
-    data = GrowthData(reshape(od_for_fit, 1, :), time_numeric, [label])
+    # Per-optimizer data conditioning:
+    #   - BOBYQA uses a quadratic local model and gets stuck in spurious minima
+    #     created by raw noise → needs smoothed full curve (KinBiont smooths and
+    #     cuts stationary phase internally).
+    #   - COBYLA (linear local), BBO (stochastic global), and others perform best
+    #     on the pre-cut growth-only curve with no smoothing — sharper loss
+    #     surface, cleaner convergence.
+    t_peak = time_numeric[argmax(od_for_fit)]
+    needs_smoothing = uppercase(optimizer) in ("BOBYQA", "LN_BOBYQA")
+
+    if needs_smoothing
+        time_fit = time_numeric
+        od_fit   = od_for_fit
+    else
+        cut_idx  = argmax(od_for_fit)
+        time_fit = time_numeric[1:cut_idx]
+        od_fit   = od_for_fit[1:cut_idx]
+    end
+
+    data = GrowthData(reshape(od_fit, 1, :), time_fit, [label])
 
     # Multi-model: compare a set of models and pick the best by AICc.
     if !isempty(model_names)
         models = [MODEL_REGISTRY[m] for m in model_names if haskey(MODEL_REGISTRY, m)]
-        initial_params = [smart_initial_params(m.param_names, time_numeric, od_for_fit) for m in models]
+        initial_params = [smart_initial_params(m.param_names, time_fit, od_fit) for m in models]
         spec = ModelSpec(
             models,
             initial_params;
@@ -248,7 +267,7 @@ function fit_well_data(
     else
         model = MODEL_REGISTRY[model_name]
         n_params = length(model.param_names)
-        p0 = smart_initial_params(model.param_names, time_numeric, od_for_fit)
+        p0 = smart_initial_params(model.param_names, time_fit, od_fit)
         initial_params = [p0]
         spec = ModelSpec(
             [model],
@@ -260,19 +279,28 @@ function fit_well_data(
 
     opt_params = abstol > 0.0 ? (maxiters = maxiters, abstol = abstol) : (maxiters = maxiters,)
 
-    opts = FitOptions(
-        scattering_correction           = false,
-        smooth                          = true,
-        smooth_method                   = :rolling_avg,
-        smooth_pt_avg                   = 14,
-        cut_stationary_phase            = true,
-        stationary_percentile_thr       = 0.05,
-        stationary_pt_smooth_derivative = 10,
-        stationary_win_size             = 5,
-        loss                            = "RE",
-        optimizer                       = resolve_optimizer(optimizer),
-        opt_params                      = opt_params,
-    )
+    opts = needs_smoothing ?
+        FitOptions(
+            scattering_correction           = false,
+            smooth                          = true,
+            smooth_method                   = :rolling_avg,
+            smooth_pt_avg                   = 14,
+            cut_stationary_phase            = true,
+            stationary_percentile_thr       = 0.05,
+            stationary_pt_smooth_derivative = 10,
+            stationary_win_size             = 5,
+            loss                            = "RE",
+            optimizer                       = resolve_optimizer(optimizer),
+            opt_params                      = opt_params,
+        ) :
+        FitOptions(
+            scattering_correction           = false,
+            smooth                          = false,
+            cut_stationary_phase            = false,
+            loss                            = "RE",
+            optimizer                       = resolve_optimizer(optimizer),
+            opt_params                      = opt_params,
+        )
 
     fit_results = kinbiont_fit(data, spec, opts)
     r = fit_results[1]
@@ -286,15 +314,24 @@ function fit_well_data(
     # The rolling-average smoother drops the first (pt_avg-1) time points, so
     # r.times[1] > time_numeric[1].  Prepend a flat segment anchored to the
     # first experimental OD so the fit line starts at the same time as the data.
-    fit_start_idx = argmin(abs.(time_numeric .- r.times[1]))
+    fit_start_idx = argmin(abs.(time_fit .- r.times[1]))
     if fit_start_idx > 1
-        pre_times    = time_numeric[1:fit_start_idx - 1]
+        pre_times    = time_fit[1:fit_start_idx - 1]
         pre_fit_od   = fill(anchor, length(pre_times))
         fit_time_out = vcat(pre_times, r.times)
         fit_od_out   = vcat(pre_fit_od, fit_od_curve)
     else
-        fit_time_out = r.times
-        fit_od_out   = fit_od_curve
+        fit_time_out = collect(r.times)
+        fit_od_out   = collect(fit_od_curve)
+    end
+
+    # Crop the fit display at the OD peak — the fit may extend past the peak
+    # if KinBiont's internal stationary phase detector overshoots. The marker
+    # is at t_peak, so the fit must end there too.
+    crop_idx = findlast(t -> t <= t_peak, fit_time_out)
+    if crop_idx !== nothing && crop_idx < length(fit_time_out)
+        fit_time_out = fit_time_out[1:crop_idx]
+        fit_od_out   = fit_od_out[1:crop_idx]
     end
 
     result = Dict{String, Any}(
@@ -312,7 +349,7 @@ function fit_well_data(
         "blank_subtraction"      => subtract_blank,
         "blank_method"           => blank_method,
         "blank_wells"            => blank_well_names,
-        "stationary_phase_start" => r.times[end],
+        "stationary_phase_start" => t_peak,
         "aic"                    => r.best_aic,
     )
 
