@@ -5,8 +5,8 @@
 using OptimizationBBO: BBO_adaptive_de_rand_1_bin_radiuslimited
 using OptimizationNLopt: NLopt
 
-const DEFAULT_FIT_MAXITERS = 20000
-const MAX_FIT_MAXITERS     = 100_000
+const DEFAULT_FIT_MAXITERS = 100000
+const MAX_FIT_MAXITERS     = 200_000
 
 # Map of optimizer name strings to actual Optimization.jl algorithm instances.
 # Only optimizers that support box constraints (lb/ub) are included.
@@ -205,7 +205,7 @@ function fit_well_data(
     model_names::Vector{String} = String[],
     optimizer::String = "BOBYQA",
     maxiters::Int = DEFAULT_FIT_MAXITERS,
-    abstol::Float64 = 1e-6,
+    abstol::Float64 = 1e-15,
 )
     if subtract_blank && blank_value > 0.0
         if blank_method == "pointbypoint" && length(blank_timeseries) == length(od_raw)
