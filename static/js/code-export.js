@@ -198,7 +198,7 @@ export function generateBatchCode(batchData, withComments) {
     const blankSub   = req.blank_subtraction || false;
     const blankMethod= req.blank_method      || 'pointbypoint';
     const maxiters   = req.maxiters ?? batchData.maxiters ?? 100000;
-    const abstol     = req.abstol ?? batchData.abstol ?? 1e-12;
+    const abstol     = req.abstol ?? batchData.abstol ?? 1e-15;
     const optParams  = abstol > 0
         ? `(maxiters = ${maxiters}, abstol = ${abstol})`
         : `(maxiters = ${maxiters},)`;
