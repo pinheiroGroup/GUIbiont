@@ -33,6 +33,25 @@
             font-weight: 300;
         }
 
+        .header .app-title {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.18em;
+            line-height: 1;
+        }
+
+        .app-title-petri-icon {
+            display: block;
+            flex: 0 0 auto;
+            height: 1em;
+            width: auto;
+        }
+
+        .app-title-petri-icon + .app-title-icon-fallback {
+            display: none;
+        }
+
         .header p {
             font-size: 1.2em;
             opacity: 0.9;
