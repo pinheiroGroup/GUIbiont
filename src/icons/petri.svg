@@ -12,7 +12,17 @@
       <stop offset="0.75" stop-color="#8fc1ff"/>
       <stop offset="1" stop-color="#ecfbff"/>
     </linearGradient>
-    <radialGradient id="colony" cx="35%" cy="25%" r="75%">
+    <radialGradient id="colony1" cx="35%" cy="25%" r="75%">
+      <stop offset="0" stop-color="#d3d1ff"/>
+      <stop offset="0.45" stop-color="#5b55ff"/>
+      <stop offset="1" stop-color="#3934cb"/>
+    </radialGradient>
+<radialGradient id="colony2" cx="35%" cy="25%" r="75%">
+      <stop offset="0" stop-color="#ffd1d1"/>
+      <stop offset="0.45" stop-color="#ff5555"/>
+      <stop offset="1" stop-color="#cb3434"/>
+    </radialGradient>
+<radialGradient id="colony3" cx="35%" cy="25%" r="75%">
       <stop offset="0" stop-color="#fbffd1"/>
       <stop offset="0.45" stop-color="#e6ff55"/>
       <stop offset="1" stop-color="#9acb34"/>
@@ -63,7 +73,7 @@
       <bx:file format="svg"/>
     </bx:export>
   </defs>
-  <g filter="url(#softShadow)" style="" transform="matrix(1.208254, 0, 0, 1.208254, -103.792511, -47.320641)">
+  <g filter="url(#softShadow)" style="" transform="matrix(1.208254, 0, 0, 1.208254, -103.792511, -29.320641)">
     <ellipse cx="512" cy="424" rx="382" ry="264" fill="url(#rim)" opacity="0.95"/>
     <ellipse cx="512" cy="424" rx="354" ry="239" fill="#ffffff" opacity="0.38"/>
     <ellipse cx="512" cy="445" rx="336" ry="234" fill="url(#agar)" stroke="#2085df" stroke-width="7"/>
@@ -83,17 +93,17 @@
       <g filter="url(#colShadow)"/>
     </g>
   </g>
-  <g clip-path="url(#agarClip)" style="" transform="matrix(1.208254, 0, 0, 1.208254, -102.792511, -47.320641)">
-    <circle cx="430" cy="348" r="55" fill="url(#colony)" filter="url(#colonyShadow)"/>
+  <g clip-path="url(#agarClip)" style="" transform="matrix(1.208254, 0, 0, 1.208254, -102.792511, -29.320641)">
+    <circle cx="430" cy="348" r="55" fill="url(#colony1)" filter="url(#colonyShadow)"/>
     <circle cx="454" cy="327" r="15" fill="#fffde0" opacity="0.82"/>
     <circle cx="470" cy="359" r="7" fill="#fffde0" opacity="0.78"/>
-    <circle cx="638" cy="444" r="88" fill="url(#colony)" filter="url(#colonyShadow)"/>
+    <circle cx="638" cy="444" r="88" fill="url(#colony2)" filter="url(#colonyShadow)"/>
     <circle cx="690" cy="402" r="31" fill="#fffde0" opacity="0.78"/>
     <circle cx="722" cy="451" r="12" fill="#fffde0" opacity="0.75"/>
-    <circle cx="432" cy="548" r="72" fill="url(#colony)" filter="url(#colonyShadow)"/>
+    <circle cx="432" cy="548" r="72" fill="url(#colony3)" filter="url(#colonyShadow)"/>
     <circle cx="476" cy="515" r="24" fill="#fffde0" opacity="0.80"/>
     <circle cx="504" cy="562" r="10" fill="#fffde0" opacity="0.75"/>
   </g>
-  <ellipse cx="514.834" cy="490.352" rx="405.973" ry="282.731" fill="none" stroke="#1d79d7" stroke-width="6" opacity="0.75" style=""/>
-  <ellipse cx="514.834" cy="464.979" rx="461.553" ry="318.979" fill="none" stroke="#ffffff" stroke-width="7" opacity="0.55" style=""/>
+  <ellipse cx="514.834" cy="508.352" rx="405.973" ry="282.731" fill="none" stroke="#1d79d7" stroke-width="6" opacity="0.75" style=""/>
+  <ellipse cx="514.834" cy="482.979" rx="461.553" ry="318.979" fill="none" stroke="#ffffff" stroke-width="7" opacity="0.55" style=""/>
 </svg>
