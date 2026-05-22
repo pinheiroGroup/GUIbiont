@@ -277,6 +277,20 @@ function _correlationsForParam(correlations, param) {
         .sort((a, b) => Math.abs(Number(b[param])) - Math.abs(Number(a[param])));
 }
 
+function _mlPlotConfig(svgFilename) {
+    return {
+        responsive: true,
+        modeBarButtonsToAdd: [{
+            name: 'Download plot as SVG',
+            icon: Plotly.Icons.camera,
+            click: gd => Plotly.downloadImage(gd, {
+                format: 'svg',
+                filename: svgFilename,
+            }),
+        }],
+    };
+}
+
 function _drawCorrBar(correlations, param) {
     const sorted = _correlationsForParam(correlations, param).slice(0, 30);
 
@@ -297,7 +311,7 @@ function _drawCorrBar(correlations, param) {
         yaxis:   { autorange: 'reversed' },
         height:  Math.max(300, features.length * 20 + 80),
         title:   `Spearman ρ — features vs ${param}`,
-    }, { responsive: true });
+    }, _mlPlotConfig(`ml-correlation-${param}`));
 }
 
 function onCorrParamChange() {
@@ -436,7 +450,7 @@ function renderImportanceCharts(importance, selectedParams) {
             yaxis:  { autorange: 'reversed' },
             height: 360,
             title:  `Feature importance — ${param}`,
-        }, { responsive: true });
+        }, _mlPlotConfig(`ml-feature-importance-${param}`));
     });
 }
 
@@ -480,7 +494,7 @@ function renderPDPCharts(pdp, selectedParams) {
             height: 400,
             margin: { l: 70, r: 20, t: 50, b: 60 },
             legend: { orientation: 'v', x: 1.02, xanchor: 'left' },
-        }, { responsive: true });
+        }, _mlPlotConfig(`ml-partial-dependence-${param}`));
     });
 }
 
