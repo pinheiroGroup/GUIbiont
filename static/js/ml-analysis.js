@@ -36,6 +36,7 @@ function isNumericColumn(text, colIdx) {
 // ---------------------------------------------------------------------------
 
 function onFitResultsFileChange() {
+    resetMlExport();
     const file = document.getElementById('ml-fit-file').files[0];
     const label = document.getElementById('ml-fit-file-label');
     label.textContent = file ? file.name : 'No file chosen';
@@ -100,6 +101,7 @@ function onFitResultsFileChange() {
 }
 
 function onFeatureMatrixFileChange() {
+    resetMlExport();
     const file = document.getElementById('ml-feature-file').files[0];
     const label = document.getElementById('ml-feature-file-label');
     label.textContent = file ? file.name : 'No file chosen';
@@ -163,7 +165,21 @@ function validateLabels() {
 function updateMlRunBtn() {
     const hasFit  = !!state._fitCsvText;
     const hasFeat = !!state._featCsvText;
-    document.getElementById('ml-run-btn').disabled = !(hasFit && hasFeat);
+    const canRun = hasFit && hasFeat;
+    document.getElementById('ml-run-btn').disabled = !canRun;
+    if (!canRun) resetMlExport();
+}
+
+function resetMlExport() {
+    state._mlResults = null;
+    const exportBtn = document.getElementById('ml-export-btn');
+    if (exportBtn) exportBtn.disabled = true;
+}
+
+function enableMlExport(data) {
+    state._mlResults = data;
+    const exportBtn = document.getElementById('ml-export-btn');
+    if (exportBtn) exportBtn.disabled = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -190,6 +206,7 @@ async function runMlAnalysis() {
 
     const statusEl = document.getElementById('ml-status');
     const resultsEl = document.getElementById('ml-results');
+    resetMlExport();
     statusEl.textContent = 'Running analysis…';
     statusEl.style.display = 'block';
     resultsEl.style.display = 'none';
@@ -216,6 +233,7 @@ async function runMlAnalysis() {
 
         const data = await resp.json();
         state._mlCorrelations = data.correlations;
+        enableMlExport(data);
         statusEl.style.display = 'none';
         renderMlResults(data, selectedParams);
         resultsEl.style.display = 'block';
@@ -252,11 +270,15 @@ function renderCorrelationChart(correlations) {
     if (activeParam) _drawCorrBar(correlations, activeParam);
 }
 
+function _correlationsForParam(correlations, param) {
+    return [...(correlations || [])]
+        .filter(r => r[param] !== null && r[param] !== undefined &&
+            r[param] !== '' && Number.isFinite(Number(r[param])))
+        .sort((a, b) => Math.abs(Number(b[param])) - Math.abs(Number(a[param])));
+}
+
 function _drawCorrBar(correlations, param) {
-    const sorted = [...correlations]
-        .filter(r => r[param] !== undefined && !isNaN(r[param]))
-        .sort((a, b) => Math.abs(b[param]) - Math.abs(a[param]))
-        .slice(0, 30);
+    const sorted = _correlationsForParam(correlations, param).slice(0, 30);
 
     const features = sorted.map(r => r.feature);
     const rhos     = sorted.map(r => r[param]);
@@ -281,6 +303,106 @@ function _drawCorrBar(correlations, param) {
 function onCorrParamChange() {
     const sel = document.getElementById('ml-corr-param-sel');
     if (state._mlCorrelations) _drawCorrBar(state._mlCorrelations, sel.value);
+}
+
+function _downloadCSV(rows, filename) {
+    const csv = rows
+        .map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
+        .join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+}
+
+function _mlResultRows(data) {
+    const rows = [[
+        'growth_parameter',
+        'feature',
+        'spearman_rho',
+        'importance',
+        'pdp_feature_value',
+        'pdp_mean_prediction',
+    ]];
+    const merged = new Map();
+
+    function resultRow(param, feature) {
+        const key = `${param}\u0000${feature}`;
+        if (!merged.has(key)) {
+            merged.set(key, {
+                param,
+                feature,
+                spearman: '',
+                importance: '',
+                pdpGrid: [],
+                pdpMean: [],
+            });
+        }
+        return merged.get(key);
+    }
+
+    const correlations = data.correlations || [];
+    const corrParams = correlations.reduce((params, row) => {
+        Object.keys(row || {}).forEach(key => {
+            if (key !== 'feature' && !params.includes(key)) params.push(key);
+        });
+        return params;
+    }, []);
+
+    corrParams.forEach(param => {
+        _correlationsForParam(correlations, param).forEach(row => {
+            resultRow(param, row.feature ?? '').spearman = row[param];
+        });
+    });
+
+    Object.entries(data.importance || {}).forEach(([param, rankings]) => {
+        (rankings || []).forEach(row => {
+            resultRow(param, row.feature ?? '').importance = row.importance ?? '';
+        });
+    });
+
+    Object.entries(data.pdp || {}).forEach(([param, curves]) => {
+        (curves || []).forEach(curve => {
+            const row = resultRow(param, curve.feature ?? '');
+            row.pdpGrid = curve.grid || [];
+            row.pdpMean = curve.mean || [];
+        });
+    });
+
+    merged.forEach(row => {
+        const nPdpPoints = Math.max(row.pdpGrid.length, row.pdpMean.length);
+        if (nPdpPoints === 0) {
+            rows.push([
+                row.param,
+                row.feature,
+                row.spearman,
+                row.importance,
+                '',
+                '',
+            ]);
+            return;
+        }
+
+        for (let i = 0; i < nPdpPoints; i++) {
+            rows.push([
+                row.param,
+                row.feature,
+                row.spearman,
+                row.importance,
+                row.pdpGrid[i] ?? '',
+                row.pdpMean[i] ?? '',
+            ]);
+        }
+    });
+
+    return rows;
+}
+
+function downloadMlResultsCSV() {
+    if (!state._mlResults) return;
+    _downloadCSV(_mlResultRows(state._mlResults), 'ml_analysis_results.csv');
 }
 
 function renderImportanceCharts(importance, selectedParams) {
@@ -373,4 +495,5 @@ export {
     runMlAnalysis,
     onCorrParamChange,
     onMlLabelColChange,
+    downloadMlResultsCSV,
 };

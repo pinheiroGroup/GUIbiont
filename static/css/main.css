@@ -1026,6 +1026,15 @@
             box-shadow: none;
         }
 
+        .ml-export-btn:not(:disabled) {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        .ml-export-btn:hover:not(:disabled) {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        }
+
         .model-selector-row {
             display: flex;
             align-items: center;
