@@ -13,7 +13,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>🧫 GUIbiont</h1>
+            <h1 class="app-title"><img class="app-title-petri-icon" src="/static/icons/petri.svg" alt="" onerror="this.remove();"><span class="app-title-icon-fallback">🧫</span><span>GUIbiont</span></h1>
             <p>Interactive microbial growth curve analysis platform</p>
         </div>
 
@@ -853,6 +853,10 @@
                         <button class="btn fit-btn" id="ml-run-btn"
                                 onclick="runMlAnalysis()" disabled>
                             🔬 Run ML Analysis
+                        </button>
+                        <button class="btn fit-btn ml-export-btn" id="ml-export-btn"
+                                onclick="downloadMlResultsCSV()" disabled>
+                            📥 Download CSV
                         </button>
                     </div>
                 </div>

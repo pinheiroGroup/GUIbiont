@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" xmlns:bx="https://boxy-svg.com">
+  <defs>
+    <radialGradient id="agar" cx="58%" cy="42%" r="66%">
+      <stop offset="0" stop-color="#8ee6ff"/>
+      <stop offset="0.55" stop-color="#69c8f5"/>
+      <stop offset="1" stop-color="#4a9df0"/>
+    </radialGradient>
+    <linearGradient id="rim" x1="175" y1="180" x2="850" y2="760" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f7fdff"/>
+      <stop offset="0.35" stop-color="#c7ebff"/>
+      <stop offset="0.75" stop-color="#8fc1ff"/>
+      <stop offset="1" stop-color="#ecfbff"/>
+    </linearGradient>
+    <radialGradient id="colony1" cx="35%" cy="25%" r="75%">
+      <stop offset="0" stop-color="#d3d1ff"/>
+      <stop offset="0.45" stop-color="#5b55ff"/>
+      <stop offset="1" stop-color="#3934cb"/>
+    </radialGradient>
+<radialGradient id="colony2" cx="35%" cy="25%" r="75%">
+      <stop offset="0" stop-color="#ffd1d1"/>
+      <stop offset="0.45" stop-color="#ff5555"/>
+      <stop offset="1" stop-color="#cb3434"/>
+    </radialGradient>
+<radialGradient id="colony3" cx="35%" cy="25%" r="75%">
+      <stop offset="0" stop-color="#fbffd1"/>
+      <stop offset="0.45" stop-color="#e6ff55"/>
+      <stop offset="1" stop-color="#9acb34"/>
+    </radialGradient>
+    <filter id="softShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="12"/>
+      <feOffset dx="0" dy="18" result="offset"/>
+      <feComponentTransfer>
+        <feFuncA type="linear" slope="0.24"/>
+      </feComponentTransfer>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="colonyShadow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="14" stdDeviation="10" flood-color="#2678a5" flood-opacity="0.35"/>
+    </filter>
+    <clipPath id="agarClip">
+      <ellipse cx="512" cy="445" rx="355" ry="258"/>
+    </clipPath>
+    <linearGradient id="glassWall" x1="150" y1="385" x2="875" y2="585" gradientUnits="userSpaceOnUse" gradientTransform="matrix(1.209475, 0, 0, 1.242011, -984.685122, 592.623962)">
+      <stop offset="0" stop-color="#B8D2FF" stop-opacity="0.48"/>
+      <stop offset="0.45" stop-color="#F5FDFF" stop-opacity="0.70"/>
+      <stop offset="1" stop-color="#7EA9FF" stop-opacity="0.50"/>
+    </linearGradient>
+    <filter id="filter-1" x="-25%" y="-30%" width="150%" height="170%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="10"/>
+      <feOffset dx="0" dy="16" result="off"/>
+      <feComponentTransfer>
+        <feFuncA type="linear" slope="0.25"/>
+      </feComponentTransfer>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="colShadow" x="-40%" y="-40%" width="180%" height="190%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="7"/>
+      <feOffset dx="0" dy="14" result="off"/>
+      <feColorMatrix in="off" type="matrix" values="0 0 0 0 0.05 0 0 0 0 0.34 0 0 0 0 0.55 0 0 0 .28 0"/>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <bx:export>
+      <bx:file format="svg"/>
+    </bx:export>
+  </defs>
+  <g filter="url(#softShadow)" style="" transform="matrix(1.208254, 0, 0, 1.208254, -103.792511, -29.320641)">
+    <ellipse cx="512" cy="424" rx="382" ry="264" fill="url(#rim)" opacity="0.95"/>
+    <ellipse cx="512" cy="424" rx="354" ry="239" fill="#ffffff" opacity="0.38"/>
+    <ellipse cx="512" cy="445" rx="336" ry="234" fill="url(#agar)" stroke="#2085df" stroke-width="7"/>
+    <ellipse cx="512" cy="445" rx="300" ry="205" fill="#bff5ff" opacity="0.18"/>
+    <ellipse cx="512" cy="424" rx="382" ry="264" fill="none" stroke="#f8fdff" stroke-width="12" opacity="0.85"/>
+    <ellipse cx="512" cy="424" rx="360" ry="246" fill="none" stroke="#7eb8ff" stroke-width="5" opacity="0.85"/>
+    <ellipse cx="512" cy="424" rx="328" ry="222" fill="none" stroke="#ffffff" stroke-width="4" opacity="0.30"/>
+    <path d="M205 380 C250 245 405 196 548 207 C366 229 264 301 215 426 C202 459 191 421 205 380 Z" fill="#ffffff" opacity="0.20"/>
+    <path d="M276 319 C307 291 330 281 342 288 C354 296 333 319 294 350 C251 384 237 354 276 319 Z" fill="#ffffff" opacity="0.58"/>
+    <g filter="url(#filter-1)" transform="matrix(1, 0, 0, 1, 451.124207, -169.056641)">
+      <path d="M -327.273 621.596 C -327.273 489.958 -149.79 401.13 62.093 401.13 C 273.995 401.13 450.392 494.051 450.392 625.689 L 446.299 715.809 C 446.299 847.448 275.049 945.58 63.147 945.58 C -148.736 945.58 -323.18 847.448 -323.18 715.809 L -327.273 621.596 Z" fill="url(#glassWall)" style="opacity: 0.72;"/>
+      <path d="M -323.293 698.965 C -288.263 788.126 -119.17 892.891 67.307 892.891 C 253.778 892.891 411.024 784.16 446.058 694.999 L 440.499 751.527 C 414.623 853.056 287.008 937.511 76.977 943.8 C -22.892 946.79 -117.181 925.795 -187.108 890.08 C -268.299 848.611 -317.596 787.977 -319.592 732.675 L -323.293 698.965 Z" fill="url(#glassWall)" style="" opacity="0.72"/>
+    </g>
+    <g transform="matrix(1, 0, 0, 1, 451.124207, -169.056641)">
+      <g filter="url(#colShadow)"/>
+      <g filter="url(#colShadow)"/>
+      <g filter="url(#colShadow)"/>
+    </g>
+  </g>
+  <g clip-path="url(#agarClip)" style="" transform="matrix(1.208254, 0, 0, 1.208254, -102.792511, -29.320641)">
+    <circle cx="430" cy="348" r="55" fill="url(#colony1)" filter="url(#colonyShadow)"/>
+    <circle cx="454" cy="327" r="15" fill="#fffde0" opacity="0.82"/>
+    <circle cx="470" cy="359" r="7" fill="#fffde0" opacity="0.78"/>
+    <circle cx="638" cy="444" r="88" fill="url(#colony2)" filter="url(#colonyShadow)"/>
+    <circle cx="690" cy="402" r="31" fill="#fffde0" opacity="0.78"/>
+    <circle cx="722" cy="451" r="12" fill="#fffde0" opacity="0.75"/>
+    <circle cx="432" cy="548" r="72" fill="url(#colony3)" filter="url(#colonyShadow)"/>
+    <circle cx="476" cy="515" r="24" fill="#fffde0" opacity="0.80"/>
+    <circle cx="504" cy="562" r="10" fill="#fffde0" opacity="0.75"/>
+  </g>
+  <ellipse cx="514.834" cy="508.352" rx="405.973" ry="282.731" fill="none" stroke="#1d79d7" stroke-width="6" opacity="0.75" style=""/>
+  <ellipse cx="514.834" cy="482.979" rx="461.553" ry="318.979" fill="none" stroke="#ffffff" stroke-width="7" opacity="0.55" style=""/>
+</svg>

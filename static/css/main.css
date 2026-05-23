@@ -33,6 +33,25 @@
             font-weight: 300;
         }
 
+        .header .app-title {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.18em;
+            line-height: 1;
+        }
+
+        .app-title-petri-icon {
+            display: block;
+            flex: 0 0 auto;
+            height: 1em;
+            width: auto;
+        }
+
+        .app-title-petri-icon + .app-title-icon-fallback {
+            display: none;
+        }
+
         .header p {
             font-size: 1.2em;
             opacity: 0.9;
@@ -1024,6 +1043,15 @@
             cursor: not-allowed;
             transform: none;
             box-shadow: none;
+        }
+
+        .ml-export-btn:not(:disabled) {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        .ml-export-btn:hover:not(:disabled) {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
         }
 
         .model-selector-row {
