@@ -10,9 +10,6 @@ using Oxygen, StructTypes
 const CLEAN_DATA_PATH = haskey(ENV, "CLEAN_DATA_PATH") ? ENV["CLEAN_DATA_PATH"] : "./Clean_data/"
 const RAW_DATA_PATH   = haskey(ENV, "RAW_DATA_PATH")   ? ENV["RAW_DATA_PATH"]   : "./raw_data/"
 const PORT            = haskey(ENV, "PORT") ? parse(Int, ENV["PORT"]) : 8080
-const PETRI_ICON_PATH = joinpath(@__DIR__, "src", "icons", "petri.svg")
-const PETRI_ICON_MARKER = "<!-- APP_TITLE_PETRI_ICON -->"
-const PETRI_ICON_HTML = """<img class="app-title-petri-icon" src="/icons/petri.svg" alt="">"""
 
 include("function_clean_synergy.jl")
 include("src/data.jl")
@@ -28,17 +25,7 @@ include("src/routes/ml.jl")
 
 @get "/" function(req::HTTP.Request)
     html = read(joinpath(@__DIR__, "web_interface.html"), String)
-    petri_icon = isfile(PETRI_ICON_PATH) ? PETRI_ICON_HTML : ""
-    html = replace(html, PETRI_ICON_MARKER => petri_icon)
     return HTTP.Response(200, ["Content-Type" => "text/html"], html)
-end
-
-@get "/icons/petri.svg" function(req::HTTP.Request)
-    if !isfile(PETRI_ICON_PATH)
-        return HTTP.Response(404)
-    end
-
-    return HTTP.Response(200, ["Content-Type" => "image/svg+xml"], read(PETRI_ICON_PATH))
 end
 
 function CORSMiddleware(handler)

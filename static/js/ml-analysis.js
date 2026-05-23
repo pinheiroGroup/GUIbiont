@@ -282,7 +282,7 @@ function _mlPlotConfig(svgFilename) {
         responsive: true,
         modeBarButtonsToAdd: [{
             name: 'Download plot as SVG',
-            icon: Plotly.Icons.camera,
+            icon: Plotly.Icons.disk,
             click: gd => Plotly.downloadImage(gd, {
                 format: 'svg',
                 filename: svgFilename,
@@ -319,10 +319,13 @@ function onCorrParamChange() {
     if (state._mlCorrelations) _drawCorrBar(state._mlCorrelations, sel.value);
 }
 
+function _csvCell(v) {
+    const s = v === null || v === undefined ? '' : String(v);
+    return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
 function _downloadCSV(rows, filename) {
-    const csv = rows
-        .map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
-        .join('\n');
+    const csv = rows.map(row => row.map(_csvCell).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -331,7 +334,7 @@ function _downloadCSV(rows, filename) {
     URL.revokeObjectURL(a.href);
 }
 
-function _mlResultRows(data) {
+function _mlResultRows(data, selectedParams) {
     const rows = [[
         'growth_parameter',
         'feature',
@@ -358,27 +361,28 @@ function _mlResultRows(data) {
     }
 
     const correlations = data.correlations || [];
-    const corrParams = correlations.reduce((params, row) => {
-        Object.keys(row || {}).forEach(key => {
-            if (key !== 'feature' && !params.includes(key)) params.push(key);
-        });
-        return params;
-    }, []);
+    const importance = data.importance || {};
+    const pdp = data.pdp || {};
 
-    corrParams.forEach(param => {
+    const params = (selectedParams && selectedParams.length)
+        ? selectedParams
+        : correlations.reduce((acc, row) => {
+            Object.keys(row || {}).forEach(key => {
+                if (key !== 'feature' && !acc.includes(key)) acc.push(key);
+            });
+            return acc;
+        }, []);
+
+    params.forEach(param => {
         _correlationsForParam(correlations, param).forEach(row => {
             resultRow(param, row.feature ?? '').spearman = row[param];
         });
-    });
 
-    Object.entries(data.importance || {}).forEach(([param, rankings]) => {
-        (rankings || []).forEach(row => {
+        (importance[param] || []).forEach(row => {
             resultRow(param, row.feature ?? '').importance = row.importance ?? '';
         });
-    });
 
-    Object.entries(data.pdp || {}).forEach(([param, curves]) => {
-        (curves || []).forEach(curve => {
+        (pdp[param] || []).forEach(curve => {
             const row = resultRow(param, curve.feature ?? '');
             row.pdpGrid = curve.grid || [];
             row.pdpMean = curve.mean || [];
@@ -416,7 +420,7 @@ function _mlResultRows(data) {
 
 function downloadMlResultsCSV() {
     if (!state._mlResults) return;
-    _downloadCSV(_mlResultRows(state._mlResults), 'ml_analysis_results.csv');
+    _downloadCSV(_mlResultRows(state._mlResults, getSelectedParams()), 'ml_analysis_results.csv');
 }
 
 function renderImportanceCharts(importance, selectedParams) {
