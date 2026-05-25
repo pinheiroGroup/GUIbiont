@@ -36,6 +36,7 @@ function isNumericColumn(text, colIdx) {
 // ---------------------------------------------------------------------------
 
 function onFitResultsFileChange() {
+    resetMlExport();
     const file = document.getElementById('ml-fit-file').files[0];
     const label = document.getElementById('ml-fit-file-label');
     label.textContent = file ? file.name : 'No file chosen';
@@ -100,6 +101,7 @@ function onFitResultsFileChange() {
 }
 
 function onFeatureMatrixFileChange() {
+    resetMlExport();
     const file = document.getElementById('ml-feature-file').files[0];
     const label = document.getElementById('ml-feature-file-label');
     label.textContent = file ? file.name : 'No file chosen';
@@ -163,7 +165,21 @@ function validateLabels() {
 function updateMlRunBtn() {
     const hasFit  = !!state._fitCsvText;
     const hasFeat = !!state._featCsvText;
-    document.getElementById('ml-run-btn').disabled = !(hasFit && hasFeat);
+    const canRun = hasFit && hasFeat;
+    document.getElementById('ml-run-btn').disabled = !canRun;
+    if (!canRun) resetMlExport();
+}
+
+function resetMlExport() {
+    state._mlResults = null;
+    const exportBtn = document.getElementById('ml-export-btn');
+    if (exportBtn) exportBtn.disabled = true;
+}
+
+function enableMlExport(data) {
+    state._mlResults = data;
+    const exportBtn = document.getElementById('ml-export-btn');
+    if (exportBtn) exportBtn.disabled = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -190,6 +206,7 @@ async function runMlAnalysis() {
 
     const statusEl = document.getElementById('ml-status');
     const resultsEl = document.getElementById('ml-results');
+    resetMlExport();
     statusEl.textContent = 'Running analysis…';
     statusEl.style.display = 'block';
     resultsEl.style.display = 'none';
@@ -216,6 +233,7 @@ async function runMlAnalysis() {
 
         const data = await resp.json();
         state._mlCorrelations = data.correlations;
+        enableMlExport(data);
         statusEl.style.display = 'none';
         renderMlResults(data, selectedParams);
         resultsEl.style.display = 'block';
@@ -252,11 +270,29 @@ function renderCorrelationChart(correlations) {
     if (activeParam) _drawCorrBar(correlations, activeParam);
 }
 
+function _correlationsForParam(correlations, param) {
+    return [...(correlations || [])]
+        .filter(r => r[param] !== null && r[param] !== undefined &&
+            r[param] !== '' && Number.isFinite(Number(r[param])))
+        .sort((a, b) => Math.abs(Number(b[param])) - Math.abs(Number(a[param])));
+}
+
+function _mlPlotConfig(svgFilename) {
+    return {
+        responsive: true,
+        modeBarButtonsToAdd: [{
+            name: 'Download plot as SVG',
+            icon: Plotly.Icons.disk,
+            click: gd => Plotly.downloadImage(gd, {
+                format: 'svg',
+                filename: svgFilename,
+            }),
+        }],
+    };
+}
+
 function _drawCorrBar(correlations, param) {
-    const sorted = [...correlations]
-        .filter(r => r[param] !== undefined && !isNaN(r[param]))
-        .sort((a, b) => Math.abs(b[param]) - Math.abs(a[param]))
-        .slice(0, 30);
+    const sorted = _correlationsForParam(correlations, param).slice(0, 30);
 
     const features = sorted.map(r => r.feature);
     const rhos     = sorted.map(r => r[param]);
@@ -275,12 +311,116 @@ function _drawCorrBar(correlations, param) {
         yaxis:   { autorange: 'reversed' },
         height:  Math.max(300, features.length * 20 + 80),
         title:   `Spearman ρ — features vs ${param}`,
-    }, { responsive: true });
+    }, _mlPlotConfig(`ml-correlation-${param}`));
 }
 
 function onCorrParamChange() {
     const sel = document.getElementById('ml-corr-param-sel');
     if (state._mlCorrelations) _drawCorrBar(state._mlCorrelations, sel.value);
+}
+
+function _csvCell(v) {
+    const s = v === null || v === undefined ? '' : String(v);
+    return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function _downloadCSV(rows, filename) {
+    const csv = rows.map(row => row.map(_csvCell).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+}
+
+function _mlResultRows(data, selectedParams) {
+    const rows = [[
+        'growth_parameter',
+        'feature',
+        'spearman_rho',
+        'importance',
+        'pdp_feature_value',
+        'pdp_mean_prediction',
+    ]];
+    const merged = new Map();
+
+    function resultRow(param, feature) {
+        const key = `${param}\u0000${feature}`;
+        if (!merged.has(key)) {
+            merged.set(key, {
+                param,
+                feature,
+                spearman: '',
+                importance: '',
+                pdpGrid: [],
+                pdpMean: [],
+            });
+        }
+        return merged.get(key);
+    }
+
+    const correlations = data.correlations || [];
+    const importance = data.importance || {};
+    const pdp = data.pdp || {};
+
+    const params = (selectedParams && selectedParams.length)
+        ? selectedParams
+        : correlations.reduce((acc, row) => {
+            Object.keys(row || {}).forEach(key => {
+                if (key !== 'feature' && !acc.includes(key)) acc.push(key);
+            });
+            return acc;
+        }, []);
+
+    params.forEach(param => {
+        _correlationsForParam(correlations, param).forEach(row => {
+            resultRow(param, row.feature ?? '').spearman = row[param];
+        });
+
+        (importance[param] || []).forEach(row => {
+            resultRow(param, row.feature ?? '').importance = row.importance ?? '';
+        });
+
+        (pdp[param] || []).forEach(curve => {
+            const row = resultRow(param, curve.feature ?? '');
+            row.pdpGrid = curve.grid || [];
+            row.pdpMean = curve.mean || [];
+        });
+    });
+
+    merged.forEach(row => {
+        const nPdpPoints = Math.max(row.pdpGrid.length, row.pdpMean.length);
+        if (nPdpPoints === 0) {
+            rows.push([
+                row.param,
+                row.feature,
+                row.spearman,
+                row.importance,
+                '',
+                '',
+            ]);
+            return;
+        }
+
+        for (let i = 0; i < nPdpPoints; i++) {
+            rows.push([
+                row.param,
+                row.feature,
+                row.spearman,
+                row.importance,
+                row.pdpGrid[i] ?? '',
+                row.pdpMean[i] ?? '',
+            ]);
+        }
+    });
+
+    return rows;
+}
+
+function downloadMlResultsCSV() {
+    if (!state._mlResults) return;
+    _downloadCSV(_mlResultRows(state._mlResults, getSelectedParams()), 'ml_analysis_results.csv');
 }
 
 function renderImportanceCharts(importance, selectedParams) {
@@ -314,7 +454,7 @@ function renderImportanceCharts(importance, selectedParams) {
             yaxis:  { autorange: 'reversed' },
             height: 360,
             title:  `Feature importance — ${param}`,
-        }, { responsive: true });
+        }, _mlPlotConfig(`ml-feature-importance-${param}`));
     });
 }
 
@@ -358,7 +498,7 @@ function renderPDPCharts(pdp, selectedParams) {
             height: 400,
             margin: { l: 70, r: 20, t: 50, b: 60 },
             legend: { orientation: 'v', x: 1.02, xanchor: 'left' },
-        }, { responsive: true });
+        }, _mlPlotConfig(`ml-partial-dependence-${param}`));
     });
 }
 
@@ -373,4 +513,5 @@ export {
     runMlAnalysis,
     onCorrParamChange,
     onMlLabelColChange,
+    downloadMlResultsCSV,
 };

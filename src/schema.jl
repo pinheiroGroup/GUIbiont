@@ -30,7 +30,7 @@ Base.@kwdef mutable struct FitCurveRequest
     stochastic_optimizers::Vector{String}   = String[]
     stochastic_runs::Int                    = 3
     maxiters::Int = DEFAULT_FIT_MAXITERS
-    abstol::Float64 = 1e-6
+    abstol::Float64 = 1e-15
 end
 
 Base.@kwdef mutable struct BatchFitRequest
@@ -49,7 +49,7 @@ Base.@kwdef mutable struct BatchFitRequest
     # Catches blanks/non-growers that can't be fit. Set to 0 to disable.
     skip_flat_threshold::Float64 = 0.05
     maxiters::Int = DEFAULT_FIT_MAXITERS
-    abstol::Float64 = 1e-6
+    abstol::Float64 = 1e-15
 end
 
 Base.@kwdef mutable struct MLDownstreamRequest
@@ -76,7 +76,7 @@ Base.@kwdef mutable struct FitReplicateRequest
     stochastic_optimizers::Vector{String}   = String[]
     stochastic_runs::Int                    = 3
     maxiters::Int = DEFAULT_FIT_MAXITERS
-    abstol::Float64 = 1e-6
+    abstol::Float64 = 1e-15
 end
 
 Base.@kwdef mutable struct BlankAnalysisRequest
@@ -101,7 +101,7 @@ Base.@kwdef mutable struct ClusterRequest
     gaussian_h_mult::Float64 = 2.0
     cluster_method::String = "kmeans"
     maxiter::Int = 100
-    tol::Float64 = 1e-6
+    tol::Float64 = 1e-15
     dbscan_eps::Float64 = 1.0
     dbscan_min_pts::Int = 3
     hclust_linkage::String = "ward"
@@ -129,7 +129,7 @@ Base.@kwdef mutable struct ClusterSweepRequest
     gaussian_h_mult::Float64 = 2.0
     cluster_method::String = "kmeans"
     maxiter::Int = 100
-    tol::Float64 = 1e-6
+    tol::Float64 = 1e-15
     hclust_linkage::String = "ward"
     interpolate::Bool = false
     interp_n::Int = 100

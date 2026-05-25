@@ -5,12 +5,15 @@ import { buildOptimizerPayload } from './optimizers.js';
 const DEFAULT_COMPARE_MODELS = new Set([
     'aHPM', 'logistic', 'gompertz', 'baranyi_richards', 'NL_Gompertz', 'NL_logistic'
 ]);
+const DEFAULT_BATCH_FIT_ABSTOL = '1e-15';
 
 // ---------------------------------------------------------------------------
 // Batch fit tab — experiment / well selection
 // ---------------------------------------------------------------------------
 
 async function initBatchFitTab() {
+    const abstolSelect = document.getElementById('batch-fit-abstol');
+    if (abstolSelect) abstolSelect.value = DEFAULT_BATCH_FIT_ABSTOL;
     await loadBatchFitModels();
     await loadBatchFitExperiments();
 }
@@ -179,8 +182,8 @@ async function runBatchFit() {
 
     try {
         const batchCalFile = (document.getElementById('batch-fit-calibration-file')?.value || '').trim();
-        const maxiters = Math.max(1, parseInt(document.getElementById('batch-fit-maxiters')?.value || '20000', 10) || 20000);
-        const abstol = parseFloat(document.getElementById('batch-fit-abstol')?.value || '1e-6') || 1e-6;
+        const maxiters = Math.max(1, parseInt(document.getElementById('batch-fit-maxiters')?.value || '100000', 10) || 100000);
+        const abstol = parseFloat(document.getElementById('batch-fit-abstol')?.value || DEFAULT_BATCH_FIT_ABSTOL) || parseFloat(DEFAULT_BATCH_FIT_ABSTOL);
         const skipFlat = Math.max(0, parseFloat(document.getElementById('batch-fit-skip-flat')?.value || '0.05') || 0);
         const requestPayload = {
             experiment,
