@@ -1,6 +1,7 @@
 import { state, API_BASE } from './state.js';
 import { buildMultiChannelLayout, channelToYAxis } from './plot.js';
 import { computeReplicateAverage, trapezoidalAUC } from './replicates.js';
+import { buildOptimizerPayload } from './optimizers.js';
 
 function setFitMode(mode) {
     state.currentFitMode = mode;
@@ -63,7 +64,7 @@ async function fitReplicateAverage() {
                 label: label,
                 experiment: experiment,
                 model_name: document.getElementById('fitting-model').value || 'aHPM',
-                optimizer: document.getElementById('fit-optimizer').value || 'BOBYQA',
+                ...buildOptimizerPayload('fit'),
                 ...(fitCalFile ? { calibration_file: fitCalFile } : {}),
             })
         });
@@ -436,7 +437,7 @@ async function fitGrowthCurve() {
                 blank_subtraction: document.getElementById('fit-blank-subtraction').checked,
                 blank_method: document.getElementById('fit-blank-method').value,
                 model_name: document.getElementById('fitting-model').value || 'aHPM',
-                optimizer: document.getElementById('fit-optimizer').value || 'BOBYQA',
+                ...buildOptimizerPayload('fit'),
                 ...(calFile ? { calibration_file: calFile } : {}),
             })
         });
@@ -500,6 +501,19 @@ function displayFittingResults(fitData) {
             <span class="parameter-name">Stationary Phase Start:</span>
             <span class="parameter-value">${typeof fitData.stationary_phase_start === 'number' && isFinite(fitData.stationary_phase_start) ? fitData.stationary_phase_start.toFixed(2) : String(fitData.stationary_phase_start)}</span>
         </div>
+        ${fitData.optimizer_used && Array.isArray(fitData.all_attempts) && fitData.all_attempts.length > 1 ? `
+        <div class="parameter-row">
+            <span class="parameter-name">Winning optimizer:</span>
+            <span class="parameter-value">${fitData.optimizer_used}${fitData.optimizer_run > 1 ? ` (run ${fitData.optimizer_run})` : ''} — loss ${typeof fitData.loss === 'number' ? fitData.loss.toFixed(5) : '—'}</span>
+        </div>
+        <div class="parameter-row" style="display: block;">
+            <details><summary style="cursor: pointer; color: #6c757d;">All ${fitData.all_attempts.length} attempts</summary>
+                <table style="font-size: 0.85em; margin-top: 4px; border-collapse: collapse;">
+                    <tr style="border-bottom: 1px solid #dee2e6;"><th style="text-align: left; padding: 2px 8px;">Optimizer</th><th style="text-align: right; padding: 2px 8px;">Run</th><th style="text-align: right; padding: 2px 8px;">Loss</th><th style="text-align: left; padding: 2px 8px;">Status</th></tr>
+                    ${fitData.all_attempts.map(a => `<tr><td style="padding: 2px 8px;">${a.optimizer}</td><td style="text-align: right; padding: 2px 8px;">${a.run}</td><td style="text-align: right; padding: 2px 8px;">${typeof a.loss === 'number' && isFinite(a.loss) ? a.loss.toFixed(5) : '—'}</td><td style="padding: 2px 8px; color: ${a.status === 'ok' ? '#28a745' : '#dc3545'};">${a.status}</td></tr>`).join('')}
+                </table>
+            </details>
+        </div>` : ''}
     `;
     
     // Add fitted parameters - only show the first 4 aHPM parameters

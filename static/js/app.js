@@ -30,6 +30,8 @@ import { onFitResultsFileChange, onFeatureMatrixFileChange, updateMlRunBtn,
          runMlAnalysis, onCorrParamChange, onMlLabelColChange } from './ml-analysis.js';
 import { openFitCodeExport, openBatchCodeExport, openClusterCodeExport,
          closeCodeExportModal, toggleCodeComments, downloadExportedCode } from './code-export.js';
+import { loadOptimizers, onFitOptimizerModeChange, onBatchFitOptimizerModeChange,
+         buildOptimizerPayload } from './optimizers.js';
 import { setClusteringMode, populateClusteringExperiments,
          selectAllClusteringExperiments, clearAllClusteringExperiments,
          onClusteringFileChange, updateClusteringRunBtn, toggleClusteringAdvanced,
@@ -55,6 +57,7 @@ async function init() {
     loadFittingModels();
     loadRawExperiments();
     initBatchFitTab();
+    loadOptimizers();
 }
 
 async function applyConfig() {
@@ -270,6 +273,8 @@ Object.assign(window, {
     // Code export modal
     openFitCodeExport, openBatchCodeExport, openClusterCodeExport,
     closeCodeExportModal, toggleCodeComments, downloadExportedCode,
+    // Optimizers
+    onFitOptimizerModeChange, onBatchFitOptimizerModeChange,
 });
 
 // Handle window resize — fullscreen plots need manual relayout, others use resizePlot

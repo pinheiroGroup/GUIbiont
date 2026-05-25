@@ -14,3 +14,11 @@ end
         "model_type"  => occursin("NL", string(typeof(MODEL_REGISTRY[name]))) ? "NL" : "ODE",
     ) for name in model_list]
 end
+
+@get "/api/optimizers" function(req::HTTP.Request)
+    names = sort(collect(keys(OPTIMIZER_MAP)))
+    return [Dict(
+        "name" => n,
+        "type" => is_stochastic_optimizer(n) ? "stochastic" : "deterministic",
+    ) for n in names]
+end

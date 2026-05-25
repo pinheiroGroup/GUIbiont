@@ -23,6 +23,12 @@ Base.@kwdef mutable struct FitCurveRequest
     model_name::String = "aHPM"
     model_names::Vector{String} = String[]
     optimizer::String = "LN_BOBYQA"
+    # Best-of-N: when either list is non-empty, the legacy `optimizer` field
+    # is ignored. Each deterministic optimizer runs once; each stochastic
+    # optimizer runs `stochastic_runs` times. Lowest RMSE wins.
+    deterministic_optimizers::Vector{String} = String[]
+    stochastic_optimizers::Vector{String}   = String[]
+    stochastic_runs::Int                    = 3
     maxiters::Int = DEFAULT_FIT_MAXITERS
     abstol::Float64 = 1e-6
 end
@@ -36,6 +42,12 @@ Base.@kwdef mutable struct BatchFitRequest
     calibration_file::String = ""
     wells::Vector{String} = String[]
     optimizer::String = "LN_BOBYQA"
+    deterministic_optimizers::Vector{String} = String[]
+    stochastic_optimizers::Vector{String}   = String[]
+    stochastic_runs::Int                    = 3
+    # Pre-screen: skip curves with amplitude (max-min OD) below this threshold.
+    # Catches blanks/non-growers that can't be fit. Set to 0 to disable.
+    skip_flat_threshold::Float64 = 0.05
     maxiters::Int = DEFAULT_FIT_MAXITERS
     abstol::Float64 = 1e-6
 end
@@ -60,6 +72,9 @@ Base.@kwdef mutable struct FitReplicateRequest
     model_name::String = "aHPM"
     calibration_file::String = ""
     optimizer::String = "LN_BOBYQA"
+    deterministic_optimizers::Vector{String} = String[]
+    stochastic_optimizers::Vector{String}   = String[]
+    stochastic_runs::Int                    = 3
     maxiters::Int = DEFAULT_FIT_MAXITERS
     abstol::Float64 = 1e-6
 end

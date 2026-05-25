@@ -10,6 +10,9 @@ const BATCH_JOBS_LOCK = ReentrantLock()
     model_name     = string(body.model_name)
     model_names    = String[string(m) for m in body.model_names]
     optimizer      = string(body.optimizer)
+    det_opts       = String[string(o) for o in body.deterministic_optimizers]
+    sto_opts       = String[string(o) for o in body.stochastic_optimizers]
+    sto_runs       = max(1, body.stochastic_runs)
     maxiters       = clamp(body.maxiters > 0 ? body.maxiters : DEFAULT_FIT_MAXITERS, 1, MAX_FIT_MAXITERS)
     abstol         = body.abstol > 0.0 ? body.abstol : 0.0
 
@@ -63,15 +66,18 @@ const BATCH_JOBS_LOCK = ReentrantLock()
         return fit_well_data(
             time_numeric[valid_indices], od_raw[valid_indices],
             blank_value, calibration_file, well, experiment;
-            subtract_blank   = subtract_blank,
-            blank_method     = blank_method,
-            blank_timeseries = blank_ts_valid,
-            blank_well_names = blank_well_names,
-            model_name       = model_name,
-            model_names      = model_names,
-            optimizer        = optimizer,
-            maxiters         = maxiters,
-            abstol           = abstol,
+            subtract_blank           = subtract_blank,
+            blank_method             = blank_method,
+            blank_timeseries         = blank_ts_valid,
+            blank_well_names         = blank_well_names,
+            model_name               = model_name,
+            model_names              = model_names,
+            optimizer                = optimizer,
+            deterministic_optimizers = det_opts,
+            stochastic_optimizers    = sto_opts,
+            stochastic_runs          = sto_runs,
+            maxiters                 = maxiters,
+            abstol                   = abstol,
         )
     catch e
                 return json(Dict("error" => "Curve fitting failed: $e"); status=500)
@@ -85,6 +91,9 @@ end
     experiment_name  = string(body.experiment)
     model_name       = string(body.model_name)
     optimizer        = string(body.optimizer)
+    det_opts         = String[string(o) for o in body.deterministic_optimizers]
+    sto_opts         = String[string(o) for o in body.stochastic_optimizers]
+    sto_runs         = max(1, body.stochastic_runs)
     maxiters         = clamp(body.maxiters > 0 ? body.maxiters : DEFAULT_FIT_MAXITERS, 1, MAX_FIT_MAXITERS)
     abstol           = body.abstol > 0.0 ? body.abstol : 0.0
     calibration_file = "./cal_curve_avg.csv"
@@ -136,10 +145,13 @@ end
         return fit_well_data(
             avg_time[valid_indices], avg_od[valid_indices],
             0.0, calibration_file, label, experiment_name;
-            model_name = model_name,
-            optimizer  = optimizer,
-            maxiters   = maxiters,
-            abstol     = abstol,
+            model_name               = model_name,
+            optimizer                = optimizer,
+            deterministic_optimizers = det_opts,
+            stochastic_optimizers    = sto_opts,
+            stochastic_runs          = sto_runs,
+            maxiters                 = maxiters,
+            abstol                   = abstol,
         )
     catch e
                 return json(Dict("error" => "Replicate fitting failed: $e"); status=500)
@@ -276,6 +288,10 @@ end
     cal_override    = string(body.calibration_file)
     requested_wells = isempty(body.wells) ? nothing : String[string(w) for w in body.wells]
     optimizer       = string(body.optimizer)
+    det_opts        = String[string(o) for o in body.deterministic_optimizers]
+    sto_opts        = String[string(o) for o in body.stochastic_optimizers]
+    sto_runs        = max(1, body.stochastic_runs)
+    flat_thr        = max(0.0, body.skip_flat_threshold)
     maxiters        = clamp(body.maxiters > 0 ? body.maxiters : DEFAULT_FIT_MAXITERS, 1, MAX_FIT_MAXITERS)
     abstol          = body.abstol > 0.0 ? body.abstol : 0.0
 
@@ -325,6 +341,7 @@ end
             "current_well" => "",
             "results"      => Dict{String, Any}[],
             "errors"       => String[],
+            "skipped"      => Dict{String, Any}[],
         )
         lock(BATCH_JOBS_LOCK) do
             BATCH_JOBS[job_id] = job
@@ -333,6 +350,7 @@ end
         Threads.@spawn begin
             results    = Dict{String, Any}[]
             errors     = String[]
+            skipped    = Dict{String, Any}[]
             local_lock = ReentrantLock()
 
             # One task per well so the scheduler can interleave fitting with
@@ -354,21 +372,39 @@ end
                             if length(valid_indices) < 10
                                 lock(local_lock) do; push!(errors, "Well '$well': insufficient data points"); end
                             else
-                                blank_ts_valid = isempty(blank_ts) ? Float64[] : blank_ts[valid_indices]
-                                fit_result = fit_well_data(
-                                    time_numeric[valid_indices], od_raw[valid_indices],
-                                    blank_value, calibration_file, well, experiment;
-                                    subtract_blank   = subtract_blank,
-                                    blank_method     = blank_method,
-                                    blank_timeseries = blank_ts_valid,
-                                    blank_well_names = blank_well_names,
-                                    model_name       = model_name,
-                                    model_names      = model_names_req,
-                                    optimizer        = optimizer,
-                                    maxiters         = maxiters,
-                                    abstol           = abstol,
-                                )
-                                lock(local_lock) do; push!(results, fit_result); end
+                                od_valid = od_raw[valid_indices]
+                                # Flat-curve pre-screen: amplitude below threshold means no
+                                # growth signal to fit (blank, dead culture, instrument noise).
+                                # Mark as skipped (distinct from a fit failure) and move on.
+                                amplitude = maximum(od_valid) - minimum(od_valid)
+                                if flat_thr > 0.0 && amplitude < flat_thr
+                                    lock(local_lock) do
+                                        push!(skipped, Dict{String, Any}(
+                                            "well"      => well,
+                                            "amplitude" => amplitude,
+                                            "reason"    => "flat curve (amplitude $(round(amplitude, digits=4)) < threshold $(flat_thr))",
+                                        ))
+                                    end
+                                else
+                                    blank_ts_valid = isempty(blank_ts) ? Float64[] : blank_ts[valid_indices]
+                                    fit_result = fit_well_data(
+                                        time_numeric[valid_indices], od_valid,
+                                        blank_value, calibration_file, well, experiment;
+                                        subtract_blank           = subtract_blank,
+                                        blank_method             = blank_method,
+                                        blank_timeseries         = blank_ts_valid,
+                                        blank_well_names         = blank_well_names,
+                                        model_name               = model_name,
+                                        model_names              = model_names_req,
+                                        optimizer                = optimizer,
+                                        deterministic_optimizers = det_opts,
+                                        stochastic_optimizers    = sto_opts,
+                                        stochastic_runs          = sto_runs,
+                                        maxiters                 = maxiters,
+                                        abstol                   = abstol,
+                                    )
+                                    lock(local_lock) do; push!(results, fit_result); end
+                                end
                             end
                         catch e
                             lock(local_lock) do; push!(errors, "Well '$well': $(string(e))"); end
@@ -386,10 +422,12 @@ end
                 job["status"]   = "done"
                 job["results"]  = results
                 job["errors"]   = errors
+                job["skipped"]  = skipped
                 job["summary"]  = Dict(
                     "total"   => length(wells_to_fit),
                     "success" => length(results),
                     "failed"  => length(errors),
+                    "skipped" => length(skipped),
                     "errors"  => errors,
                 )
                 job["current_well"] = ""
@@ -423,6 +461,7 @@ end
             resp["maxiters"]    = job["maxiters"]
             resp["abstol"]      = job["abstol"]
             resp["results"]     = job["results"]
+            resp["skipped"]     = job["skipped"]
             resp["summary"]     = job["summary"]
             delete!(BATCH_JOBS, job_id)
         end

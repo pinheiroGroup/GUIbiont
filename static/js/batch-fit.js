@@ -1,4 +1,5 @@
 import { state, API_BASE } from './state.js';
+import { buildOptimizerPayload } from './optimizers.js';
 
 // Models pre-checked in "compare" mode by default
 const DEFAULT_COMPARE_MODELS = new Set([
@@ -180,15 +181,17 @@ async function runBatchFit() {
         const batchCalFile = (document.getElementById('batch-fit-calibration-file')?.value || '').trim();
         const maxiters = Math.max(1, parseInt(document.getElementById('batch-fit-maxiters')?.value || '20000', 10) || 20000);
         const abstol = parseFloat(document.getElementById('batch-fit-abstol')?.value || '1e-6') || 1e-6;
+        const skipFlat = Math.max(0, parseFloat(document.getElementById('batch-fit-skip-flat')?.value || '0.05') || 0);
         const requestPayload = {
             experiment,
             wells,
             ...modelPayload,
             blank_subtraction: document.getElementById('batch-fit-blank-subtraction').checked,
             blank_method: document.getElementById('batch-fit-blank-method').value,
-            optimizer: document.getElementById('batch-fit-optimizer').value || 'BOBYQA',
+            ...buildOptimizerPayload('batch-fit'),
             maxiters,
             abstol,
+            skip_flat_threshold: skipFlat,
             ...(batchCalFile ? { calibration_file: batchCalFile } : {}),
         };
         const startResp = await fetch(`${API_BASE}/api/batch-fit`, {
@@ -260,12 +263,14 @@ function displayBatchResults(data) {
         : model;
 
     // Summary bar
+    const skippedCount = summary.skipped || 0;
     const summaryHtml = `
         <div class="batch-summary-bar">
             <span><strong>Experiment:</strong> ${experiment}</span>
             <span><strong>Model:</strong> ${modelLabel}</span>
             <span class="batch-stat-ok">✓ ${summary.success} fitted</span>
             ${summary.failed > 0 ? `<span class="batch-stat-err">✗ ${summary.failed} failed</span>` : ''}
+            ${skippedCount > 0 ? `<span style="color:#6c757d;">⊘ ${skippedCount} skipped (flat)</span>` : ''}
             <button class="btn" style="margin-left:auto;" onclick="downloadBatchCSV()">📥 Download CSV</button>
         </div>
     `;
@@ -310,6 +315,14 @@ function displayBatchResults(data) {
            </div>`
         : '';
 
+    const skippedList = Array.isArray(data.skipped) ? data.skipped : [];
+    const skippedHtml = skippedList.length > 0
+        ? `<details style="margin-top:8px; color:#6c757d;">
+               <summary style="cursor:pointer;">⊘ ${skippedList.length} well(s) skipped (flat curves, not fit)</summary>
+               <ul style="margin-top:4px; font-size:0.9em;">${skippedList.map(s => `<li>${s.well}: ${s.reason}</li>`).join('')}</ul>
+           </details>`
+        : '';
+
     resultsDiv.innerHTML = `
         ${summaryHtml}
         <div class="batch-table-wrap">
@@ -319,6 +332,7 @@ function displayBatchResults(data) {
             </table>
         </div>
         ${errorsHtml}
+        ${skippedHtml}
     `;
     resultsDiv.style.display = 'block';
 }
@@ -341,7 +355,8 @@ function downloadBatchCSV() {
         });
     });
 
-    const headers = ['experiment', 'well', 'model', ...allParamNames, 'stationary_phase_start', 'aic'];
+    const headers = ['experiment', 'well', 'model', ...allParamNames,
+                     'stationary_phase_start', 'aic', 'loss', 'optimizer_used'];
     const rows = results.map(r => {
         const paramVals = allParamNames.map(name => {
             const idx = (r.param_names || []).indexOf(name);
@@ -355,6 +370,8 @@ function downloadBatchCSV() {
             ...paramVals,
             r.stationary_phase_start != null ? r.stationary_phase_start : '',
             r.aic != null ? r.aic : '',
+            r.loss != null ? r.loss : '',
+            r.optimizer_used || '',
         ];
     });
 

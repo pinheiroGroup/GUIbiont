@@ -180,15 +180,27 @@
                             </select>
                         </div>
                         <div id="model-info-card" class="model-info-card"></div>
-                        <div style="margin-top: 6px; display: flex; align-items: center; gap: 8px; font-size: 0.9em;">
-                            <label for="fit-optimizer" style="white-space: nowrap;">Optimizer:</label>
-                            <select id="fit-optimizer" style="font-size: 0.9em; padding: 2px 6px;">
-                                <option value="LN_BOBYQA" selected>BOBYQA (default)</option>
-                                <option value="LN_COBYLA">COBYLA</option>
-                                <option value="GN_ISRES">GN ISRES</option>
-                                <option value="GN_DIRECT_L">GN DIRECT-L</option>
-                                <option value="BBO_adaptive_de_rand_1_bin_radiuslimited">BBO Adaptive DE</option>
-                            </select>
+                        <div style="margin-top: 6px; font-size: 0.9em;">
+                            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                <label style="white-space: nowrap;">Optimizer:</label>
+                                <select id="fit-optimizer-mode" onchange="onFitOptimizerModeChange()" style="font-size: 0.9em; padding: 2px 6px;">
+                                    <option value="single" selected>Single</option>
+                                    <option value="best">Best of N</option>
+                                </select>
+                                <select id="fit-optimizer" style="font-size: 0.9em; padding: 2px 6px;">
+                                    <option value="LN_BOBYQA" selected>BOBYQA (default)</option>
+                                    <option value="LN_COBYLA">COBYLA</option>
+                                    <option value="GN_ISRES">GN ISRES</option>
+                                    <option value="GN_DIRECT_L">GN DIRECT-L</option>
+                                    <option value="BBO_adaptive_de_rand_1_bin_radiuslimited">BBO Adaptive DE</option>
+                                </select>
+                            </div>
+                            <div id="fit-optimizer-best-panel" style="display: none; margin-top: 6px; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; font-size: 0.85em;">
+                                <div style="color: #6c757d; margin-bottom: 6px;">Each deterministic optimizer runs once; each stochastic runs N times. The fit with lowest RMSE wins.</div>
+                                <div style="margin-bottom: 4px;"><b>Deterministic:</b> <span id="fit-det-optimizers"></span></div>
+                                <div style="margin-bottom: 4px;"><b>Stochastic:</b> <span id="fit-sto-optimizers"></span></div>
+                                <label style="display: inline-flex; align-items: center; gap: 6px;">Runs per stochastic: <input type="number" id="fit-sto-runs" value="3" min="1" max="20" style="font-size: 0.85em; padding: 2px 6px; width: 50px; border: 1px solid #ced4da; border-radius: 4px;"></label>
+                            </div>
                         </div>
 
                         <div style="margin-top: 8px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
@@ -697,8 +709,12 @@
                             <label for="batch-fit-calibration-file" style="white-space: nowrap;">Custom calibration file:</label>
                             <input type="text" id="batch-fit-calibration-file" placeholder="auto-detected (leave blank)" style="font-size: 0.9em; padding: 2px 6px; border: 1px solid #ced4da; border-radius: 4px; width: 280px; color: #495057;">
                         </div>
-                        <div style="margin-top: 6px; display: flex; align-items: center; gap: 8px; font-size: 0.9em;">
-                            <label for="batch-fit-optimizer" style="white-space: nowrap;">Optimizer:</label>
+                        <div style="margin-top: 6px; display: flex; align-items: center; gap: 8px; font-size: 0.9em; flex-wrap: wrap;">
+                            <label style="white-space: nowrap;">Optimizer:</label>
+                            <select id="batch-fit-optimizer-mode" onchange="onBatchFitOptimizerModeChange()" style="font-size: 0.9em; padding: 2px 6px;">
+                                <option value="single" selected>Single</option>
+                                <option value="best">Best of N</option>
+                            </select>
                             <select id="batch-fit-optimizer" style="font-size: 0.9em; padding: 2px 6px;">
                                 <option value="LN_BOBYQA" selected>BOBYQA (default)</option>
                                 <option value="LN_COBYLA">COBYLA</option>
@@ -721,6 +737,14 @@
                                 <option value="1e-11">1e-11</option>
                                 <option value="1e-12">1e-12</option>
                             </select>
+                            <label for="batch-fit-skip-flat" style="white-space: nowrap;" title="Skip curves whose OD amplitude (max - min) is below this. Typical OD ranges are 0.01 - 1.0; default 0.05 catches blanks. Set to 0 to disable.">Skip if OD range &lt;:</label>
+                            <input type="number" id="batch-fit-skip-flat" value="0.05" min="0" max="2" step="0.01" style="font-size: 0.9em; padding: 2px 6px; border: 1px solid #ced4da; border-radius: 4px; width: 70px; color: #495057;">
+                        </div>
+                        <div id="batch-fit-optimizer-best-panel" style="display: none; margin-top: 6px; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; font-size: 0.85em;">
+                            <div style="color: #6c757d; margin-bottom: 6px;">Each deterministic optimizer runs once per well; each stochastic runs N times. Lowest-RMSE fit wins per well.</div>
+                            <div style="margin-bottom: 4px;"><b>Deterministic:</b> <span id="batch-fit-det-optimizers"></span></div>
+                            <div style="margin-bottom: 4px;"><b>Stochastic:</b> <span id="batch-fit-sto-optimizers"></span></div>
+                            <label style="display: inline-flex; align-items: center; gap: 6px;">Runs per stochastic: <input type="number" id="batch-fit-sto-runs" value="3" min="1" max="20" style="font-size: 0.85em; padding: 2px 6px; width: 50px; border: 1px solid #ced4da; border-radius: 4px;"></label>
                         </div>
 
                         <div style="margin-top: 14px;">
