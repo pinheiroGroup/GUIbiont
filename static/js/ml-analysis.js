@@ -277,6 +277,24 @@ function _correlationsForParam(correlations, param) {
         .sort((a, b) => Math.abs(Number(b[param])) - Math.abs(Number(a[param])));
 }
 
+function _corrAxisRange(values) {
+    const finite = values.map(Number).filter(Number.isFinite);
+    if (finite.length === 0) return [-1, 1];
+
+    let minVal = Math.min(...finite, 0);
+    let maxVal = Math.max(...finite, 0);
+    if (minVal === 0 && maxVal === 0) return [-0.05, 0.05];
+
+    const span = maxVal - minVal;
+    const maxAbs = Math.max(Math.abs(minVal), Math.abs(maxVal));
+    const pad = Math.max(span * 0.08, maxAbs * 0.05, 1e-6);
+
+    return [
+        Math.max(-1, minVal - pad),
+        Math.min(1, maxVal + pad),
+    ];
+}
+
 function _mlPlotConfig(svgFilename) {
     return {
         responsive: true,
@@ -297,6 +315,7 @@ function _drawCorrBar(correlations, param) {
     const features = sorted.map(r => r.feature);
     const rhos     = sorted.map(r => r[param]);
     const colors   = rhos.map(v => v >= 0 ? 'steelblue' : '#e05252');
+    const xRange   = _corrAxisRange(rhos);
 
     Plotly.react('ml-corr-plot', [{
         type:        'bar',
@@ -307,7 +326,7 @@ function _drawCorrBar(correlations, param) {
         hovertemplate: '%{y}: ρ = %{x:.3f}<extra></extra>',
     }], {
         margin:  { l: 180, r: 20, t: 30, b: 50 },
-        xaxis:   { title: 'Spearman ρ', range: [-1, 1], zeroline: true },
+        xaxis:   { title: 'Spearman ρ', range: xRange, zeroline: true },
         yaxis:   { autorange: 'reversed' },
         height:  Math.max(300, features.length * 20 + 80),
         title:   `Spearman ρ — features vs ${param}`,
