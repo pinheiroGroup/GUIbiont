@@ -194,6 +194,25 @@
                                     <option value="GN_DIRECT_L">GN DIRECT-L</option>
                                     <option value="BBO_adaptive_de_rand_1_bin_radiuslimited">BBO Adaptive DE</option>
                                 </select>
+                                <label for="fit-maxiters" style="white-space: nowrap;">Max iterations:</label>
+                                <input type="number" id="fit-maxiters" value="100000" min="1" step="100" style="font-size: 0.9em; padding: 2px 6px; border: 1px solid #ced4da; border-radius: 4px; width: 90px; color: #495057;">
+                                <label for="fit-abstol" style="white-space: nowrap;">Tolerance:</label>
+                                <select id="fit-abstol" style="font-size: 0.9em; padding: 2px 6px; width: 90px;">
+                                    <option value="1e-3">1e-3</option>
+                                    <option value="1e-4">1e-4</option>
+                                    <option value="1e-5">1e-5</option>
+                                    <option value="1e-6">1e-6</option>
+                                    <option value="1e-7">1e-7</option>
+                                    <option value="1e-8">1e-8</option>
+                                    <option value="1e-9">1e-9</option>
+                                    <option value="1e-10">1e-10</option>
+                                    <option value="1e-11">1e-11</option>
+                                    <option value="1e-12">1e-12</option>
+                                    <option value="1e-13">1e-13</option>
+                                    <option value="1e-14">1e-14</option>
+                                    <option value="1e-15" selected>1e-15</option>
+                                    <option value="1e-16">1e-16</option>
+                                </select>
                             </div>
                             <div id="fit-optimizer-best-panel" style="display: none; margin-top: 6px; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; font-size: 0.85em;">
                                 <div style="color: #6c757d; margin-bottom: 6px;">Each deterministic optimizer runs once; each stochastic runs N times. The fit with lowest RMSE wins.</div>
