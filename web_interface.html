@@ -870,11 +870,17 @@
 
                     <!-- Spearman correlations -->
                     <h3 style="margin-bottom:8px;">Spearman rank correlations</h3>
-                    <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+                    <div style="display:flex; align-items:center; gap:14px; margin-bottom:8px; flex-wrap:wrap;">
                         <label style="font-size:0.9em;">Growth parameter:</label>
                         <select id="ml-corr-param-sel" style="font-size:0.9em;"
                                 onchange="onCorrParamChange()">
                         </select>
+                        <label style="font-size:0.9em; display:inline-flex; align-items:center; gap:4px;"
+                               title="When off, the x-axis spans the full Spearman scale [-1, 1] so magnitudes can be compared on the natural bound. When on, the axis zooms to the data range with small padding.">
+                            <input type="checkbox" id="ml-corr-zoom" checked
+                                   onchange="onCorrZoomToggle()">
+                            Zoom to data range
+                        </label>
                     </div>
                     <div id="ml-corr-container">
                         <div id="ml-corr-plot" style="width:100%; max-width:700px;"></div>
