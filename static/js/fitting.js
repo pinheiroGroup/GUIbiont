@@ -3,6 +3,18 @@ import { buildMultiChannelLayout, channelToYAxis } from './plot.js';
 import { computeReplicateAverage, trapezoidalAUC } from './replicates.js';
 import { buildOptimizerPayload } from './optimizers.js';
 
+const DEFAULT_FIT_MAXITERS = 100000;
+const DEFAULT_FIT_ABSTOL = '1e-15';
+
+function buildFitOptionsPayload() {
+    const maxiters = Math.max(
+        1,
+        parseInt(document.getElementById('fit-maxiters')?.value || `${DEFAULT_FIT_MAXITERS}`, 10) || DEFAULT_FIT_MAXITERS
+    );
+    const abstol = parseFloat(document.getElementById('fit-abstol')?.value || DEFAULT_FIT_ABSTOL) || parseFloat(DEFAULT_FIT_ABSTOL);
+    return { maxiters, abstol };
+}
+
 function setFitMode(mode) {
     state.currentFitMode = mode;
     const wellSelect = document.getElementById('fitting-well');
@@ -65,6 +77,7 @@ async function fitReplicateAverage() {
                 experiment: experiment,
                 model_name: document.getElementById('fitting-model').value || 'aHPM',
                 ...buildOptimizerPayload('fit'),
+                ...buildFitOptionsPayload(),
                 ...(fitCalFile ? { calibration_file: fitCalFile } : {}),
             })
         });
@@ -438,6 +451,7 @@ async function fitGrowthCurve() {
                 blank_method: document.getElementById('fit-blank-method').value,
                 model_name: document.getElementById('fitting-model').value || 'aHPM',
                 ...buildOptimizerPayload('fit'),
+                ...buildFitOptionsPayload(),
                 ...(calFile ? { calibration_file: calFile } : {}),
             })
         });
