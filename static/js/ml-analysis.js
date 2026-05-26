@@ -277,6 +277,54 @@ function _correlationsForParam(correlations, param) {
         .sort((a, b) => Math.abs(Number(b[param])) - Math.abs(Number(a[param])));
 }
 
+/**
+ * Plotly x-axis range for the Spearman correlation bar chart.
+ *
+ *   - `zoom = false` -> full Spearman scale [-1, 1] so readers can calibrate
+ *     magnitudes against the natural bound (useful for cross-panel comparison).
+ *   - `zoom = true`  -> tight to the data with padding chosen as
+ *         max( 8% of value span, 5% of largest |value|, 1e-6 floor ).
+ *     The 8% span term gives visible whitespace beyond the most extreme bar,
+ *     the 5% maxAbs term keeps single-sided distributions from clipping, and
+ *     the 1e-6 floor avoids zero-width ranges for pathological inputs.
+ *     Zero is always included so the zeroline remains meaningful, and the
+ *     final range is clamped to ±1.
+ *
+ * Edge cases: empty / all-NaN -> [-1, 1]; all-zero -> [-0.05, 0.05].
+ */
+function _corrAxisRange(values, zoom = true) {
+    if (!zoom) return [-1, 1];
+
+    const finite = values.map(Number).filter(Number.isFinite);
+    if (finite.length === 0) return [-1, 1];
+
+    // reduce() instead of Math.min(...finite) so we stay safe on large arrays
+    // (spread operator can hit JS engine stack limits around ~100k elements).
+    const dataMin = finite.reduce((a, b) => Math.min(a, b), finite[0]);
+    const dataMax = finite.reduce((a, b) => Math.max(a, b), finite[0]);
+    const minVal = Math.min(dataMin, 0);
+    const maxVal = Math.max(dataMax, 0);
+    if (minVal === 0 && maxVal === 0) return [-0.05, 0.05];
+
+    const span = maxVal - minVal;
+    const maxAbs = Math.max(Math.abs(minVal), Math.abs(maxVal));
+    const pad = Math.max(span * 0.08, maxAbs * 0.05, 1e-6);
+
+    return [
+        Math.max(-1, minVal - pad),
+        Math.min(1, maxVal + pad),
+    ];
+}
+
+// Pick a hover-tooltip decimal precision matched to the visible range width,
+// so tightly-zoomed bars don't read as identical at .3f.
+function _corrHoverPrecision(range) {
+    const width = range[1] - range[0];
+    if (width >= 0.5) return 3;
+    if (width >= 0.05) return 4;
+    return 5;
+}
+
 function _mlPlotConfig(svgFilename) {
     return {
         responsive: true,
@@ -298,16 +346,21 @@ function _drawCorrBar(correlations, param) {
     const rhos     = sorted.map(r => r[param]);
     const colors   = rhos.map(v => v >= 0 ? 'steelblue' : '#e05252');
 
+    const zoomEl   = document.getElementById('ml-corr-zoom');
+    const zoom     = zoomEl ? zoomEl.checked : true;
+    const xRange   = _corrAxisRange(rhos, zoom);
+    const decimals = _corrHoverPrecision(xRange);
+
     Plotly.react('ml-corr-plot', [{
         type:        'bar',
         orientation: 'h',
         x:           rhos,
         y:           features,
         marker:      { color: colors },
-        hovertemplate: '%{y}: ρ = %{x:.3f}<extra></extra>',
+        hovertemplate: `%{y}: ρ = %{x:.${decimals}f}<extra></extra>`,
     }], {
         margin:  { l: 180, r: 20, t: 30, b: 50 },
-        xaxis:   { title: 'Spearman ρ', range: [-1, 1], zeroline: true },
+        xaxis:   { title: 'Spearman ρ', range: xRange, zeroline: true },
         yaxis:   { autorange: 'reversed' },
         height:  Math.max(300, features.length * 20 + 80),
         title:   `Spearman ρ — features vs ${param}`,
@@ -317,6 +370,13 @@ function _drawCorrBar(correlations, param) {
 function onCorrParamChange() {
     const sel = document.getElementById('ml-corr-param-sel');
     if (state._mlCorrelations) _drawCorrBar(state._mlCorrelations, sel.value);
+}
+
+function onCorrZoomToggle() {
+    const sel = document.getElementById('ml-corr-param-sel');
+    if (state._mlCorrelations && sel && sel.value) {
+        _drawCorrBar(state._mlCorrelations, sel.value);
+    }
 }
 
 function _csvCell(v) {
@@ -512,6 +572,7 @@ export {
     updateMlRunBtn,
     runMlAnalysis,
     onCorrParamChange,
+    onCorrZoomToggle,
     onMlLabelColChange,
     downloadMlResultsCSV,
 };

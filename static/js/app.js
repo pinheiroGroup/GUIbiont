@@ -27,7 +27,7 @@ import { initBatchFitTab, loadBatchFitModels, loadBatchFitExperiments,
          onBatchModeChange, selectAllBatchModels, clearAllBatchModels,
          runBatchFit, displayBatchResults, downloadBatchCSV } from './batch-fit.js';
 import { onFitResultsFileChange, onFeatureMatrixFileChange, updateMlRunBtn,
-         runMlAnalysis, onCorrParamChange, onMlLabelColChange,
+         runMlAnalysis, onCorrParamChange, onCorrZoomToggle, onMlLabelColChange,
          downloadMlResultsCSV } from './ml-analysis.js';
 import { openFitCodeExport, openBatchCodeExport, openClusterCodeExport,
          closeCodeExportModal, toggleCodeComments, downloadExportedCode } from './code-export.js';
@@ -271,7 +271,7 @@ Object.assign(window, {
     runBatchFit, displayBatchResults, downloadBatchCSV,
     // ML downstream analysis
     onFitResultsFileChange, onFeatureMatrixFileChange, updateMlRunBtn,
-    runMlAnalysis, onCorrParamChange, onMlLabelColChange, downloadMlResultsCSV,
+    runMlAnalysis, onCorrParamChange, onCorrZoomToggle, onMlLabelColChange, downloadMlResultsCSV,
     // Code export modal
     openFitCodeExport, openBatchCodeExport, openClusterCodeExport,
     closeCodeExportModal, toggleCodeComments, downloadExportedCode,
