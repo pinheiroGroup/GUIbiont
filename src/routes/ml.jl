@@ -199,6 +199,13 @@
         curves_for_cluster = curves
     end
 
+    requested_prescreen = Bool(body.prescreen_constant)
+    prescreen_mask = requested_prescreen ?
+        _prescreen_constant_raw_od_mask(curves_for_cluster;
+            tol_const = Float64(body.prescreen_tol_const)) :
+        falses(size(curves_for_cluster, 1))
+    do_prescreen = requested_prescreen && any(prescreen_mask)
+
     # ------------------------------------------------------------------
     # Clustering — delegate entirely to KinBiont preprocess
     # ------------------------------------------------------------------
@@ -208,7 +215,7 @@
         n_clusters                 = k_eff,
         cluster_method             = Symbol(cluster_method),
         cluster_trend_test         = Bool(body.trend_test_flat),
-        cluster_prescreen_constant = Bool(body.prescreen_constant),
+        cluster_prescreen_constant = do_prescreen,
         cluster_tol_const          = Float64(body.prescreen_tol_const),
         cluster_hclust_linkage     = Symbol(hclust_linkage),
         cluster_dbscan_eps         = Float64(dbscan_eps),
@@ -435,8 +442,13 @@ end
     else
         curves_for = curves
     end
-    do_prescreen = Bool(body.prescreen_constant)
-    k_min        = do_prescreen ? 3 : 2
+    requested_prescreen = Bool(body.prescreen_constant)
+    prescreen_mask = requested_prescreen ?
+        _prescreen_constant_raw_od_mask(curves_for;
+            tol_const = Float64(body.prescreen_tol_const)) :
+        falses(size(curves_for, 1))
+    do_prescreen = requested_prescreen && any(prescreen_mask)
+    k_min        = 2
 
     sweep_results = []
     for k in k_min:min(k_max, n_series)

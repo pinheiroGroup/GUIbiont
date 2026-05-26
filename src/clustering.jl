@@ -164,6 +164,23 @@ function _detect_blank_indices(
             if flat_flags[i] && isfinite(mean_ods[i]) && mean_ods[i] <= od_thr]
 end
 
+# Mirror KinBiont's constant/non-growing pre-screen on raw OD curves.  This is
+# used as a cheap preflight so we only reserve the sentinel cluster when at
+# least one curve would actually be assigned to it.
+function _prescreen_constant_raw_od_mask(
+    curves::Matrix{Float64};
+    tol_const::Float64 = 1.5,
+    q_low::Float64 = 0.05,
+    q_high::Float64 = 0.95,
+)::BitVector
+    opts = Kinbiont.FitOptions(
+        cluster_tol_const = tol_const,
+        cluster_q_low     = q_low,
+        cluster_q_high    = q_high,
+    )
+    return Kinbiont._prescreen_constant(curves, opts)
+end
+
 # Apply blank subtraction to a curves matrix using the given blank timeseries.
 # method: "pointbypoint" | "shift" | "clip"
 function _apply_blank_subtraction_matrix(
