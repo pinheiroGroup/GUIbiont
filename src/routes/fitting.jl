@@ -294,6 +294,11 @@ end
     flat_thr        = max(0.0, body.skip_flat_threshold)
     maxiters        = clamp(body.maxiters > 0 ? body.maxiters : DEFAULT_FIT_MAXITERS, 1, MAX_FIT_MAXITERS)
     abstol          = body.abstol > 0.0 ? body.abstol : 0.0
+    compute_loglin  = body.compute_loglin
+    ll_pt_avg       = max(1, body.loglin_pt_avg)
+    ll_pt_deriv     = max(2, body.loglin_pt_smoothing_derivative)
+    ll_pt_min_win   = max(3, body.loglin_pt_min_size_of_win)
+    ll_thr_exp      = clamp(body.loglin_threshold_of_exp, 0.0, 1.0)
 
     if isempty(model_names_req)
         if !haskey(MODEL_REGISTRY, model_name)
@@ -390,18 +395,23 @@ end
                                     fit_result = fit_well_data(
                                         time_numeric[valid_indices], od_valid,
                                         blank_value, calibration_file, well, experiment;
-                                        subtract_blank           = subtract_blank,
-                                        blank_method             = blank_method,
-                                        blank_timeseries         = blank_ts_valid,
-                                        blank_well_names         = blank_well_names,
-                                        model_name               = model_name,
-                                        model_names              = model_names_req,
-                                        optimizer                = optimizer,
-                                        deterministic_optimizers = det_opts,
-                                        stochastic_optimizers    = sto_opts,
-                                        stochastic_runs          = sto_runs,
-                                        maxiters                 = maxiters,
-                                        abstol                   = abstol,
+                                        subtract_blank                  = subtract_blank,
+                                        blank_method                    = blank_method,
+                                        blank_timeseries                = blank_ts_valid,
+                                        blank_well_names                = blank_well_names,
+                                        model_name                      = model_name,
+                                        model_names                     = model_names_req,
+                                        optimizer                       = optimizer,
+                                        deterministic_optimizers        = det_opts,
+                                        stochastic_optimizers           = sto_opts,
+                                        stochastic_runs                 = sto_runs,
+                                        maxiters                        = maxiters,
+                                        abstol                          = abstol,
+                                        compute_loglin                  = compute_loglin,
+                                        loglin_pt_avg                   = ll_pt_avg,
+                                        loglin_pt_smoothing_derivative  = ll_pt_deriv,
+                                        loglin_pt_min_size_of_win       = ll_pt_min_win,
+                                        loglin_threshold_of_exp         = ll_thr_exp,
                                     )
                                     lock(local_lock) do; push!(results, fit_result); end
                                 end
@@ -466,6 +476,162 @@ end
             delete!(BATCH_JOBS, job_id)
         end
         return json(resp)
+    end
+end
+
+# ---------------------------------------------------------------------------
+# POST /api/batch-fit-loglin
+# ---------------------------------------------------------------------------
+# Batch log-linear μ_max fit: same job-tracking + progress pattern as
+# /api/batch-fit, but the per-well work is a sliding-window log-lin
+# regression (no optimizer, no AICc, no parametric model). For users who
+# only need μ_max and don't want to pay for aHPM/Baranyi optimisations.
+# Progress polling uses the same /api/batch-fit/progress/{job_id} endpoint.
+# ---------------------------------------------------------------------------
+@post "/api/batch-fit-loglin" function(req::HTTP.Request, body::Json{BatchLogLinFitRequest})
+    body = body.payload
+    experiment      = string(body.experiment)
+    requested_wells = isempty(body.wells) ? nothing : String[string(w) for w in body.wells]
+    subtract_blank  = body.blank_subtraction
+    blank_method    = string(body.blank_method)
+    smoothing       = string(body.type_of_smoothing)
+    pt_avg          = max(1, body.pt_avg)
+    pt_deriv        = max(2, body.pt_smoothing_derivative)
+    pt_min_win      = max(3, body.pt_min_size_of_win)
+    win_type        = string(body.type_of_win)
+    thr_exp         = clamp(body.threshold_of_exp, 0.0, 1.0)
+    start_thr       = body.start_exp_win_thr
+    thr_lowess      = body.thr_lowess
+    flat_thr        = max(0.0, body.skip_flat_threshold)
+
+    try
+        data_file        = joinpath(CLEAN_DATA_PATH, experiment, "data_channel_1.csv")
+        annotation_file  = joinpath(CLEAN_DATA_PATH, experiment, "annotation_clean.csv")
+
+        if !isfile(data_file) || !isfile(annotation_file)
+            return json(Dict("error" => "Data files not found for experiment '$experiment'"); status=404)
+        end
+
+        growth_data      = CSV.read(data_file, DataFrame, header=1, silencewarnings=true)
+        annotations      = read_annotation_file(annotation_file)
+        excluded_wells   = get_blank_wells(annotations)
+        blank_well_names = get_blank_well_names(annotations)
+        column_names_str = string.(names(growth_data))
+        time_numeric     = parse_time_column(growth_data)
+        blank_value      = compute_blank_value(growth_data, annotations)
+        blank_ts         = subtract_blank && blank_method == "pointbypoint" ?
+            compute_blank_timeseries(growth_data, annotations) : Float64[]
+
+        wells_to_fit = requested_wells !== nothing ? requested_wells :
+            filter(w -> w in column_names_str && !(w in excluded_wells), column_names_str[2:end])
+
+        job_id = string(time_ns(), base=16)
+        job = Dict{String, Any}(
+            "status"       => "running",
+            "experiment"   => experiment,
+            # The shared progress endpoint includes `model` and `model_names`
+            # in its response — set them to "log_lin" so the frontend can
+            # dispatch on the same field that distinguishes parametric jobs.
+            "model"        => "log_lin",
+            "model_names"  => ["log_lin"],
+            "maxiters"     => 0,
+            "abstol"       => 0.0,
+            "total"        => length(wells_to_fit),
+            "completed"    => 0,
+            "current_well" => "",
+            "results"      => Dict{String, Any}[],
+            "errors"       => String[],
+            "skipped"      => Dict{String, Any}[],
+        )
+        lock(BATCH_JOBS_LOCK) do
+            BATCH_JOBS[job_id] = job
+        end
+
+        Threads.@spawn begin
+            results    = Dict{String, Any}[]
+            errors     = String[]
+            skipped    = Dict{String, Any}[]
+            local_lock = ReentrantLock()
+
+            tasks = map(wells_to_fit) do well
+                Threads.@spawn begin
+                    lock(BATCH_JOBS_LOCK) do
+                        job["current_well"] = well
+                    end
+                    if !(well in column_names_str)
+                        lock(local_lock) do; push!(errors, "Well '$well' not found"); end
+                    elseif well in excluded_wells
+                        lock(local_lock) do; push!(errors, "Well '$well' is blank/excluded"); end
+                    else
+                        try
+                            od_raw        = parse_od_column(growth_data, Symbol(well))
+                            valid_indices = findall(.!isnan.(od_raw))
+                            min_pts       = max(10, pt_deriv + pt_min_win + 2)
+                            if length(valid_indices) < min_pts
+                                lock(local_lock) do; push!(errors, "Well '$well': insufficient data points"); end
+                            else
+                                od_valid  = od_raw[valid_indices]
+                                amplitude = maximum(od_valid) - minimum(od_valid)
+                                if flat_thr > 0.0 && amplitude < flat_thr
+                                    lock(local_lock) do
+                                        push!(skipped, Dict{String, Any}(
+                                            "well"      => well,
+                                            "amplitude" => amplitude,
+                                            "reason"    => "flat curve (amplitude $(round(amplitude, digits=4)) < threshold $(flat_thr))",
+                                        ))
+                                    end
+                                else
+                                    blank_ts_valid = isempty(blank_ts) ? Float64[] : blank_ts[valid_indices]
+                                    fit_result = fit_well_loglin(
+                                        time_numeric[valid_indices], od_valid,
+                                        blank_value, well, experiment;
+                                        subtract_blank          = subtract_blank,
+                                        blank_method            = blank_method,
+                                        blank_timeseries        = blank_ts_valid,
+                                        blank_well_names        = blank_well_names,
+                                        type_of_smoothing       = smoothing,
+                                        pt_avg                  = pt_avg,
+                                        pt_smoothing_derivative = pt_deriv,
+                                        pt_min_size_of_win      = pt_min_win,
+                                        type_of_win             = win_type,
+                                        threshold_of_exp        = thr_exp,
+                                        start_exp_win_thr       = start_thr,
+                                        thr_lowess              = thr_lowess,
+                                    )
+                                    lock(local_lock) do; push!(results, fit_result); end
+                                end
+                            end
+                        catch e
+                            lock(local_lock) do; push!(errors, "Well '$well': $(string(e))"); end
+                        end
+                    end
+                    lock(BATCH_JOBS_LOCK) do
+                        job["completed"] += 1
+                    end
+                end
+            end
+
+            foreach(fetch, tasks)
+
+            lock(BATCH_JOBS_LOCK) do
+                job["status"]   = "done"
+                job["results"]  = results
+                job["errors"]   = errors
+                job["skipped"]  = skipped
+                job["summary"]  = Dict(
+                    "total"   => length(wells_to_fit),
+                    "success" => length(results),
+                    "failed"  => length(errors),
+                    "skipped" => length(skipped),
+                    "errors"  => errors,
+                )
+                job["current_well"] = ""
+            end
+        end
+
+        return json(Dict("job_id" => job_id, "total" => length(wells_to_fit)))
+    catch e
+        return json(Dict("error" => "Batch log-linear fitting failed: $e"); status=500)
     end
 end
 
@@ -592,4 +758,150 @@ end
         "n_timepoints"=> n_tp,
         "group_names" => group_names,
     )
+end
+
+# ---------------------------------------------------------------------------
+# Log-linear fit (exponential-phase growth rate via sliding window)
+# ---------------------------------------------------------------------------
+# Distinct from /api/fit-curve: instead of optimising an ODE/NL model, this
+# identifies the exponential window from the smoothed specific growth rate
+# and runs a closed-form linear regression of log(OD) vs time. Returns the
+# regression statistics (slope = µ_max, doubling time, R², 2σ CIs) plus the
+# fitted segment for plotting.
+@post "/api/fit-loglin" function(req::HTTP.Request, body::Json{LogLinFitRequest})
+    body = body.payload
+    experiment      = string(body.experiment)
+    well            = string(body.well)
+    subtract_blank  = body.blank_subtraction
+    blank_method    = string(body.blank_method)
+    smoothing       = string(body.type_of_smoothing)
+    pt_avg          = max(1, body.pt_avg)
+    pt_deriv        = max(2, body.pt_smoothing_derivative)
+    pt_min_win      = max(3, body.pt_min_size_of_win)
+    win_type        = string(body.type_of_win)
+    thr_exp         = clamp(body.threshold_of_exp, 0.0, 1.0)
+    start_thr       = body.start_exp_win_thr
+    thr_lowess      = body.thr_lowess
+
+    data_file       = joinpath(CLEAN_DATA_PATH, experiment, "data_channel_1.csv")
+    annotation_file = joinpath(CLEAN_DATA_PATH, experiment, "annotation_clean.csv")
+
+    if !isfile(data_file) || !isfile(annotation_file)
+        return json(Dict("error" => "Data files not found"); status=404)
+    end
+
+    try
+        growth_data      = CSV.read(data_file, DataFrame, header=1, silencewarnings=true)
+        annotations      = read_annotation_file(annotation_file)
+        excluded_wells   = get_blank_wells(annotations)
+        blank_well_names = get_blank_well_names(annotations)
+        column_names_str = string.(names(growth_data))
+
+        if !(well in column_names_str)
+            return json(Dict("error" => "Well '$well' not found"); status=404)
+        end
+        if well in excluded_wells
+            return json(Dict("error" => "Well '$well' is a blank well"); status=400)
+        end
+
+        time_numeric     = parse_time_column(growth_data)
+        od_raw           = parse_od_column(growth_data, Symbol(well))
+        blank_value      = compute_blank_value(growth_data, annotations)
+        blank_timeseries = (subtract_blank && blank_method == "pointbypoint") ?
+            compute_blank_timeseries(growth_data, annotations) : Float64[]
+
+        valid = findall(.!isnan.(od_raw))
+        if length(valid) < max(10, pt_deriv + pt_min_win + 2)
+            return json(Dict("error" => "Not enough valid data points for log-linear fit"); status=400)
+        end
+
+        t = time_numeric[valid]
+        od = od_raw[valid]
+
+        # Blank handling: log-lin needs strictly positive OD. Use the "clip"
+        # method (or shift when the blank pulls OD negative) so log() is safe.
+        od_subtracted_display = nothing
+        if subtract_blank && blank_value > 0.0
+            blank_ts_valid = isempty(blank_timeseries) ? Float64[] : blank_timeseries[valid]
+            corrected = (blank_method == "pointbypoint" && length(blank_ts_valid) == length(od)) ?
+                od .- blank_ts_valid : od .- blank_value
+            od_subtracted_display = max.(corrected, 0.0)
+            if blank_method == "clip"
+                od_for_fit = max.(corrected, 1e-4)
+            else
+                shift = max(-minimum(corrected), 0.0) + 1e-4
+                od_for_fit = corrected .+ shift
+            end
+        else
+            od_for_fit = max.(od, 1e-4)
+        end
+
+        data_mat = Matrix(transpose(hcat(t, od_for_fit)))
+
+        raw = Kinbiont.fitting_one_well_Log_Lin(
+            data_mat,
+            well,
+            experiment;
+            type_of_smoothing       = smoothing,
+            pt_avg                  = pt_avg,
+            pt_smoothing_derivative = pt_deriv,
+            pt_min_size_of_win      = pt_min_win,
+            type_of_win             = win_type,
+            threshold_of_exp        = thr_exp,
+            start_exp_win_thr       = start_thr,
+            thr_lowess              = thr_lowess,
+        )
+
+        # raw = (method, params, fit_matrix, smoothed_data, confidence_band)
+        # params layout from Fit_one_well_functions.jl:
+        #   [label_exp, name_well, t_start_exp, t_end_exp, t_max_gr, gr_max,
+        #    slope, sigma_b, dt, dt_minus, dt_plus, intercept, sigma_a, rho]
+        params       = raw[2]
+        fit_matrix   = raw[3]
+        smoothed     = raw[4]
+        ci_band      = raw[5]
+
+        # Guard against the "no exp window found" path where matrix is `missing`.
+        fit_times    = ismissing(fit_matrix) ? Float64[] :
+                       Vector{Float64}(fit_matrix[:, 1])
+        log_fit_vals = ismissing(fit_matrix) ? Float64[] :
+                       Vector{Float64}(fit_matrix[:, 2])
+        fit_od_vals  = isempty(log_fit_vals) ? Float64[] : exp.(log_fit_vals)
+        ci_vals      = ismissing(ci_band) ? Float64[] : Vector{Float64}(ci_band)
+
+        param_names = [
+            "label_exp", "well", "t_start_exp", "t_end_exp", "t_max_gr",
+            "gr_max", "slope", "2_sigma_slope", "doubling_time",
+            "doubling_time_minus_2sigma", "doubling_time_plus_2sigma",
+            "intercept", "2_sigma_intercept", "R_squared",
+        ]
+
+        result = Dict{String, Any}(
+            "experiment"            => experiment,
+            "well"                  => well,
+            "method"                => raw[1],
+            "experimental_time"     => t,
+            "experimental_od"       => od,
+            "smoothed_time"         => Vector{Float64}(smoothed[1, :]),
+            "smoothed_od"           => Vector{Float64}(smoothed[2, :]),
+            "fit_time"              => fit_times,
+            "fit_od"                => fit_od_vals,
+            "fit_log_od"            => log_fit_vals,
+            "confidence_band_log"   => ci_vals,
+            "param_names"           => param_names,
+            "parameters"            => params,
+            "blank_value"           => blank_value,
+            "blank_subtraction"     => subtract_blank,
+            "blank_method"          => blank_method,
+            "blank_wells"           => blank_well_names,
+        )
+
+        if od_subtracted_display !== nothing
+            result["experimental_od_subtracted"] = od_subtracted_display
+        end
+
+        return sanitize_for_json(result)
+    catch e
+        return json(Dict("error" => "Log-linear fitting failed: $e"); status=500)
+    end
 end

@@ -15,7 +15,8 @@ import { setFitMode, onFittingReplicateChange, fitReplicateAverage,
          onFittingExperimentChange, onFittingWellChange, onBlankSubtractionChange,
          onBlankMethodChange, useAutoDetectedBlanks, runBlankAnalysis, renderBlankAnalysisCard,
          fitGrowthCurve, displayFittingResults, onFitShowIndividualChange,
-         updateFitPlot, plotFittedCurve } from './fitting.js';
+         updateFitPlot, plotFittedCurve,
+         fitLogLinCurve, displayLogLinResults, plotLogLinCurve, toggleLogLinOptions } from './fitting.js';
 import { toggleFullscreen, handleEscapeKey, exportPlot, exportPlotSVG,
          generateFilename, showExportMessage } from './export.js';
 import { debouncedGlobalSearch, globalSearchExperiments, displayGlobalSearchResults,
@@ -24,7 +25,8 @@ import { loadRawExperiments, cleanExperimentData } from './cleaning.js';
 import { initBatchFitTab, loadBatchFitModels, loadBatchFitExperiments,
          onBatchExperimentChange, updateBatchWellCount,
          selectAllBatchWells, clearAllBatchWells,
-         onBatchModeChange, selectAllBatchModels, clearAllBatchModels,
+         onBatchModeChange, onBatchFitMethodChange,
+         selectAllBatchModels, clearAllBatchModels,
          runBatchFit, displayBatchResults, downloadBatchCSV } from './batch-fit.js';
 import { onFitResultsFileChange, onFeatureMatrixFileChange, updateMlRunBtn,
          runMlAnalysis, onCorrParamChange, onCorrZoomToggle, onMlLabelColChange,
@@ -244,6 +246,7 @@ Object.assign(window, {
     onBlankMethodChange, useAutoDetectedBlanks, runBlankAnalysis, renderBlankAnalysisCard,
     fitGrowthCurve, displayFittingResults, onFitShowIndividualChange,
     updateFitPlot, plotFittedCurve,
+    fitLogLinCurve, displayLogLinResults, plotLogLinCurve, toggleLogLinOptions,
     // Export / Fullscreen
     toggleFullscreen, handleEscapeKey, exportPlot, exportPlotSVG,
     generateFilename, showExportMessage,
@@ -267,7 +270,8 @@ Object.assign(window, {
     initBatchFitTab, loadBatchFitModels, loadBatchFitExperiments,
     onBatchExperimentChange, updateBatchWellCount,
     selectAllBatchWells, clearAllBatchWells,
-    onBatchModeChange, selectAllBatchModels, clearAllBatchModels,
+    onBatchModeChange, onBatchFitMethodChange,
+    selectAllBatchModels, clearAllBatchModels,
     runBatchFit, displayBatchResults, downloadBatchCSV,
     // ML downstream analysis
     onFitResultsFileChange, onFeatureMatrixFileChange, updateMlRunBtn,

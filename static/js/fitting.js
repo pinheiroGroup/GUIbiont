@@ -19,6 +19,7 @@ function setFitMode(mode) {
     state.currentFitMode = mode;
     const wellSelect = document.getElementById('fitting-well');
     const replicateSelect = document.getElementById('fitting-replicate');
+    const logLinBtn = document.getElementById('fit-loglin-button');
     document.getElementById('fit-mode-btn-well').classList.toggle('active', mode === 'well');
     document.getElementById('fit-mode-btn-replicate').classList.toggle('active', mode === 'replicate');
     document.getElementById('fit-show-individual-container').style.display = mode === 'replicate' ? 'block' : 'none';
@@ -26,10 +27,13 @@ function setFitMode(mode) {
         wellSelect.style.display = '';
         replicateSelect.style.display = 'none';
         document.getElementById('fit-button').disabled = !wellSelect.value;
+        if (logLinBtn) logLinBtn.disabled = !wellSelect.value;
     } else {
         wellSelect.style.display = 'none';
         replicateSelect.style.display = '';
         document.getElementById('fit-button').disabled = !replicateSelect.value;
+        // Log-Lin endpoint only supports a single well, not replicates.
+        if (logLinBtn) logLinBtn.disabled = true;
     }
 }
 
@@ -240,6 +244,8 @@ async function onFittingExperimentChange() {
         wellSelect.innerHTML = '<option value="">Select Well</option>';
         wellSelect.disabled = true;
         fitButton.disabled = true;
+        const logLinBtnReset = document.getElementById('fit-loglin-button');
+        if (logLinBtnReset) logLinBtnReset.disabled = true;
         return;
     }
     state._lastBlankAnalysis = null;
@@ -296,7 +302,9 @@ async function onFittingExperimentChange() {
 async function onFittingWellChange() {
     const wellSelect = document.getElementById('fitting-well');
     const fitButton = document.getElementById('fit-button');
+    const logLinBtn = document.getElementById('fit-loglin-button');
     fitButton.disabled = !wellSelect.value;
+    if (logLinBtn) logLinBtn.disabled = !wellSelect.value || state.currentFitMode === 'replicate';
     if (wellSelect.value) await runBlankAnalysis();
 }
 
@@ -665,6 +673,231 @@ function plotFittedCurve(fitData) {
 }
 
 
+// ---------------------------------------------------------------------------
+// Log-linear (exponential-phase) fitting
+// ---------------------------------------------------------------------------
+
+function toggleLogLinOptions() {
+    const panel = document.getElementById('loglin-options');
+    if (panel) panel.style.display = panel.style.display === 'none' ? '' : 'none';
+}
+
+function buildLogLinPayload() {
+    const num = (id, fallback) => {
+        const v = parseFloat(document.getElementById(id)?.value);
+        return Number.isFinite(v) ? v : fallback;
+    };
+    const intnum = (id, fallback) => {
+        const v = parseInt(document.getElementById(id)?.value, 10);
+        return Number.isFinite(v) ? v : fallback;
+    };
+    return {
+        type_of_smoothing: document.getElementById('loglin-smoothing')?.value || 'rolling_avg',
+        type_of_win: document.getElementById('loglin-win-type')?.value || 'maximum',
+        pt_avg: intnum('loglin-pt-avg', 7),
+        pt_smoothing_derivative: intnum('loglin-pt-deriv', 7),
+        pt_min_size_of_win: intnum('loglin-pt-min-win', 7),
+        threshold_of_exp: num('loglin-thr-exp', 0.9),
+        start_exp_win_thr: num('loglin-start-thr', 0.05),
+    };
+}
+
+async function fitLogLinCurve() {
+    if (state.currentFitMode === 'replicate') {
+        alert('Log-Lin fit is only available for a single well — switch to "Fit Well" mode.');
+        return;
+    }
+
+    const experiment = document.getElementById('fitting-experiment').value;
+    const well = document.getElementById('fitting-well').value;
+    if (!experiment || !well) {
+        alert('Please select both experiment and well');
+        return;
+    }
+
+    const btn = document.getElementById('fit-loglin-button');
+    const originalLabel = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '⏳ Fitting...';
+
+    try {
+        const response = await fetch(`${API_BASE}/api/fit-loglin`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                experiment,
+                well,
+                blank_subtraction: document.getElementById('fit-blank-subtraction').checked,
+                blank_method: document.getElementById('fit-blank-method').value,
+                ...buildLogLinPayload(),
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Log-linear fit failed');
+        }
+
+        const fitData = await response.json();
+        displayLogLinResults(fitData);
+        plotLogLinCurve(fitData);
+    } catch (error) {
+        alert(`Error fitting log-linear curve: ${error.message}`);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = originalLabel;
+    }
+}
+
+function _fmt(v, digits = 4) {
+    if (typeof v !== 'number' || !isFinite(v)) return '—';
+    return v.toFixed(digits);
+}
+
+function displayLogLinResults(fitData) {
+    const resultsDiv = document.getElementById('fitting-results');
+    const parametersDiv = document.getElementById('fitting-parameters');
+
+    const names = fitData.param_names || [];
+    const params = fitData.parameters || [];
+    const get = (key) => {
+        const i = names.indexOf(key);
+        return i >= 0 ? params[i] : undefined;
+    };
+
+    const muMax = get('slope');
+    const muSigma = get('2_sigma_slope');
+    const dt = get('doubling_time');
+    const dtMinus = get('doubling_time_minus_2sigma');
+    const dtPlus = get('doubling_time_plus_2sigma');
+    const grMax = get('gr_max');
+    const tStart = get('t_start_exp');
+    const tEnd = get('t_end_exp');
+    const tMaxGr = get('t_max_gr');
+    const intercept = get('intercept');
+    const interceptSigma = get('2_sigma_intercept');
+    const r2 = get('R_squared');
+
+    let html = `
+        <div class="parameter-row">
+            <span class="parameter-name">Experiment:</span>
+            <span class="parameter-value">${fitData.experiment}</span>
+        </div>
+        <div class="parameter-row">
+            <span class="parameter-name">Well:</span>
+            <span class="parameter-value">${fitData.well}</span>
+        </div>
+        <div class="parameter-row">
+            <span class="parameter-name">Method:</span>
+            <span class="parameter-value">${fitData.method || 'Log-lin'}</span>
+        </div>
+        <div class="parameter-row">
+            <span class="parameter-name">Blank value:</span>
+            <span class="parameter-value">${_fmt(fitData.blank_value, 4)}</span>
+        </div>
+        ${fitData.blank_subtraction ? `
+        <div class="parameter-row">
+            <span class="parameter-name">Blank subtraction:</span>
+            <span class="parameter-value" style="color:#4caf50;">${fitData.blank_method === 'pointbypoint' ? 'Point-by-point' : fitData.blank_method === 'clip' ? 'Clip to zero' : 'Shift minimum'}</span>
+        </div>` : ''}
+        <div class="parameter-row">
+            <span class="parameter-name">Exponential window:</span>
+            <span class="parameter-value">${_fmt(tStart, 3)} → ${_fmt(tEnd, 3)} h</span>
+        </div>
+        <div class="parameter-row">
+            <span class="parameter-name">Time of max GR:</span>
+            <span class="parameter-value">${_fmt(tMaxGr, 3)} h</span>
+        </div>
+        <div class="parameter-row">
+            <span class="parameter-name">µ (slope, ±2σ):</span>
+            <span class="parameter-value">${_fmt(muMax, 5)} ± ${_fmt(muSigma, 5)} /h</span>
+        </div>
+        <div class="parameter-row">
+            <span class="parameter-name">Max GR from derivative:</span>
+            <span class="parameter-value">${_fmt(grMax, 5)} /h</span>
+        </div>
+        <div class="parameter-row">
+            <span class="parameter-name">Doubling time (±2σ):</span>
+            <span class="parameter-value">${_fmt(dt, 4)} h  (${_fmt(dtMinus, 4)} … ${_fmt(dtPlus, 4)})</span>
+        </div>
+        <div class="parameter-row">
+            <span class="parameter-name">Intercept (±2σ):</span>
+            <span class="parameter-value">${_fmt(intercept, 4)} ± ${_fmt(interceptSigma, 4)}</span>
+        </div>
+        <div class="parameter-row">
+            <span class="parameter-name">R²:</span>
+            <span class="parameter-value">${_fmt(r2, 5)}</span>
+        </div>
+    `;
+
+    parametersDiv.innerHTML = html;
+    resultsDiv.style.display = 'block';
+}
+
+function plotLogLinCurve(fitData) {
+    const plotDiv = document.getElementById('plot-fitting');
+    const blankSub = fitData.blank_subtraction && fitData.experimental_od_subtracted;
+
+    // Raw experimental data
+    const traces = [{
+        x: fitData.experimental_time,
+        y: fitData.experimental_od,
+        mode: 'markers',
+        type: 'scatter',
+        name: `${fitData.experiment}: ${fitData.well} (Raw)`,
+        marker: { color: blankSub ? 'rgba(150,150,150,0.4)' : 'black', size: 6 }
+    }];
+
+    if (blankSub) {
+        traces.push({
+            x: fitData.experimental_time,
+            y: fitData.experimental_od_subtracted,
+            mode: 'markers',
+            type: 'scatter',
+            name: `${fitData.experiment}: ${fitData.well} (Blank-subtracted)`,
+            marker: { color: 'black', size: 6 }
+        });
+    }
+
+    if (Array.isArray(fitData.smoothed_time) && Array.isArray(fitData.smoothed_od) && fitData.smoothed_time.length > 0) {
+        traces.push({
+            x: fitData.smoothed_time,
+            y: fitData.smoothed_od,
+            mode: 'lines',
+            type: 'scatter',
+            name: 'Smoothed',
+            line: { color: '#1f77b4', width: 1.5, dash: 'dot' }
+        });
+    }
+
+    if (Array.isArray(fitData.fit_time) && Array.isArray(fitData.fit_od) && fitData.fit_time.length > 0) {
+        traces.push({
+            x: fitData.fit_time,
+            y: fitData.fit_od,
+            mode: 'lines',
+            type: 'scatter',
+            name: 'Log-Lin Fit',
+            line: { color: 'red', width: 3 }
+        });
+    }
+
+    const layout = {
+        title: `Log-Linear Fit: ${fitData.experiment} - ${fitData.well}`,
+        xaxis: { title: { text: 'Time (hours)', font: { size: state.axisTitleFontSize } }, tickfont: { size: state.axisTickFontSize } },
+        yaxis: { title: { text: 'OD (Arb. Units)', font: { size: state.axisTitleFontSize } }, tickfont: { size: state.axisTickFontSize }, type: 'log' },
+        showlegend: true,
+        legend: { font: { size: state.legendFontSize } },
+        hovermode: 'closest',
+        autosize: true
+    };
+
+    document.getElementById('plot-fitting-container').style.display = 'block';
+    Plotly.newPlot(plotDiv, traces, layout, { responsive: true, displayModeBar: true, displaylogo: false }).then(() => {
+        setTimeout(() => Plotly.Plots.resize(plotDiv), 100);
+    });
+    document.getElementById('stats-container').style.display = 'none';
+}
+
 export {
     setFitMode, onFittingReplicateChange, fitReplicateAverage,
     loadFittingModels, onFittingModelChange, loadFittingExperiments, onFittingExperimentChange, onFittingWellChange,
@@ -672,4 +905,5 @@ export {
     useAutoDetectedBlanks, runBlankAnalysis, renderBlankAnalysisCard,
     fitGrowthCurve, displayFittingResults, onFitShowIndividualChange,
     updateFitPlot, plotFittedCurve,
+    fitLogLinCurve, displayLogLinResults, plotLogLinCurve, toggleLogLinOptions,
 };

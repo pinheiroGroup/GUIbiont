@@ -525,6 +525,17 @@ function fit_well_data(
     stochastic_runs::Int                    = 3,
     maxiters::Int = DEFAULT_FIT_MAXITERS,
     abstol::Float64 = 1e-15,
+    # Optional log-linear sliding-window companion fit. When `compute_loglin`
+    # is true, the result dict is enriched with `gr_loglin`, `gr_loglin_se`,
+    # `gr_max_sliding`, `t_exp_start_loglin`, `t_exp_end_loglin`,
+    # `doubling_time_loglin`, `R_squared_loglin`, and `loglin_converged`.
+    # Fit runs on the same `od_for_fit` as the parametric model so the two
+    # estimates are directly comparable.
+    compute_loglin::Bool = false,
+    loglin_pt_avg::Int = 7,
+    loglin_pt_smoothing_derivative::Int = 7,
+    loglin_pt_min_size_of_win::Int = 7,
+    loglin_threshold_of_exp::Float64 = 0.9,
 )
     if subtract_blank && blank_value > 0.0
         if blank_method == "pointbypoint" && length(blank_timeseries) == length(od_raw)
@@ -636,6 +647,184 @@ function fit_well_data(
             ) for o in outcomes
         ],
     )
+
+    if od_subtracted_display !== nothing
+        result["experimental_od_subtracted"] = od_subtracted_display
+    end
+
+    # ────────────────────────────────────────────────────────────────────
+    # Local helper: fit a single well with log-linear sliding-window only.
+    # Hoisted into a separate function so that `/api/batch-fit-loglin` can
+    # call it directly without going through the parametric optimizer path.
+    # The companion fit inside fit_well_data (compute_loglin=true above)
+    # uses the same Kinbiont call but with the already-computed od_for_fit
+    # — keep these in sync if you tune blank handling here.
+    # ────────────────────────────────────────────────────────────────────
+
+    # Optional log-linear sliding-window μ_max companion fit. Runs on the same
+    # od_for_fit data the parametric model saw, so the two estimates are
+    # directly comparable. When the exponential-window detector can't locate
+    # a window (very short curves, noisy data, persistent lag), we mark the
+    # log-lin fields as NaN with `loglin_converged = false` rather than
+    # failing the whole well — the parametric model fit remains valid.
+    if compute_loglin
+        loglin_fields = Dict{String, Any}(
+            "gr_loglin"             => NaN,
+            "gr_loglin_se"          => NaN,
+            "gr_max_sliding"        => NaN,
+            "t_exp_start_loglin"    => NaN,
+            "t_exp_end_loglin"      => NaN,
+            "doubling_time_loglin"  => NaN,
+            "R_squared_loglin"      => NaN,
+            "loglin_converged"      => false,
+        )
+
+        # log-lin needs ≥ pt_deriv + pt_min_win + 2 points; guard so we don't
+        # raise from inside Kinbiont and pollute the error channel.
+        min_pts = loglin_pt_smoothing_derivative + loglin_pt_min_size_of_win + 2
+        if length(od_for_fit) >= max(10, min_pts)
+            try
+                data_mat = Matrix(transpose(hcat(time_numeric, od_for_fit)))
+                raw = Kinbiont.fitting_one_well_Log_Lin(
+                    data_mat,
+                    label,
+                    experiment;
+                    type_of_smoothing       = "rolling_avg",
+                    pt_avg                  = loglin_pt_avg,
+                    pt_smoothing_derivative = loglin_pt_smoothing_derivative,
+                    pt_min_size_of_win      = loglin_pt_min_size_of_win,
+                    type_of_win             = "maximum",
+                    threshold_of_exp        = loglin_threshold_of_exp,
+                )
+                # raw[2] layout (see Kinbiont/src/Fit_one_well_functions.jl):
+                #   [1] label_exp   [2] well        [3] t_start_exp  [4] t_end_exp
+                #   [5] t_max_gr    [6] gr_max      [7] slope        [8] sigma_b
+                #   [9] doubling_t  [10] dt − 2σ    [11] dt + 2σ     [12] intercept
+                #   [13] sigma_a    [14] rho (Pearson R, NOT R² — squared below)
+                params = raw[2]
+                if length(params) >= 14 && params[7] !== missing
+                    loglin_fields["gr_loglin"]            = Float64(params[7])
+                    loglin_fields["gr_loglin_se"]         = Float64(params[8])
+                    loglin_fields["gr_max_sliding"]       = Float64(params[6])
+                    loglin_fields["t_exp_start_loglin"]   = Float64(params[3])
+                    loglin_fields["t_exp_end_loglin"]     = Float64(params[4])
+                    loglin_fields["doubling_time_loglin"] = Float64(params[9])
+                    loglin_fields["R_squared_loglin"]     = Float64(params[14])^2
+                    loglin_fields["loglin_converged"]     = true
+                end
+            catch
+                # Leave NaN sentinels; the parametric fit is the primary result.
+            end
+        end
+
+        merge!(result, loglin_fields)
+    end
+
+    return sanitize_for_json(result)
+end
+
+
+"""
+    fit_well_loglin(time, od, blank_value, label, experiment; kwargs...)
+        -> Dict{String, Any}
+
+Log-linear sliding-window growth-rate fit for a single well, no parametric
+model. Powers `/api/batch-fit-loglin` and produces a result dict with the
+same `gr_loglin*` field names that `fit_well_data(..., compute_loglin=true)`
+emits — keeping the two log-lin code paths consistent.
+
+Blank handling mirrors the single-curve `/api/fit-loglin` endpoint so that
+batch and single-well log-lin results from the same input are identical.
+"""
+function fit_well_loglin(
+    time_numeric::Vector{Float64},
+    od_raw::Vector{Float64},
+    blank_value::Float64,
+    label::String,
+    experiment::String;
+    subtract_blank::Bool = false,
+    blank_method::String = "pointbypoint",
+    blank_timeseries::Vector{Float64} = Float64[],
+    blank_well_names::Vector{String} = String[],
+    type_of_smoothing::String = "rolling_avg",
+    pt_avg::Int = 7,
+    pt_smoothing_derivative::Int = 7,
+    pt_min_size_of_win::Int = 7,
+    type_of_win::String = "maximum",
+    threshold_of_exp::Float64 = 0.9,
+    start_exp_win_thr::Float64 = 0.05,
+    thr_lowess::Float64 = 0.05,
+)
+    # Min points before Kinbiont so we surface a clean error.
+    min_pts = pt_smoothing_derivative + pt_min_size_of_win + 2
+    if length(od_raw) < max(10, min_pts)
+        error("Insufficient data points for log-linear fit "
+              * "($(length(od_raw)) < $(max(10, min_pts)))")
+    end
+
+    # Blank handling — log-lin needs strictly positive OD for log().
+    # Mirrors the single-curve /api/fit-loglin endpoint exactly.
+    od_subtracted_display = nothing
+    if subtract_blank && blank_value > 0.0
+        corrected = (blank_method == "pointbypoint" &&
+                     length(blank_timeseries) == length(od_raw)) ?
+            od_raw .- blank_timeseries : od_raw .- blank_value
+        od_subtracted_display = max.(corrected, 0.0)
+        if blank_method == "clip"
+            od_for_fit = max.(corrected, 1e-4)
+        else
+            shift = max(-minimum(corrected), 0.0) + 1e-4
+            od_for_fit = corrected .+ shift
+        end
+    else
+        od_for_fit = max.(od_raw, 1e-4)
+    end
+
+    data_mat = Matrix(transpose(hcat(time_numeric, od_for_fit)))
+    raw = Kinbiont.fitting_one_well_Log_Lin(
+        data_mat, label, experiment;
+        type_of_smoothing       = type_of_smoothing,
+        pt_avg                  = pt_avg,
+        pt_smoothing_derivative = pt_smoothing_derivative,
+        pt_min_size_of_win      = pt_min_size_of_win,
+        type_of_win             = type_of_win,
+        threshold_of_exp        = threshold_of_exp,
+        start_exp_win_thr       = start_exp_win_thr,
+        thr_lowess              = thr_lowess,
+    )
+    params = raw[2]
+
+    result = Dict{String, Any}(
+        "experiment"        => experiment,
+        "well"              => label,
+        "method"            => "Log-lin",
+        "experimental_time" => time_numeric,
+        "experimental_od"   => od_raw,
+        "blank_value"       => blank_value,
+        "blank_subtraction" => subtract_blank,
+        "blank_method"      => blank_method,
+        "blank_wells"       => blank_well_names,
+    )
+
+    if length(params) >= 14 && params[7] !== missing
+        result["gr_loglin"]             = Float64(params[7])
+        result["gr_loglin_se"]          = Float64(params[8])
+        result["gr_max_sliding"]        = Float64(params[6])
+        result["t_exp_start_loglin"]    = Float64(params[3])
+        result["t_exp_end_loglin"]      = Float64(params[4])
+        result["doubling_time_loglin"]  = Float64(params[9])
+        result["R_squared_loglin"]      = Float64(params[14])^2
+        result["loglin_converged"]      = true
+    else
+        result["gr_loglin"]             = NaN
+        result["gr_loglin_se"]          = NaN
+        result["gr_max_sliding"]        = NaN
+        result["t_exp_start_loglin"]    = NaN
+        result["t_exp_end_loglin"]      = NaN
+        result["doubling_time_loglin"]  = NaN
+        result["R_squared_loglin"]      = NaN
+        result["loglin_converged"]      = false
+    end
 
     if od_subtracted_display !== nothing
         result["experimental_od_subtracted"] = od_subtracted_display

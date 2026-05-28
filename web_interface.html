@@ -170,7 +170,52 @@
                                 </select>
                             </div>
                             <button class="btn fit-btn" onclick="fitGrowthCurve()" id="fit-button" disabled>📊 Fit Curve</button>
+                            <button class="btn fit-btn" onclick="fitLogLinCurve()" id="fit-loglin-button" disabled title="Log-linear regression on the exponential phase — returns µ_max, doubling time, R²">📈 Fit Log-Lin</button>
                             <button class="btn" onclick="openFitCodeExport()" id="fit-export-btn" style="display:none;">📋 Export Julia code</button>
+                        </div>
+
+                        <div style="margin-top: 6px; font-size: 0.9em;">
+                            <button class="btn" style="padding: 4px 10px; font-size: 0.85em;" onclick="toggleLogLinOptions()">⚙ Log-Lin options</button>
+                            <div id="loglin-options" style="display:none; margin-top: 8px; padding: 10px; background:#f8f9fa; border:1px solid #dee2e6; border-radius:4px;">
+                                <div style="display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end; font-size:0.85em;">
+                                    <div style="display:flex; flex-direction:column; gap:4px;">
+                                        <label>Smoothing</label>
+                                        <select id="loglin-smoothing" style="padding:3px 6px;">
+                                            <option value="rolling_avg" selected>Rolling avg</option>
+                                            <option value="lowess">LOWESS</option>
+                                            <option value="NO">None</option>
+                                        </select>
+                                    </div>
+                                    <div style="display:flex; flex-direction:column; gap:4px;">
+                                        <label>Window type</label>
+                                        <select id="loglin-win-type" style="padding:3px 6px;">
+                                            <option value="maximum" selected>Maximum</option>
+                                            <option value="global_thr">Global threshold</option>
+                                            <option value="max_with_min_OD">Max with min OD</option>
+                                        </select>
+                                    </div>
+                                    <div style="display:flex; flex-direction:column; gap:4px;">
+                                        <label title="Number of points in smoothing window">pt_avg</label>
+                                        <input type="number" id="loglin-pt-avg" value="7" min="1" max="50" style="width:60px; padding:3px 6px;">
+                                    </div>
+                                    <div style="display:flex; flex-direction:column; gap:4px;">
+                                        <label title="Window size for derivative-based GR estimate">pt_smooth_deriv</label>
+                                        <input type="number" id="loglin-pt-deriv" value="7" min="2" max="50" style="width:60px; padding:3px 6px;">
+                                    </div>
+                                    <div style="display:flex; flex-direction:column; gap:4px;">
+                                        <label title="Minimum number of points in the exponential window">pt_min_win</label>
+                                        <input type="number" id="loglin-pt-min-win" value="7" min="3" max="50" style="width:60px; padding:3px 6px;">
+                                    </div>
+                                    <div style="display:flex; flex-direction:column; gap:4px;">
+                                        <label title="Quantile threshold on growth rate to define the exponential window">threshold_exp</label>
+                                        <input type="number" id="loglin-thr-exp" value="0.9" min="0" max="1" step="0.01" style="width:70px; padding:3px 6px;">
+                                    </div>
+                                    <div style="display:flex; flex-direction:column; gap:4px;">
+                                        <label title="Minimum OD to start the exponential window">start_OD_thr</label>
+                                        <input type="number" id="loglin-start-thr" value="0.05" min="0" step="0.01" style="width:70px; padding:3px 6px;">
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                         <div class="model-selector-row">
@@ -684,6 +729,21 @@
 
                         <div style="margin-top: 14px;">
                             <div style="display: flex; gap: 18px; margin-bottom: 10px; align-items: center; flex-wrap: wrap;">
+                                <span style="font-size: 0.9em; font-weight: 500; color: #495057;">Fitting method:</span>
+                                <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:0.9em;">
+                                    <input type="radio" name="batch-fit-method" value="parametric" checked onchange="onBatchFitMethodChange()">
+                                    Parametric model
+                                </label>
+                                <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:0.9em;" title="Sliding-window log-linear regression on log(OD) vs time in the auto-detected exponential phase. Returns physiology-bounded μ_max without an optimizer.">
+                                    <input type="radio" name="batch-fit-method" value="loglin" onchange="onBatchFitMethodChange()">
+                                    Log-linear only (μ<sub>max</sub>)
+                                </label>
+                            </div>
+                        </div>
+
+                        <div id="batch-parametric-wrap">
+                        <div style="margin-top: 14px;">
+                            <div style="display: flex; gap: 18px; margin-bottom: 10px; align-items: center; flex-wrap: wrap;">
                                 <span style="font-size: 0.9em; font-weight: 500; color: #495057;">Model selection:</span>
                                 <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:0.9em;">
                                     <input type="radio" name="batch-fit-mode" value="single" checked onchange="onBatchModeChange()">
@@ -692,6 +752,10 @@
                                 <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:0.9em;">
                                     <input type="radio" name="batch-fit-mode" value="multi" onchange="onBatchModeChange()">
                                     Compare models — pick best by AICc
+                                </label>
+                                <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:0.9em; margin-left:auto;" title="Also run a sliding-window log-linear fit alongside the parametric model. Produces μ_max bounded by physiology; serves as a sanity check on the model-derived growth rate.">
+                                    <input type="checkbox" id="batch-fit-also-loglin">
+                                    Also compute log-linear μ<sub>max</sub>
                                 </label>
                             </div>
 
@@ -708,6 +772,34 @@
                                     <button class="btn" style="padding:2px 9px; font-size:0.82em;" onclick="clearAllBatchModels()">None</button>
                                 </div>
                             </div>
+                        </div>
+                        </div>
+
+                        <div id="batch-loglin-wrap" style="display:none; margin-top: 14px;">
+                            <div style="font-size: 0.85em; color: #6c757d; margin-bottom: 8px;">
+                                Log-linear sliding-window fit. Reports μ<sub>max</sub> (slope of log OD vs time in the auto-detected exponential window), 1σ standard error on μ<sub>max</sub>, R², doubling time, and exponential-window bounds. No optimizer; no AICc.
+                            </div>
+                            <details style="font-size: 0.85em;">
+                                <summary style="cursor:pointer; color:#495057;">Advanced parameters</summary>
+                                <div style="margin-top: 8px; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px 18px; padding: 8px; background:#f8f9fa; border-radius:4px;">
+                                    <label style="display:flex; flex-direction:column; gap:2px;" title="Rolling-average window size in points.">
+                                        <span>Smoothing window (<code>pt_avg</code>)</span>
+                                        <input type="number" id="batch-loglin-pt-avg" value="7" min="1" max="99" step="1" style="padding:3px 6px; border:1px solid #ced4da; border-radius:4px;">
+                                    </label>
+                                    <label style="display:flex; flex-direction:column; gap:2px;" title="Sliding-window size for the per-point derivative used to find the exponential phase.">
+                                        <span>Derivative window (<code>pt_smoothing_derivative</code>)</span>
+                                        <input type="number" id="batch-loglin-pt-deriv" value="7" min="2" max="99" step="1" style="padding:3px 6px; border:1px solid #ced4da; border-radius:4px;">
+                                    </label>
+                                    <label style="display:flex; flex-direction:column; gap:2px;" title="Minimum number of points required inside the exponential window before fitting.">
+                                        <span>Min exp-window size (<code>pt_min_size_of_win</code>)</span>
+                                        <input type="number" id="batch-loglin-pt-min-win" value="7" min="3" max="99" step="1" style="padding:3px 6px; border:1px solid #ced4da; border-radius:4px;">
+                                    </label>
+                                    <label style="display:flex; flex-direction:column; gap:2px;" title="Quantile threshold (0–1) used to define the exponential-phase region. Higher = stricter.">
+                                        <span>Exp-phase quantile (<code>threshold_of_exp</code>)</span>
+                                        <input type="number" id="batch-loglin-thr-exp" value="0.9" min="0" max="1" step="0.05" style="padding:3px 6px; border:1px solid #ced4da; border-radius:4px;">
+                                    </label>
+                                </div>
+                            </details>
                         </div>
 
                         <div style="margin-top: 8px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
@@ -729,37 +821,39 @@
                             <input type="text" id="batch-fit-calibration-file" placeholder="auto-detected (leave blank)" style="font-size: 0.9em; padding: 2px 6px; border: 1px solid #ced4da; border-radius: 4px; width: 280px; color: #495057;">
                         </div>
                         <div style="margin-top: 6px; display: flex; align-items: center; gap: 8px; font-size: 0.9em; flex-wrap: wrap;">
-                            <label style="white-space: nowrap;">Optimizer:</label>
-                            <select id="batch-fit-optimizer-mode" onchange="onBatchFitOptimizerModeChange()" style="font-size: 0.9em; padding: 2px 6px;">
-                                <option value="single" selected>Single</option>
-                                <option value="best">Best of N</option>
-                            </select>
-                            <select id="batch-fit-optimizer" style="font-size: 0.9em; padding: 2px 6px;">
-                                <option value="LN_BOBYQA" selected>BOBYQA (default)</option>
-                                <option value="LN_COBYLA">COBYLA</option>
-                                <option value="GN_ISRES">GN ISRES</option>
-                                <option value="GN_DIRECT_L">GN DIRECT-L</option>
-                                <option value="BBO_adaptive_de_rand_1_bin_radiuslimited">BBO Adaptive DE</option>
-                            </select>
-                            <label for="batch-fit-maxiters" style="white-space: nowrap;">Max iterations:</label>
-                            <input type="number" id="batch-fit-maxiters" value="100000" min="1" step="100" style="font-size: 0.9em; padding: 2px 6px; border: 1px solid #ced4da; border-radius: 4px; width: 90px; color: #495057;">
-                            <label for="batch-fit-abstol" style="white-space: nowrap;">Tolerance:</label>
-                            <select id="batch-fit-abstol" style="font-size: 0.9em; padding: 2px 6px;">
-                                <option value="1e-3">1e-3</option>
-                                <option value="1e-4">1e-4</option>
-                                <option value="1e-5">1e-5</option>
-                                <option value="1e-6">1e-6</option>
-                                <option value="1e-7">1e-7</option>
-                                <option value="1e-8">1e-8</option>
-                                <option value="1e-9">1e-9</option>
-                                <option value="1e-10">1e-10</option>
-                                <option value="1e-11">1e-11</option>
-                                <option value="1e-12" selected>1e-12</option>
-                                <option value="1e-13">1e-13</option>
-                                <option value="1e-14">1e-14</option>
-                                <option value="1e-15">1e-15</option>
-                                <option value="1e-16">1e-16</option>
-                            </select>
+                            <div id="batch-fit-optimizer-row" style="display: contents;">
+                                <label style="white-space: nowrap;">Optimizer:</label>
+                                <select id="batch-fit-optimizer-mode" onchange="onBatchFitOptimizerModeChange()" style="font-size: 0.9em; padding: 2px 6px;">
+                                    <option value="single" selected>Single</option>
+                                    <option value="best">Best of N</option>
+                                </select>
+                                <select id="batch-fit-optimizer" style="font-size: 0.9em; padding: 2px 6px;">
+                                    <option value="LN_BOBYQA" selected>BOBYQA (default)</option>
+                                    <option value="LN_COBYLA">COBYLA</option>
+                                    <option value="GN_ISRES">GN ISRES</option>
+                                    <option value="GN_DIRECT_L">GN DIRECT-L</option>
+                                    <option value="BBO_adaptive_de_rand_1_bin_radiuslimited">BBO Adaptive DE</option>
+                                </select>
+                                <label for="batch-fit-maxiters" style="white-space: nowrap;">Max iterations:</label>
+                                <input type="number" id="batch-fit-maxiters" value="100000" min="1" step="100" style="font-size: 0.9em; padding: 2px 6px; border: 1px solid #ced4da; border-radius: 4px; width: 90px; color: #495057;">
+                                <label for="batch-fit-abstol" style="white-space: nowrap;">Tolerance:</label>
+                                <select id="batch-fit-abstol" style="font-size: 0.9em; padding: 2px 6px;">
+                                    <option value="1e-3">1e-3</option>
+                                    <option value="1e-4">1e-4</option>
+                                    <option value="1e-5">1e-5</option>
+                                    <option value="1e-6">1e-6</option>
+                                    <option value="1e-7">1e-7</option>
+                                    <option value="1e-8">1e-8</option>
+                                    <option value="1e-9">1e-9</option>
+                                    <option value="1e-10">1e-10</option>
+                                    <option value="1e-11">1e-11</option>
+                                    <option value="1e-12" selected>1e-12</option>
+                                    <option value="1e-13">1e-13</option>
+                                    <option value="1e-14">1e-14</option>
+                                    <option value="1e-15">1e-15</option>
+                                    <option value="1e-16">1e-16</option>
+                                </select>
+                            </div>
                             <label for="batch-fit-skip-flat" style="white-space: nowrap;" title="Skip curves whose OD amplitude (max - min) is below this. Typical OD ranges are 0.01 - 1.0; default 0.05 catches blanks. Set to 0 to disable.">Skip if OD range &lt;:</label>
                             <input type="number" id="batch-fit-skip-flat" value="0.05" min="0" max="2" step="0.01" style="font-size: 0.9em; padding: 2px 6px; border: 1px solid #ced4da; border-radius: 4px; width: 70px; color: #495057;">
                         </div>

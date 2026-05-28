@@ -598,3 +598,156 @@ end
     ks = Int.([r[:k] for r in body[:sweep]])
     @test minimum(ks) == 3
 end
+
+# ---------------------------------------------------------------------------
+# Log-linear batch fit (/api/batch-fit-loglin) and the compute_loglin
+# companion flag on /api/batch-fit. Both produce `gr_loglin*` fields driven
+# by Kinbiont.fitting_one_well_Log_Lin — see src/analysis.jl for the helper.
+# ---------------------------------------------------------------------------
+
+# Mirror of `batch_fit_and_wait` (in runtests.jl) but targets the new endpoint.
+function batch_fit_loglin_and_wait(req; timeout=120)
+    status, body = post_json("/api/batch-fit-loglin", req)
+    status == 200 || return status, body
+    haskey(body, :job_id) || return status, body
+    job_id = string(body[:job_id])
+    deadline = time() + timeout
+    while time() < deadline
+        s, b = get_json("/api/batch-fit/progress/$job_id")
+        s == 200 && string(get(b, :status, "")) == "done" && return s, b
+        sleep(1)
+    end
+    error("batch-fit-loglin job $job_id did not complete within $(timeout)s")
+end
+
+const LOGLIN_FIELDS = ["gr_loglin", "gr_loglin_se", "gr_max_sliding",
+                       "t_exp_start_loglin", "t_exp_end_loglin",
+                       "doubling_time_loglin", "R_squared_loglin",
+                       "loglin_converged"]
+
+@testset "POST /api/batch-fit-loglin — single well returns gr_loglin fields" begin
+    status, body = batch_fit_loglin_and_wait(
+                       Dict("experiment" => SINGLE_CH_EXP,
+                            "wells"      => [SINGLE_CH_WELL]))
+    @test status == 200
+    @test haskey(body, :results)
+    @test haskey(body, :summary)
+    @test Int(body[:summary][:total]) == 1
+    @test Int(body[:summary][:success]) == 1
+    # The shared progress endpoint reports model="log_lin" for log-lin jobs.
+    @test string(body[:model]) == "log_lin"
+    @test "log_lin" in String.(body[:model_names])
+
+    r = first(body[:results])
+    @test haskey(r, :well)
+    @test string(r[:well]) == SINGLE_CH_WELL
+    @test string(r[:method]) == "Log-lin"
+    for f in LOGLIN_FIELDS
+        @test haskey(r, Symbol(f))
+    end
+    @test r[:loglin_converged] == true
+    gr = Float64(r[:gr_loglin])
+    @test isfinite(gr)
+    @test 0.0 <= gr <= 5.0       # bounded by physiology for any healthy E. coli
+    @test 0.0 <= Float64(r[:R_squared_loglin]) <= 1.0
+    @test Float64(r[:t_exp_start_loglin]) < Float64(r[:t_exp_end_loglin])
+    # μ_max from log-lin must NOT have the optimizer-specific keys
+    @test !haskey(r, :parameters)
+    @test !haskey(r, :aic)
+end
+
+@testset "POST /api/batch-fit-loglin — multiple wells" begin
+    status, body = batch_fit_loglin_and_wait(
+                       Dict("experiment" => SINGLE_CH_EXP,
+                            "wells"      => [SINGLE_CH_WELL, "A4"]))
+    @test status == 200
+    @test Int(body[:summary][:total]) == 2
+    @test Int(body[:summary][:success]) >= 1
+    wells_seen = Set(String.([r[:well] for r in body[:results]]))
+    @test SINGLE_CH_WELL in wells_seen
+end
+
+@testset "POST /api/batch-fit-loglin — all wells (no wells key)" begin
+    status, body = batch_fit_loglin_and_wait(
+                       Dict("experiment" => SINGLE_CH_EXP))
+    @test status == 200
+    @test Int(body[:summary][:total]) > 2
+end
+
+@testset "POST /api/batch-fit-loglin — unknown experiment returns 404" begin
+    status, body = post_json("/api/batch-fit-loglin",
+                             Dict("experiment" => "DOES_NOT_EXIST_XYZ"))
+    @test status == 404
+    @test haskey(body, :error)
+end
+
+@testset "POST /api/batch-fit-loglin — advanced params accepted and applied" begin
+    # Send tighter exp-window threshold and verify the request is accepted
+    # and the convergence/value are still produced.
+    status, body = batch_fit_loglin_and_wait(
+                       Dict("experiment"              => SINGLE_CH_EXP,
+                            "wells"                   => [SINGLE_CH_WELL],
+                            "pt_avg"                  => 5,
+                            "pt_smoothing_derivative" => 5,
+                            "pt_min_size_of_win"      => 5,
+                            "threshold_of_exp"        => 0.8))
+    @test status == 200
+    @test Int(body[:summary][:success]) == 1
+    r = first(body[:results])
+    @test r[:loglin_converged] == true
+end
+
+@testset "POST /api/batch-fit — compute_loglin companion populates gr_loglin" begin
+    status, body = batch_fit_and_wait(
+                       Dict("experiment"     => SINGLE_CH_EXP,
+                            "wells"          => [SINGLE_CH_WELL],
+                            "model_name"     => "logistic",
+                            "compute_loglin" => true))
+    @test status == 200
+    r = first(body[:results])
+    # Parametric fit fields must still be present
+    @test haskey(r, :parameters)
+    @test haskey(r, :aic)
+    @test string(r[:model]) == "logistic"
+    # Companion log-lin fields are added alongside
+    for f in LOGLIN_FIELDS
+        @test haskey(r, Symbol(f))
+    end
+    @test r[:loglin_converged] == true
+    @test isfinite(Float64(r[:gr_loglin]))
+end
+
+@testset "POST /api/batch-fit — compute_loglin defaults to false (absent companion fields)" begin
+    status, body = batch_fit_and_wait(
+                       Dict("experiment" => SINGLE_CH_EXP,
+                            "wells"      => [SINGLE_CH_WELL],
+                            "model_name" => "logistic"))
+    @test status == 200
+    r = first(body[:results])
+    # No log-lin fields when compute_loglin is not set
+    @test !haskey(r, :gr_loglin)
+    @test !haskey(r, :loglin_converged)
+end
+
+@testset "/api/batch-fit-loglin and companion (batch-fit + compute_loglin) agree on the well" begin
+    # Both code paths invoke the same Kinbiont.fitting_one_well_Log_Lin, so
+    # for the SAME well + SAME log-lin parameters they should report nearly
+    # identical μ_max. (Differences are bounded by the parametric path's
+    # od_for_fit floor (0.01) vs the standalone path's floor (1e-4); for
+    # the test well the data is far enough above both floors that the
+    # exponential windows agree exactly.)
+    _, body_standalone = batch_fit_loglin_and_wait(
+                            Dict("experiment" => SINGLE_CH_EXP,
+                                 "wells"      => [SINGLE_CH_WELL]))
+    _, body_companion = batch_fit_and_wait(
+                            Dict("experiment"     => SINGLE_CH_EXP,
+                                 "wells"          => [SINGLE_CH_WELL],
+                                 "model_name"     => "logistic",
+                                 "compute_loglin" => true))
+    gr_a = Float64(first(body_standalone[:results])[:gr_loglin])
+    gr_b = Float64(first(body_companion[:results])[:gr_loglin])
+    @test isfinite(gr_a) && isfinite(gr_b)
+    # 5% tolerance accommodates the floor difference if it kicks in for
+    # near-blank tails of this particular curve.
+    @test abs(gr_a - gr_b) / max(gr_a, 1e-6) < 0.05
+end

@@ -59,6 +59,28 @@ function onBatchModeChange() {
     document.getElementById('batch-multi-model-wrap').style.display  = mode === 'multi'  ? 'block' : 'none';
 }
 
+// Toggle between the parametric batch fit (existing /api/batch-fit) and the
+// log-linear-only batch fit (/api/batch-fit-loglin). Hides controls that
+// don't apply to the selected method and updates the run-button label.
+function onBatchFitMethodChange() {
+    const method = document.querySelector('input[name="batch-fit-method"]:checked').value;
+    const isLoglin = method === 'loglin';
+
+    document.getElementById('batch-parametric-wrap').style.display = isLoglin ? 'none' : 'block';
+    document.getElementById('batch-loglin-wrap').style.display     = isLoglin ? 'block' : 'none';
+
+    // Hide optimizer/maxiters/tolerance — irrelevant for log-lin.
+    const optRow = document.getElementById('batch-fit-optimizer-row');
+    if (optRow) optRow.style.display = isLoglin ? 'none' : 'contents';
+
+    // Best-of-N panel is a sub-panel of the optimizer row; close it for log-lin.
+    const bestPanel = document.getElementById('batch-fit-optimizer-best-panel');
+    if (bestPanel && isLoglin) bestPanel.style.display = 'none';
+
+    const btn = document.getElementById('batch-fit-run-btn');
+    if (btn) btn.textContent = isLoglin ? '⚡ Run log-linear batch fit' : '⚡ Run Batch Fit';
+}
+
 function selectAllBatchModels() {
     document.querySelectorAll('.batch-model-cb').forEach(cb => cb.checked = true);
 }
@@ -141,8 +163,28 @@ function clearAllBatchWells() {
 // Run batch fit
 // ---------------------------------------------------------------------------
 
+// Read the four log-lin advanced parameters with safe defaults — used both
+// by the standalone log-lin endpoint and the parametric companion flag.
+function _readLoglinParams() {
+    const intOr = (id, dflt) => {
+        const v = parseInt(document.getElementById(id)?.value || '', 10);
+        return Number.isFinite(v) && v > 0 ? v : dflt;
+    };
+    const fltOr = (id, dflt) => {
+        const v = parseFloat(document.getElementById(id)?.value || '');
+        return Number.isFinite(v) ? v : dflt;
+    };
+    return {
+        pt_avg:                  intOr('batch-loglin-pt-avg', 7),
+        pt_smoothing_derivative: intOr('batch-loglin-pt-deriv', 7),
+        pt_min_size_of_win:      intOr('batch-loglin-pt-min-win', 7),
+        threshold_of_exp:        Math.max(0, Math.min(1, fltOr('batch-loglin-thr-exp', 0.9))),
+    };
+}
+
 async function runBatchFit() {
     const experiment = document.getElementById('batch-fit-experiment').value;
+    const method = document.querySelector('input[name="batch-fit-method"]:checked')?.value || 'parametric';
     const mode = document.querySelector('input[name="batch-fit-mode"]:checked').value;
     const wells = Array.from(document.querySelectorAll('.batch-well-cb:checked')).map(cb => cb.value);
     const runBtn = document.getElementById('batch-fit-run-btn');
@@ -157,18 +199,21 @@ async function runBatchFit() {
     }
 
     let modelPayload = {};
-    if (mode === 'single') {
-        modelPayload.model_name = document.getElementById('batch-fit-model').value || 'aHPM';
-    } else {
-        const selected = Array.from(document.querySelectorAll('.batch-model-cb:checked')).map(cb => cb.value);
-        if (selected.length === 0) { alert('Select at least one model to compare.'); return; }
-        if (selected.length === 1) {
-            modelPayload.model_name = selected[0];
+    if (method === 'parametric') {
+        if (mode === 'single') {
+            modelPayload.model_name = document.getElementById('batch-fit-model').value || 'aHPM';
         } else {
-            modelPayload.model_names = selected;
+            const selected = Array.from(document.querySelectorAll('.batch-model-cb:checked')).map(cb => cb.value);
+            if (selected.length === 0) { alert('Select at least one model to compare.'); return; }
+            if (selected.length === 1) {
+                modelPayload.model_name = selected[0];
+            } else {
+                modelPayload.model_names = selected;
+            }
         }
     }
 
+    const originalBtnLabel = runBtn.textContent;
     runBtn.disabled = true;
     runBtn.textContent = '⏳ Fitting…';
     progressEl.style.display = 'block';
@@ -182,22 +227,47 @@ async function runBatchFit() {
 
     try {
         const batchCalFile = (document.getElementById('batch-fit-calibration-file')?.value || '').trim();
-        const maxiters = Math.max(1, parseInt(document.getElementById('batch-fit-maxiters')?.value || '100000', 10) || 100000);
-        const abstol = parseFloat(document.getElementById('batch-fit-abstol')?.value || DEFAULT_BATCH_FIT_ABSTOL) || parseFloat(DEFAULT_BATCH_FIT_ABSTOL);
         const skipFlat = Math.max(0, parseFloat(document.getElementById('batch-fit-skip-flat')?.value || '0.05') || 0);
-        const requestPayload = {
-            experiment,
-            wells,
-            ...modelPayload,
-            blank_subtraction: document.getElementById('batch-fit-blank-subtraction').checked,
-            blank_method: document.getElementById('batch-fit-blank-method').value,
-            ...buildOptimizerPayload('batch-fit'),
-            maxiters,
-            abstol,
-            skip_flat_threshold: skipFlat,
-            ...(batchCalFile ? { calibration_file: batchCalFile } : {}),
-        };
-        const startResp = await fetch(`${API_BASE}/api/batch-fit`, {
+
+        let endpoint, requestPayload;
+        if (method === 'loglin') {
+            const ll = _readLoglinParams();
+            endpoint = '/api/batch-fit-loglin';
+            requestPayload = {
+                experiment,
+                wells,
+                blank_subtraction: document.getElementById('batch-fit-blank-subtraction').checked,
+                blank_method:      document.getElementById('batch-fit-blank-method').value,
+                skip_flat_threshold: skipFlat,
+                ...ll,
+            };
+        } else {
+            const maxiters = Math.max(1, parseInt(document.getElementById('batch-fit-maxiters')?.value || '100000', 10) || 100000);
+            const abstol = parseFloat(document.getElementById('batch-fit-abstol')?.value || DEFAULT_BATCH_FIT_ABSTOL) || parseFloat(DEFAULT_BATCH_FIT_ABSTOL);
+            const alsoLoglin = document.getElementById('batch-fit-also-loglin')?.checked || false;
+            endpoint = '/api/batch-fit';
+            requestPayload = {
+                experiment,
+                wells,
+                ...modelPayload,
+                blank_subtraction: document.getElementById('batch-fit-blank-subtraction').checked,
+                blank_method: document.getElementById('batch-fit-blank-method').value,
+                ...buildOptimizerPayload('batch-fit'),
+                maxiters,
+                abstol,
+                skip_flat_threshold: skipFlat,
+                ...(batchCalFile ? { calibration_file: batchCalFile } : {}),
+                ...(alsoLoglin ? {
+                    compute_loglin: true,
+                    loglin_pt_avg:                  _readLoglinParams().pt_avg,
+                    loglin_pt_smoothing_derivative: _readLoglinParams().pt_smoothing_derivative,
+                    loglin_pt_min_size_of_win:      _readLoglinParams().pt_min_size_of_win,
+                    loglin_threshold_of_exp:        _readLoglinParams().threshold_of_exp,
+                } : {}),
+            };
+        }
+
+        const startResp = await fetch(`${API_BASE}${endpoint}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(requestPayload),
@@ -247,7 +317,7 @@ async function runBatchFit() {
         alert(`Error: ${e.message}`);
     } finally {
         runBtn.disabled = false;
-        runBtn.textContent = '⚡ Run Batch Fit';
+        runBtn.textContent = originalBtnLabel || '⚡ Run Batch Fit';
         setTimeout(() => { progressEl.style.display = 'none'; }, 2000);
     }
 }
@@ -256,21 +326,29 @@ async function runBatchFit() {
 // Display results
 // ---------------------------------------------------------------------------
 
+// Format a numeric value or return "—" for null/undefined/NaN.
+function _fmtNum(v, digits = 4) {
+    if (v == null) return '—';
+    const n = Number(v);
+    return Number.isFinite(n) ? n.toFixed(digits) : '—';
+}
+
 function displayBatchResults(data) {
     const exportBtn = document.getElementById('batch-export-btn');
     if (exportBtn) exportBtn.style.display = '';
     const resultsDiv = document.getElementById('batch-fit-results');
     const { experiment, model, model_names, summary, results } = data;
-    const modelLabel = model === 'multi'
-        ? `AICc from: ${(model_names || []).join(', ')}`
-        : model;
+    const isLoglin = model === 'log_lin';
+    const modelLabel = isLoglin
+        ? 'log-linear μ_max'
+        : (model === 'multi' ? `AICc from: ${(model_names || []).join(', ')}` : model);
 
     // Summary bar
     const skippedCount = summary.skipped || 0;
     const summaryHtml = `
         <div class="batch-summary-bar">
             <span><strong>Experiment:</strong> ${experiment}</span>
-            <span><strong>Model:</strong> ${modelLabel}</span>
+            <span><strong>Method:</strong> ${modelLabel}</span>
             <span class="batch-stat-ok">✓ ${summary.success} fitted</span>
             ${summary.failed > 0 ? `<span class="batch-stat-err">✗ ${summary.failed} failed</span>` : ''}
             ${skippedCount > 0 ? `<span style="color:#6c757d;">⊘ ${skippedCount} skipped (flat)</span>` : ''}
@@ -278,37 +356,67 @@ function displayBatchResults(data) {
         </div>
     `;
 
-    // Collect all unique param names across results for table headers
-    const allParamNames = [];
-    results.forEach(r => {
-        (r.param_names || []).forEach(n => {
-            if (!allParamNames.includes(n)) allParamNames.push(n);
+    // Log-lin and parametric results have different row shapes — branch the
+    // table rendering rather than try to unify them.
+    let headerHtml, rowsHtml;
+    if (isLoglin) {
+        const headers = ['Well', 'μ_max', '1σ', 'R²', 't_exp_start', 't_exp_end',
+                         'Doubling time', 'Converged'];
+        headerHtml = headers.map(h => `<th>${h}</th>`).join('');
+        rowsHtml = results.map(r => `
+            <tr>
+                <td>${r.well}</td>
+                <td>${_fmtNum(r.gr_loglin)}</td>
+                <td>${_fmtNum(r.gr_loglin_se)}</td>
+                <td>${_fmtNum(r.R_squared_loglin)}</td>
+                <td>${_fmtNum(r.t_exp_start_loglin, 2)}</td>
+                <td>${_fmtNum(r.t_exp_end_loglin, 2)}</td>
+                <td>${_fmtNum(r.doubling_time_loglin, 2)}</td>
+                <td>${r.loglin_converged ? '✓' : '✗'}</td>
+            </tr>
+        `).join('');
+    } else {
+        // Collect all unique param names across results for table headers
+        const allParamNames = [];
+        results.forEach(r => {
+            (r.param_names || []).forEach(n => {
+                if (!allParamNames.includes(n)) allParamNames.push(n);
+            });
         });
-    });
 
-    // Table header
-    const headerCells = ['Well', 'Model', ...allParamNames, 'Stationary phase start', 'AICc'];
-    const headerHtml = headerCells.map(h => `<th>${h}</th>`).join('');
+        // When the companion log-lin field is present, surface μ_max alongside
+        // the parametric parameters so the user can compare them inline.
+        const anyCompanion = results.some(r => r.loglin_converged === true ||
+                                                Number.isFinite(r.gr_loglin));
+        const extraCols = anyCompanion ? ['μ_max (log-lin)', 'R² (log-lin)'] : [];
 
-    // Table rows
-    const rowsHtml = results.map(r => {
-        const paramCells = allParamNames.map(name => {
-            const idx = (r.param_names || []).indexOf(name);
-            const val = idx >= 0 && r.parameters && r.parameters[idx] != null
-                ? Number(r.parameters[idx]).toFixed(4) : '—';
-            return `<td>${val}</td>`;
+        const headerCells = ['Well', 'Model', ...allParamNames, ...extraCols,
+                             'Stationary phase start', 'AICc'];
+        headerHtml = headerCells.map(h => `<th>${h}</th>`).join('');
+
+        rowsHtml = results.map(r => {
+            const paramCells = allParamNames.map(name => {
+                const idx = (r.param_names || []).indexOf(name);
+                const val = idx >= 0 && r.parameters && r.parameters[idx] != null
+                    ? Number(r.parameters[idx]).toFixed(4) : '—';
+                return `<td>${val}</td>`;
+            }).join('');
+            const extraCells = anyCompanion ? `
+                <td>${_fmtNum(r.gr_loglin)}</td>
+                <td>${_fmtNum(r.R_squared_loglin)}</td>` : '';
+            const statStart = r.stationary_phase_start != null
+                ? Number(r.stationary_phase_start).toFixed(2) : '—';
+            const aic = r.aic != null ? Number(r.aic).toFixed(2) : '—';
+            return `<tr>
+                <td>${r.well}</td>
+                <td><span class="batch-model-tag">${r.model || model}</span></td>
+                ${paramCells}
+                ${extraCells}
+                <td>${statStart}</td>
+                <td>${aic}</td>
+            </tr>`;
         }).join('');
-        const statStart = r.stationary_phase_start != null
-            ? Number(r.stationary_phase_start).toFixed(2) : '—';
-        const aic = r.aic != null ? Number(r.aic).toFixed(2) : '—';
-        return `<tr>
-            <td>${r.well}</td>
-            <td><span class="batch-model-tag">${r.model || model}</span></td>
-            ${paramCells}
-            <td>${statStart}</td>
-            <td>${aic}</td>
-        </tr>`;
-    }).join('');
+    }
 
     // Errors section
     const errorsHtml = summary.errors && summary.errors.length > 0
@@ -349,34 +457,76 @@ function downloadBatchCSV() {
     if (!data || !data.results || data.results.length === 0) return;
 
     const { experiment, model, results } = data;
+    const isLoglin = model === 'log_lin';
 
-    // Collect all param names
-    const allParamNames = [];
-    results.forEach(r => {
-        (r.param_names || []).forEach(n => {
-            if (!allParamNames.includes(n)) allParamNames.push(n);
+    let headers, rows, filenameSuffix;
+    if (isLoglin) {
+        headers = ['experiment', 'well', 'method',
+                   'gr_loglin', 'gr_loglin_se', 'gr_max_sliding',
+                   't_exp_start_loglin', 't_exp_end_loglin',
+                   'doubling_time_loglin', 'R_squared_loglin',
+                   'loglin_converged'];
+        rows = results.map(r => [
+            experiment, r.well, 'log_lin',
+            r.gr_loglin            ?? '',
+            r.gr_loglin_se         ?? '',
+            r.gr_max_sliding       ?? '',
+            r.t_exp_start_loglin   ?? '',
+            r.t_exp_end_loglin     ?? '',
+            r.doubling_time_loglin ?? '',
+            r.R_squared_loglin     ?? '',
+            r.loglin_converged ? 'true' : 'false',
+        ]);
+        filenameSuffix = 'batch_fit_loglin';
+    } else {
+        // Collect all param names
+        const allParamNames = [];
+        results.forEach(r => {
+            (r.param_names || []).forEach(n => {
+                if (!allParamNames.includes(n)) allParamNames.push(n);
+            });
         });
-    });
 
-    const headers = ['experiment', 'well', 'model', ...allParamNames,
-                     'stationary_phase_start', 'aic', 'loss', 'optimizer_used'];
-    const rows = results.map(r => {
-        const paramVals = allParamNames.map(name => {
-            const idx = (r.param_names || []).indexOf(name);
-            return idx >= 0 && r.parameters && r.parameters[idx] != null
-                ? r.parameters[idx] : '';
+        // Add companion log-lin columns when any well reports them
+        const anyCompanion = results.some(r => r.loglin_converged === true ||
+                                                Number.isFinite(r.gr_loglin));
+        const loglinHeaders = anyCompanion
+            ? ['gr_loglin', 'gr_loglin_se', 'gr_max_sliding',
+               't_exp_start_loglin', 't_exp_end_loglin',
+               'doubling_time_loglin', 'R_squared_loglin', 'loglin_converged']
+            : [];
+
+        headers = ['experiment', 'well', 'model', ...allParamNames,
+                   ...loglinHeaders,
+                   'stationary_phase_start', 'aic', 'loss', 'optimizer_used'];
+
+        rows = results.map(r => {
+            const paramVals = allParamNames.map(name => {
+                const idx = (r.param_names || []).indexOf(name);
+                return idx >= 0 && r.parameters && r.parameters[idx] != null
+                    ? r.parameters[idx] : '';
+            });
+            const loglinVals = anyCompanion ? [
+                r.gr_loglin            ?? '',
+                r.gr_loglin_se         ?? '',
+                r.gr_max_sliding       ?? '',
+                r.t_exp_start_loglin   ?? '',
+                r.t_exp_end_loglin     ?? '',
+                r.doubling_time_loglin ?? '',
+                r.R_squared_loglin     ?? '',
+                r.loglin_converged == null ? '' : (r.loglin_converged ? 'true' : 'false'),
+            ] : [];
+            return [
+                experiment, r.well, r.model || model,
+                ...paramVals, ...loglinVals,
+                r.stationary_phase_start != null ? r.stationary_phase_start : '',
+                r.aic != null ? r.aic : '',
+                r.loss != null ? r.loss : '',
+                r.optimizer_used || '',
+            ];
         });
-        return [
-            experiment,
-            r.well,
-            r.model || model,
-            ...paramVals,
-            r.stationary_phase_start != null ? r.stationary_phase_start : '',
-            r.aic != null ? r.aic : '',
-            r.loss != null ? r.loss : '',
-            r.optimizer_used || '',
-        ];
-    });
+        filenameSuffix = 'batch_fit';
+    }
 
     const csvContent = [headers, ...rows]
         .map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
@@ -386,7 +536,7 @@ function downloadBatchCSV() {
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
     a.href     = url;
-    a.download = `${experiment}_batch_fit.csv`;
+    a.download = `${experiment}_${filenameSuffix}.csv`;
     a.click();
     URL.revokeObjectURL(url);
 }
@@ -395,6 +545,7 @@ export {
     initBatchFitTab, loadBatchFitModels, loadBatchFitExperiments,
     onBatchExperimentChange, updateBatchWellCount,
     selectAllBatchWells, clearAllBatchWells,
-    onBatchModeChange, selectAllBatchModels, clearAllBatchModels,
+    onBatchModeChange, onBatchFitMethodChange,
+    selectAllBatchModels, clearAllBatchModels,
     runBatchFit, displayBatchResults, downloadBatchCSV,
 };

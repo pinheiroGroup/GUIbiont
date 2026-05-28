@@ -50,6 +50,16 @@ Base.@kwdef mutable struct BatchFitRequest
     skip_flat_threshold::Float64 = 0.05
     maxiters::Int = DEFAULT_FIT_MAXITERS
     abstol::Float64 = 1e-15
+    # Optional log-linear μ_max companion fit. When `compute_loglin` is true,
+    # every well also gets a sliding-window log-linear fit (slope of log OD vs
+    # time in the auto-detected exponential window) reported alongside the
+    # parametric model fit. Provides a physiology-bounded, model-free growth
+    # rate that serves as a sanity check on parametric μ from aHPM/Baranyi etc.
+    compute_loglin::Bool = false
+    loglin_pt_avg::Int = 7
+    loglin_pt_smoothing_derivative::Int = 7
+    loglin_pt_min_size_of_win::Int = 7
+    loglin_threshold_of_exp::Float64 = 0.9
 end
 
 Base.@kwdef mutable struct MLDownstreamRequest
@@ -82,6 +92,41 @@ end
 Base.@kwdef mutable struct BlankAnalysisRequest
     experiment::String = ""
     well::String = ""
+end
+
+Base.@kwdef mutable struct LogLinFitRequest
+    experiment::String = ""
+    well::String = ""
+    blank_subtraction::Bool = false
+    blank_method::String = "pointbypoint"
+    type_of_smoothing::String = "rolling_avg"   # "NO" | "rolling_avg" | "lowess"
+    pt_avg::Int = 7
+    pt_smoothing_derivative::Int = 7
+    pt_min_size_of_win::Int = 7
+    type_of_win::String = "maximum"             # "maximum" | "global_thr" | "max_with_min_OD"
+    threshold_of_exp::Float64 = 0.9
+    start_exp_win_thr::Float64 = 0.05
+    thr_lowess::Float64 = 0.05
+end
+
+# Batch log-linear fit: same machinery as /api/batch-fit but the per-well
+# work is a sliding-window log-lin regression instead of an optimizer-based
+# parametric fit. Use this when you only need μ_max and don't want to pay
+# for aHPM/Baranyi/Gompertz/logistic optimisations on every curve.
+Base.@kwdef mutable struct BatchLogLinFitRequest
+    experiment::String = ""
+    wells::Vector{String} = String[]
+    blank_subtraction::Bool = false
+    blank_method::String = "pointbypoint"
+    type_of_smoothing::String = "rolling_avg"
+    pt_avg::Int = 7
+    pt_smoothing_derivative::Int = 7
+    pt_min_size_of_win::Int = 7
+    type_of_win::String = "maximum"
+    threshold_of_exp::Float64 = 0.9
+    start_exp_win_thr::Float64 = 0.05
+    thr_lowess::Float64 = 0.05
+    skip_flat_threshold::Float64 = 0.05
 end
 
 Base.@kwdef mutable struct PlotDataRequest
@@ -167,3 +212,5 @@ StructTypes.StructType(::Type{ClusterRequest}) = StructTypes.Mutable()
 StructTypes.StructType(::Type{ClusterSweepRequest}) = StructTypes.Mutable()
 StructTypes.StructType(::Type{ClusterCompareRequest}) = StructTypes.Mutable()
 StructTypes.StructType(::Type{BatchAverageRequest})   = StructTypes.Mutable()
+StructTypes.StructType(::Type{LogLinFitRequest})      = StructTypes.Mutable()
+StructTypes.StructType(::Type{BatchLogLinFitRequest}) = StructTypes.Mutable()
