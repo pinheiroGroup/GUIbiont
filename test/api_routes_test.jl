@@ -605,8 +605,14 @@ end
                                   "prescreen_constant" => true,
                                   "prescreen_tol_const" => 1.5))
     @test status == 200
-    ks = Int.([r[:k] for r in body[:sweep]])
+    sweep = body[:sweep]
+    ks    = Int.([r[:k] for r in sweep])
     @test minimum(ks) == 2
+    # Sweep must actually produce usable rows — guard against a regression
+    # where every k errors out and the sweep still returns "[]" or all-NaN.
+    @test length(sweep) >= 2
+    silhouettes = Float64[Float64(r[:silhouette_mean]) for r in sweep]
+    @test any(s -> isfinite(s), silhouettes)
 end
 
 @testset "POST /api/cluster-sweep — prescreen_constant accepted, sweep starts at k=2" begin

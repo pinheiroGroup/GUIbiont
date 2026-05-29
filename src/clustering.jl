@@ -164,10 +164,22 @@ function _detect_blank_indices(
             if flat_flags[i] && isfinite(mean_ods[i]) && mean_ods[i] <= od_thr]
 end
 
-# Mirror KinBiont's constant/non-growing pre-screen on raw OD curves.  This is
-# used as a cheap preflight so we only reserve the sentinel cluster when at
-# least one curve would actually be assigned to it.
-function _prescreen_constant_raw_od_mask(
+# Mirror KinBiont's constant/non-growing pre-screen on the curves that are
+# about to be clustered (i.e. post-smoothing and post-blank-subtraction). Used
+# as a cheap preflight so we only enable Kinbiont's `cluster_prescreen_constant`
+# (which reserves a sentinel cluster) when at least one curve would actually be
+# assigned to it.
+#
+# Reaches into Kinbiont's private API (`_prescreen_constant` is underscore-
+# prefixed → not part of the public contract). The assertion below fails fast
+# at load time if the symbol disappears in a future Kinbiont release; bump the
+# Kinbiont pin and revisit this helper when that happens.
+@assert isdefined(Kinbiont, :_prescreen_constant) (
+    "Kinbiont._prescreen_constant is no longer defined. " *
+    "The prescreen mirror in clustering.jl depends on it; " *
+    "pin Kinbiont to a compatible version or update the mirror.")
+
+function _prescreen_constant_mask(
     curves::Matrix{Float64};
     tol_const::Float64 = 1.5,
     q_low::Float64 = 0.05,

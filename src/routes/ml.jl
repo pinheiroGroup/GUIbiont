@@ -199,12 +199,16 @@
         curves_for_cluster = curves
     end
 
-    requested_prescreen = Bool(body.prescreen_constant)
-    prescreen_mask = requested_prescreen ?
-        _prescreen_constant_raw_od_mask(curves_for_cluster;
+    # Preflight: mirror Kinbiont's constant-curve detector on the curves we are
+    # about to send in. Only forward `cluster_prescreen_constant=true` if at
+    # least one curve actually matches — otherwise Kinbiont reserves a sentinel
+    # cluster nobody fills, which (in the sweep) inflates WCSS at small k and
+    # produces misleading elbows.
+    prescreen_mask = Bool(body.prescreen_constant) ?
+        _prescreen_constant_mask(curves_for_cluster;
             tol_const = Float64(body.prescreen_tol_const)) :
-        falses(size(curves_for_cluster, 1))
-    do_prescreen = requested_prescreen && any(prescreen_mask)
+        nothing
+    do_prescreen = prescreen_mask !== nothing && any(prescreen_mask)
 
     # ------------------------------------------------------------------
     # Clustering — delegate entirely to KinBiont preprocess
@@ -442,13 +446,18 @@ end
     else
         curves_for = curves
     end
-    requested_prescreen = Bool(body.prescreen_constant)
-    prescreen_mask = requested_prescreen ?
-        _prescreen_constant_raw_od_mask(curves_for;
+    # Same preflight as /api/cluster: only ask Kinbiont to reserve a sentinel
+    # cluster when there is actually something to put in it.
+    prescreen_mask = Bool(body.prescreen_constant) ?
+        _prescreen_constant_mask(curves_for;
             tol_const = Float64(body.prescreen_tol_const)) :
-        falses(size(curves_for, 1))
-    do_prescreen = requested_prescreen && any(prescreen_mask)
-    k_min        = 2
+        nothing
+    do_prescreen = prescreen_mask !== nothing && any(prescreen_mask)
+    # Always start the sweep at k=2. When `do_prescreen` is on, Kinbiont
+    # internally allocates the sentinel cluster, so k=2 still produces a valid
+    # one-real-cluster + sentinel partition and makes the elbow comparable to
+    # the no-prescreen path.
+    k_min = 2
 
     sweep_results = []
     for k in k_min:min(k_max, n_series)
