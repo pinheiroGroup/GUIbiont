@@ -556,6 +556,15 @@ const PRESCREEN_CSV = """Time,F1,F2,G1,G2,G3,G4
 9.0,0.10,0.10,1.12,1.10,1.14,1.12
 """
 
+const PRESCREEN_ALL_GROWING_CSV = """Time,G1,G2,G3,G4,G5,G6
+0.0,0.10,0.12,0.14,0.16,0.18,0.20
+1.0,0.16,0.20,0.25,0.28,0.32,0.36
+2.0,0.28,0.34,0.40,0.47,0.53,0.60
+3.0,0.45,0.53,0.62,0.71,0.80,0.90
+4.0,0.65,0.75,0.86,0.98,1.10,1.22
+5.0,0.82,0.95,1.08,1.22,1.36,1.50
+"""
+
 @testset "POST /api/cluster — prescreen_constant assigns flat curves to sentinel" begin
     status, body = post_json("/api/cluster",
                              Dict("csv" => PRESCREEN_CSV, "k" => 3,
@@ -589,14 +598,31 @@ end
     @test all(!=(sentinel), grow_ids)
 end
 
-@testset "POST /api/cluster-sweep — prescreen_constant accepted, sweep starts at k=3" begin
+@testset "POST /api/cluster-sweep — prescreen_constant without matches starts at k=2" begin
+    status, body = post_json("/api/cluster-sweep",
+                             Dict("csv" => PRESCREEN_ALL_GROWING_CSV, "k_max" => 4,
+                                  "smooth_method" => "none",
+                                  "prescreen_constant" => true,
+                                  "prescreen_tol_const" => 1.5))
+    @test status == 200
+    sweep = body[:sweep]
+    ks    = Int.([r[:k] for r in sweep])
+    @test minimum(ks) == 2
+    # Sweep must actually produce usable rows — guard against a regression
+    # where every k errors out and the sweep still returns "[]" or all-NaN.
+    @test length(sweep) >= 2
+    silhouettes = Float64[Float64(r[:silhouette_mean]) for r in sweep]
+    @test any(s -> isfinite(s), silhouettes)
+end
+
+@testset "POST /api/cluster-sweep — prescreen_constant accepted, sweep starts at k=2" begin
     status, body = post_json("/api/cluster-sweep",
                              Dict("csv" => PRESCREEN_CSV, "k_max" => 5,
                                   "smooth_method" => "none",
                                   "prescreen_constant" => true))
     @test status == 200
     ks = Int.([r[:k] for r in body[:sweep]])
-    @test minimum(ks) == 3
+    @test minimum(ks) == 2
 end
 
 # ---------------------------------------------------------------------------

@@ -199,6 +199,17 @@
         curves_for_cluster = curves
     end
 
+    # Preflight: mirror Kinbiont's constant-curve detector on the curves we are
+    # about to send in. Only forward `cluster_prescreen_constant=true` if at
+    # least one curve actually matches — otherwise Kinbiont reserves a sentinel
+    # cluster nobody fills, which (in the sweep) inflates WCSS at small k and
+    # produces misleading elbows.
+    prescreen_mask = Bool(body.prescreen_constant) ?
+        _prescreen_constant_mask(curves_for_cluster;
+            tol_const = Float64(body.prescreen_tol_const)) :
+        nothing
+    do_prescreen = prescreen_mask !== nothing && any(prescreen_mask)
+
     # ------------------------------------------------------------------
     # Clustering — delegate entirely to KinBiont preprocess
     # ------------------------------------------------------------------
@@ -208,7 +219,7 @@
         n_clusters                 = k_eff,
         cluster_method             = Symbol(cluster_method),
         cluster_trend_test         = Bool(body.trend_test_flat),
-        cluster_prescreen_constant = Bool(body.prescreen_constant),
+        cluster_prescreen_constant = do_prescreen,
         cluster_tol_const          = Float64(body.prescreen_tol_const),
         cluster_hclust_linkage     = Symbol(hclust_linkage),
         cluster_dbscan_eps         = Float64(dbscan_eps),
@@ -435,8 +446,18 @@ end
     else
         curves_for = curves
     end
-    do_prescreen = Bool(body.prescreen_constant)
-    k_min        = do_prescreen ? 3 : 2
+    # Same preflight as /api/cluster: only ask Kinbiont to reserve a sentinel
+    # cluster when there is actually something to put in it.
+    prescreen_mask = Bool(body.prescreen_constant) ?
+        _prescreen_constant_mask(curves_for;
+            tol_const = Float64(body.prescreen_tol_const)) :
+        nothing
+    do_prescreen = prescreen_mask !== nothing && any(prescreen_mask)
+    # Always start the sweep at k=2. When `do_prescreen` is on, Kinbiont
+    # internally allocates the sentinel cluster, so k=2 still produces a valid
+    # one-real-cluster + sentinel partition and makes the elbow comparable to
+    # the no-prescreen path.
+    k_min = 2
 
     sweep_results = []
     for k in k_min:min(k_max, n_series)
