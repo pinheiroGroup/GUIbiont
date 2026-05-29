@@ -5,8 +5,13 @@ using HTTP
 using JSON3
 using Statistics
 
-# Load the functions under test
-include(joinpath(@__DIR__, "..", "function_clean_synergy.jl"))
+# Load the functions under test. The cleaning code was split into per-vendor
+# adapters under src/cleaning/; load the interface and the two adapters that
+# the tests below exercise (Synergy + LabGuru annotation parser).
+using Tables
+include(joinpath(@__DIR__, "..", "src", "cleaning", "PlateReader.jl"))
+include(joinpath(@__DIR__, "..", "src", "cleaning", "synergy.jl"))
+include(joinpath(@__DIR__, "..", "src", "cleaning", "labguru.jl"))
 
 # Load backend modules (data helpers + experiment store)
 # These mirror the include order in web_server.jl, minus HTTP/Kinbiont deps.
