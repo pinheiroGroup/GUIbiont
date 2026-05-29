@@ -29,7 +29,7 @@ export const state = {
 
 export const API_BASE = '';
 
-export const CHANNEL_AXIS_COLORS = { 1: '#2563eb', 2: '#dc2626', 3: '#16a34a' };
+export const CHANNEL_AXIS_COLORS = { 1: '#2563eb', 2: '#dc2626', 3: '#16a34a', 4: '#9333ea', 5: '#ea580c', 6: '#0891b2' };
 
 export const CLUSTER_PALETTE = [
     '#4facfe', '#f5576c', '#43e97b', '#f093fb', '#ffd06e',

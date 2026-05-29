@@ -306,38 +306,94 @@ end
 
 @post "/api/clean-data" function(req::HTTP.Request, body::Json{CleanDataRequest})
     body = body.payload
-    experiment = body.experiment
-    well_count = body.well_count
+    experiment    = body.experiment
+    well_count    = body.well_count
+    machine_type  = lowercase(strip(string(body.machine_type)))
+    data_override = strip(string(body.data_filename))
 
-    # Validate inputs
     if isempty(experiment)
         return json(Dict("error" => "Experiment name is required"); status=400)
     end
-
     if !(well_count in [6, 48, 96])
         return json(Dict("error" => "Well count must be 6, 48, or 96"); status=400)
     end
 
-    # Check if raw data exists
     raw_experiment_path = joinpath(RAW_DATA_PATH, experiment)
-    data_file  = joinpath(raw_experiment_path, "data.csv")
-    plate_file = joinpath(raw_experiment_path, "plate.csv")
+    plate_file          = joinpath(raw_experiment_path, "plate.csv")
 
-    if !isfile(data_file) || !isfile(plate_file)
-        return json(Dict("error" => "Required files (data.csv and plate.csv) not found in raw experiment folder"); status=404)
+    if !isdir(raw_experiment_path)
+        return json(Dict("error" => "Raw experiment folder not found: '$experiment'"); status=404)
+    end
+    has_plate = isfile(plate_file)
+
+    # Resolve the source data file. Caller may override; otherwise pick by
+    # machine_type. In auto mode, prefer .xlsx (Tecan) over data.csv, since
+    # users frequently leave a stale data.csv copy of plate.csv lying around.
+    function _pick_data_file(dir::String, prefer::Symbol)
+        files = readdir(dir)
+        # Never pick the annotation file as data.
+        files = filter(f -> lowercase(f) != "plate.csv", files)
+        xlsx  = filter(f -> endswith(lowercase(f), ".xlsx") || endswith(lowercase(f), ".xls"), files)
+        csvs  = filter(f -> endswith(lowercase(f), ".csv"), files)
+        ordered = if prefer == :xlsx
+            vcat(xlsx, csvs)
+        elseif prefer == :csv
+            vcat(csvs, xlsx)
+        else
+            vcat(xlsx, csvs)   # auto → xlsx wins (newer + more common request)
+        end
+        for f in ordered
+            return joinpath(dir, f)
+        end
+        return joinpath(dir, prefer == :xlsx ? "data.xlsx" : "data.csv")
+    end
+
+    data_file = if !isempty(data_override)
+        joinpath(raw_experiment_path, data_override)
+    elseif machine_type == "tecan_spark"
+        _pick_data_file(raw_experiment_path, :xlsx)
+    elseif machine_type == "synergy"
+        _pick_data_file(raw_experiment_path, :csv)
+    else
+        _pick_data_file(raw_experiment_path, :auto)
+    end
+
+    if !isfile(data_file)
+        return json(Dict("error" => "Data file not found: $(basename(data_file))"); status=404)
+    end
+
+    # Resolve format: explicit > sniffed.
+    fmt = try
+        machine_type == "auto" ? detect_format(data_file) : format_from_key(machine_type)
+    catch e
+        return json(Dict("error" => "Format resolution failed: $e"); status=400)
     end
 
     try
-        # Create output directory
         output_path = joinpath(CLEAN_DATA_PATH, experiment) * "/"
+        if has_plate
+            read_labguru_annotation(plate_file, output_path, well_count)
+        end
+        clean(fmt, data_file, output_path)
 
-        # Clean the annotation file first
-        read_labguru_annotation(plate_file, output_path, well_count)
+        # No plate.csv → write a stub annotation_clean.csv from the well columns
+        # that the data adapter just produced. Every well gets a placeholder
+        # condition so it shows up downstream as non-blank, non-excluded. The
+        # user can supply a real plate.csv later and re-clean.
+        if !has_plate
+            mkpath(output_path)
+            primary = joinpath(output_path, "data_channel_1.csv")
+            wells = String[]
+            if isfile(primary)
+                cols = string.(names(CSV.read(primary, DataFrame, header=1, silencewarnings=true)))
+                wells = filter(c -> c != "Time", cols)
+            end
+            stub_rows = [(w, "unknown", "unknown", "", "", "", "1") for w in wells]
+            CSV.write(joinpath(output_path, "annotation_clean.csv"),
+                      Tables.table(reduce(vcat, [collect(r)' for r in stub_rows]; init=Matrix{Any}(undef, 0, 7))),
+                      writeheader=false)
+        end
 
-        # Clean the data file
-        cleaning_data_synergy(data_file, output_path)
-
-        # Check what files were created
         created_files = isdir(output_path) ? readdir(output_path) : String[]
 
         return Dict(
@@ -345,8 +401,13 @@ end
             "experiment"    => experiment,
             "output_path"   => output_path,
             "well_count"    => well_count,
+            "machine_type"  => string(typeof(fmt).name.name),
+            "data_file"     => basename(data_file),
             "created_files" => created_files,
-            "message"       => "Data cleaning completed successfully"
+            "has_plate"     => has_plate,
+            "message"       => has_plate ?
+                "Data cleaning completed successfully" :
+                "Data cleaning completed — no plate.csv found, generated a stub annotation. Replace it with a real LabGuru plate.csv and re-run for full metadata.",
         )
     catch e
         return json(Dict("error" => "Data cleaning failed: $e"); status=500)

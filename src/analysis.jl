@@ -711,6 +711,16 @@ function fit_well_data(
                     loglin_fields["doubling_time_loglin"] = Float64(params[9])
                     loglin_fields["R_squared_loglin"]     = Float64(params[14])^2
                     loglin_fields["loglin_converged"]     = true
+
+                    # Plottable fit segment over the detected exponential
+                    # window. raw[3] is an n×2 matrix [time, log(fitted_OD)].
+                    fit_matrix = raw[3]
+                    if !ismissing(fit_matrix) && size(fit_matrix, 1) > 0
+                        ll_time  = Vector{Float64}(fit_matrix[:, 1])
+                        ll_logod = Vector{Float64}(fit_matrix[:, 2])
+                        loglin_fields["loglin_fit_time"] = ll_time
+                        loglin_fields["loglin_fit_od"]   = exp.(ll_logod)
+                    end
                 end
             catch
                 # Leave NaN sentinels; the parametric fit is the primary result.

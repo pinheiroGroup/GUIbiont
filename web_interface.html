@@ -33,14 +33,19 @@
                 <div class="control-group">
                     <label>🧹 Data Cleaning</label>
                     <div class="cleaning-container">
-                        <p class="cleaning-description">Clean raw Synergy microplate reader data files. Select an experiment from the raw_data folder to process.</p>
-                        
+                        <p class="cleaning-description">Clean raw microplate reader data files. Select an experiment from the raw_data folder, pick the plate reader format, and process.</p>
+
                         <div class="cleaning-controls">
                             <div class="cleaning-selectors">
                                 <select id="raw-experiment" class="cleaning-select">
                                     <option value="">Select Raw Experiment</option>
                                 </select>
-                                <input type="number" id="well-count" class="cleaning-input" value="48" min="6" max="96" 
+                                <select id="clean-machine" class="cleaning-select" title="Plate reader format">
+                                    <option value="auto" selected>Auto-detect</option>
+                                    <option value="synergy">BioTek Synergy (CSV)</option>
+                                    <option value="tecan_spark">Tecan Spark (XLSX)</option>
+                                </select>
+                                <input type="number" id="well-count" class="cleaning-input" value="48" min="6" max="96"
                                        placeholder="Number of wells (6, 48, or 96)">
                             </div>
                             <button class="btn clean-btn" onclick="cleanExperimentData()" id="clean-button" disabled>🧹 Clean Data</button>
@@ -169,12 +174,15 @@
                                     <option value="">Select Replicate</option>
                                 </select>
                             </div>
-                            <button class="btn fit-btn" onclick="fitGrowthCurve()" id="fit-button" disabled>📊 Fit Curve</button>
-                            <button class="btn fit-btn" onclick="fitLogLinCurve()" id="fit-loglin-button" disabled title="Log-linear regression on the exponential phase — returns µ_max, doubling time, R²">📈 Fit Log-Lin</button>
+                            <button class="btn fit-btn" onclick="fitGrowthCurve()" id="fit-button" disabled title="Fits the parametric model and a log-linear companion fit; both plots shown below.">📊 Fit Curve</button>
                             <button class="btn" onclick="openFitCodeExport()" id="fit-export-btn" style="display:none;">📋 Export Julia code</button>
                         </div>
 
                         <div style="margin-top: 6px; font-size: 0.9em;">
+                            <label style="display:inline-flex; align-items:center; gap:6px; margin-right:10px;">
+                                <input type="checkbox" id="fit-compute-loglin" checked>
+                                Also run Log-Lin companion fit
+                            </label>
                             <button class="btn" style="padding: 4px 10px; font-size: 0.85em;" onclick="toggleLogLinOptions()">⚙ Log-Lin options</button>
                             <div id="loglin-options" style="display:none; margin-top: 8px; padding: 10px; background:#f8f9fa; border:1px solid #dee2e6; border-radius:4px;">
                                 <div style="display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end; font-size:0.85em;">
@@ -645,6 +653,7 @@
                     </div>
                 </div>
                 <div id="plot-fitting" style="width: 100%; height: 700px;"></div>
+                <div id="plot-fitting-loglin" style="width: 100%; height: 500px; display: none; border-top: 2px solid #dee2e6;"></div>
             </div>
 
             <div class="stats-container" id="stats-container" style="display: none;">

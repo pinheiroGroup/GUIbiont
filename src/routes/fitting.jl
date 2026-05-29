@@ -15,6 +15,11 @@ const BATCH_JOBS_LOCK = ReentrantLock()
     sto_runs       = max(1, body.stochastic_runs)
     maxiters       = clamp(body.maxiters > 0 ? body.maxiters : DEFAULT_FIT_MAXITERS, 1, MAX_FIT_MAXITERS)
     abstol         = body.abstol > 0.0 ? body.abstol : 0.0
+    compute_loglin = body.compute_loglin
+    ll_pt_avg      = max(1, body.loglin_pt_avg)
+    ll_pt_deriv    = max(2, body.loglin_pt_smoothing_derivative)
+    ll_pt_min_win  = max(3, body.loglin_pt_min_size_of_win)
+    ll_thr_exp     = clamp(body.loglin_threshold_of_exp, 0.0, 1.0)
 
     data_file        = joinpath(CLEAN_DATA_PATH, experiment, "data_channel_1.csv")
     annotation_file  = joinpath(CLEAN_DATA_PATH, experiment, "annotation_clean.csv")
@@ -66,18 +71,23 @@ const BATCH_JOBS_LOCK = ReentrantLock()
         return fit_well_data(
             time_numeric[valid_indices], od_raw[valid_indices],
             blank_value, calibration_file, well, experiment;
-            subtract_blank           = subtract_blank,
-            blank_method             = blank_method,
-            blank_timeseries         = blank_ts_valid,
-            blank_well_names         = blank_well_names,
-            model_name               = model_name,
-            model_names              = model_names,
-            optimizer                = optimizer,
-            deterministic_optimizers = det_opts,
-            stochastic_optimizers    = sto_opts,
-            stochastic_runs          = sto_runs,
-            maxiters                 = maxiters,
-            abstol                   = abstol,
+            subtract_blank                  = subtract_blank,
+            blank_method                    = blank_method,
+            blank_timeseries                = blank_ts_valid,
+            blank_well_names                = blank_well_names,
+            model_name                      = model_name,
+            model_names                     = model_names,
+            optimizer                       = optimizer,
+            deterministic_optimizers        = det_opts,
+            stochastic_optimizers           = sto_opts,
+            stochastic_runs                 = sto_runs,
+            maxiters                        = maxiters,
+            abstol                          = abstol,
+            compute_loglin                  = compute_loglin,
+            loglin_pt_avg                   = ll_pt_avg,
+            loglin_pt_smoothing_derivative  = ll_pt_deriv,
+            loglin_pt_min_size_of_win       = ll_pt_min_win,
+            loglin_threshold_of_exp         = ll_thr_exp,
         )
     catch e
                 return json(Dict("error" => "Curve fitting failed: $e"); status=500)

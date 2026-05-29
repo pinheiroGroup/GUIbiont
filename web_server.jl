@@ -11,7 +11,10 @@ const CLEAN_DATA_PATH = haskey(ENV, "CLEAN_DATA_PATH") ? ENV["CLEAN_DATA_PATH"] 
 const RAW_DATA_PATH   = haskey(ENV, "RAW_DATA_PATH")   ? ENV["RAW_DATA_PATH"]   : "./raw_data/"
 const PORT            = haskey(ENV, "PORT") ? parse(Int, ENV["PORT"]) : 8080
 
-include("function_clean_synergy.jl")
+include("src/cleaning/PlateReader.jl")
+include("src/cleaning/synergy.jl")
+include("src/cleaning/tecan_spark.jl")
+include("src/cleaning/labguru.jl")
 include("src/data.jl")
 include("src/clustering.jl")
 include("src/analysis.jl")

@@ -20,24 +20,31 @@ function resizePlot() {
 }
 
 // Plot growth curves
-// Build a Plotly layout with one y-axis per channel (up to 3).
-// channelList: sorted array of channel numbers present in the data.
+// Build a Plotly layout with one y-axis per channel. Channels 2..N stack on
+// the right; the x-domain shrinks to make room. Beyond ~4 right-side axes the
+// overlay gets crowded — at that point the "Split by Channel" view is nicer,
+// but every channel still renders here.
 function buildMultiChannelLayout(channelList, title) {
-    const multi = channelList.length > 1;
-    const threeChannels = channelList.length >= 3;
-    const xDomainEnd = threeChannels ? 0.78 : 1.0;
+    const N = channelList.length;
+    const multi = N > 1;
+    // Number of axes that need to sit on the right side (index 1..N-1).
+    const rightAxes = Math.max(0, N - 1);
+    // Each extra right-side axis (beyond the first one which hugs the plot
+    // edge) steps out by 0.08 in normalized x.
+    const STEP = 0.08;
+    const xDomainEnd = rightAxes <= 1 ? 1.0 : Math.max(0.5, 1.0 - STEP * (rightAxes - 1));
     const layout = {
         title: { text: title, font: { size: 20, color: '#495057' } },
         xaxis: {
             title: { text: 'Time (hours)', font: { size: state.axisTitleFontSize } },
             tickfont: { size: state.axisTickFontSize },
             gridcolor: '#e9ecef',
-            domain: threeChannels ? [0, xDomainEnd] : [0, 1]
+            domain: [0, xDomainEnd]
         },
         hovermode: 'x unified',
         template: 'plotly_white',
         legend: { orientation: 'h', xanchor: 'center', x: 0.5, y: -0.2, font: { size: state.legendFontSize } },
-        margin: { l: 70, r: multi ? (threeChannels ? 160 : 90) : 30, t: 80, b: 120 },
+        margin: { l: 70, r: multi ? 90 + 80 * Math.max(0, rightAxes - 1) : 30, t: 80, b: 120 },
         autosize: true
     };
     channelList.forEach((ch, i) => {
@@ -51,12 +58,12 @@ function buildMultiChannelLayout(channelList, title) {
         if (i === 1) {
             layout[axKey].overlaying = 'y';
             layout[axKey].side = 'right';
-            layout[axKey].anchor = 'x';
-        } else if (i === 2) {
+            layout[axKey].anchor = 'x';                       // hugs xDomainEnd
+        } else if (i >= 2) {
             layout[axKey].overlaying = 'y';
             layout[axKey].side = 'right';
             layout[axKey].anchor = 'free';
-            layout[axKey].position = xDomainEnd + 0.08;  // just outside the plot domain
+            layout[axKey].position = Math.min(0.99, xDomainEnd + STEP * (i - 1));
         }
     });
     if (!multi) layout.yaxis.title.text = 'Optical Density (OD)';

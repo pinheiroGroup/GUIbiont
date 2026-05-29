@@ -46,6 +46,7 @@ async function cleanExperimentData() {
     
     const experiment = rawExperimentSelect.value;
     const wellCount = parseInt(wellCountInput.value);
+    const machineType = document.getElementById('clean-machine')?.value || 'auto';
     
     if (!experiment) {
         alert('Please select a raw experiment');
@@ -86,7 +87,8 @@ async function cleanExperimentData() {
             },
             body: JSON.stringify({
                 experiment: experiment,
-                well_count: wellCount
+                well_count: wellCount,
+                machine_type: machineType
             })
         });
         
@@ -109,6 +111,7 @@ async function cleanExperimentData() {
             let logHtml = `
                 <div class="log-entry log-success">✅ ${cleaningData.message}</div>
                 <div class="log-entry log-info">📂 Output folder: ${cleaningData.output_path}</div>
+                <div class="log-entry log-info">🔬 Reader: ${cleaningData.machine_type || 'n/a'}${cleaningData.data_file ? ' — ' + cleaningData.data_file : ''}</div>
                 <div class="log-entry log-info">🧪 Wells processed: ${cleaningData.well_count}</div>
                 <div class="log-entry log-info">📄 Files created: ${cleaningData.created_files.length}</div>
             `;

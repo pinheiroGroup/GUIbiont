@@ -1,146 +1,17 @@
-
-# =============================================================================
-# Data-cleaning helpers for BioTek Synergy microplate reader files
-# and LabGuru plate annotation CSVs.
-# =============================================================================
-
-# ---------------------------------------------------------------------------
-# detect_csv_separator
-# ---------------------------------------------------------------------------
-
-"""
-    detect_csv_separator(file_path) -> Char
-
-Read up to the first 5 lines of `file_path` and return the most common column
-separator among `','` and `';'`.
-"""
-function detect_csv_separator(file_path::String)::Char
-    lines = String[]
-    open(file_path, "r") do f
-        while length(lines) < 5 && !eof(f)
-            push!(lines, readline(f))
-        end
-    end
-    comma_count     = sum(count(',', l) for l in lines; init=0)
-    semicolon_count = sum(count(';', l) for l in lines; init=0)
-    return semicolon_count > comma_count ? ';' : ','
-end
-
-# ---------------------------------------------------------------------------
-# Private helpers
-# ---------------------------------------------------------------------------
-
-# Convert "HH:MM:SS" to decimal minutes (first step of the two-step
-# seconds → minutes → hours conversion used by cleaning_data_synergy).
-# The intermediate minutes value is later divided by 60 in _extract_channel_block
-# to produce hours, replicating the original floating-point arithmetic.
-function _hhmmss_to_minutes(s::AbstractString)::Float64
-    parts = split(string(s), ":")
-    h   = parse(Float64, parts[1])
-    m   = parse(Float64, parts[2])
-    sec = parse(Float64, parts[3])
-    return (h * 3600.0 + m * 60.0 + sec) / 60.0
-end
-
-"""
-    _well_names_for_plate(n_wells) -> Vector{String}
-
-Return well names for a standard microplate in row-major order (e.g. A1, A2, …).
-Raises an error for unsupported plate sizes.
-"""
-function _well_names_for_plate(n_wells::Int)::Vector{String}
-    configs = Dict(
-        96 => (["A","B","C","D","E","F","G","H"], 1:12),
-        48 => (["A","B","C","D","E","F"],          1:8),
-        24 => (["A","B","C","D"],                  1:6),
-        12 => (["A","B","C"],                      1:4),
-         6 => (["A","B"],                          1:3),
-    )
-    haskey(configs, n_wells) || error(
-        "Unsupported plate size: $n_wells wells. " *
-        "Supported sizes: $(sort(collect(keys(configs))))"
-    )
-    letters, numbers = configs[n_wells]
-    return [l * string(n) for l in letters for n in numbers]
-end
-
-"""
-    _extract_channel_block(temp_data, start_row, end_row) -> DataFrame
-
-Slice the raw data DataFrame from `start_row` to `end_row` (inclusive),
-trim at the first missing value in the second column (end of valid data),
-drop the temperature column, convert HH:MM:SS times to decimal hours, and
-normalise OD values to Float64 strings.
-"""
-function _extract_channel_block(temp_data::DataFrame, start_row::Int, end_row::Int)::DataFrame
-    block = temp_data[start_row:end_row, 2:end]
-
-    # Trim at first missing in column 2 (marks end of channel data)
-    na_idx = findfirst(ismissing.(block[!, 2]))
-    isnothing(na_idx) || (block = block[1:(na_idx - 1), :])
-
-    # Convert HH:MM:SS times → minutes (stored as strings for the /60 step below)
-    times = block[2:end, 1]
-    block[2:end, 1] = string.(_hhmmss_to_minutes.(string.(times)))
-
-    # Drop the temperature column (always the second column in BioTek output)
-    block = select!(block, Not(propertynames(block)[2]))
-
-    # Normalise OD values: replace European decimal comma, parse as Float64
-    block[2:end, :] = string.(tryparse.(Float64, replace.(block[2:end, :], "," => ".")))
-
-    # Convert time: minutes → hours  (second step of the two-step division)
-    block[2:end, 1] = string.(tryparse.(Float64, block[2:end, 1]) ./ 60.0)
-
-    return block
-end
-
-# ---------------------------------------------------------------------------
-# cleaning_data_synergy
-# ---------------------------------------------------------------------------
-
-"""
-    cleaning_data_synergy(path_to_data, path_to_save)
-
-Read a BioTek Synergy H1 CSV at `path_to_data`, split it into per-channel
-DataFrames, and write them as `data_channel_1.csv`, `data_channel_2.csv`, …
-inside `path_to_save`.
-"""
-function cleaning_data_synergy(path_to_data::String, path_to_save::String)
-    mkpath(path_to_save)
-
-    separator = detect_csv_separator(path_to_data)
-    temp_data = DataFrame(CSV.File(path_to_data; delim=separator, normalizenames=true))
-
-    col_names       = propertynames(temp_data)
-    col2_values     = temp_data[:, col_names[2]]
-    channel_starts  = findall(x -> !ismissing(x) && x == "Time", col2_values)
-
-    isempty(channel_starts) && error("No channel data found in $path_to_data")
-
-    for (i, start_row) in enumerate(channel_starts)
-        end_row = i < length(channel_starts) ? channel_starts[i + 1] - 1 : nrow(temp_data)
-        block   = _extract_channel_block(temp_data, start_row, end_row)
-        CSV.write(joinpath(path_to_save, "data_channel_$(i).csv"), block, writeheader=false)
-    end
-end
-
-# ---------------------------------------------------------------------------
-# read_labguru_annotation
-# ---------------------------------------------------------------------------
+# LabGuru plate annotation parser — reader-agnostic.
 
 """
     read_labguru_annotation(path_to_annotation, path_to_save, number_of_wells)
 
-Parse a LabGuru plate annotation CSV, build a unified `annotation_clean.csv`,
-and write per-channel per-media simplified annotation files inside `path_to_save`.
+Parse a LabGuru plate annotation CSV into a unified `annotation_clean.csv`
+plus per-channel per-media simplified annotations in `path_to_save`.
 """
 function read_labguru_annotation(path_to_annotation::String,
                                  path_to_save::String,
                                  number_of_wells::Int)
     mkpath(path_to_save)
 
-    names_of_wells_tot = _well_names_for_plate(number_of_wells)
+    names_of_wells_tot = well_names_for_plate(number_of_wells)
 
     annotation_separator = detect_csv_separator(path_to_annotation)
     raw_annotation = CSV.read(path_to_annotation, normalizenames=true,
@@ -163,7 +34,6 @@ function read_labguru_annotation(path_to_annotation::String,
     full_annotation        = Matrix{Any}(missing, length(names_of_wells_tot), length(names_of_columns))
     full_annotation[:, 1]  = names_of_wells_tot
 
-    # Discover "Concentration" and "Well Annotation" column positions in row 2
     row2 = [string(raw_annotation[2, i]) for i in 1:ncol(raw_annotation)]
     concentration_column   = something(findfirst(==("Concentration"),   row2), 9)
     well_annotation_column = something(findfirst(==("Well Annotation"), row2), 10)
@@ -214,17 +84,14 @@ function read_labguru_annotation(path_to_annotation::String,
         end
     end
 
-    # Write unified annotation
     CSV.write(joinpath(path_to_save, "annotation_clean.csv"),
               Tables.table(Matrix(full_annotation)), writeheader=false)
 
-    # Collect unique media types and channel IDs
     list_of_media    = filter(!ismissing, unique(full_annotation[:, names_of_columns .== "Media"]))
     list_of_channels = unique(Iterators.flatten(
         split.(string.(filter(!ismissing, unique(full_annotation[:, end]))), "")
     ))
 
-    # Replace remaining missing values with "X" in all but the last column
     for i in 1:(size(full_annotation, 2) - 1)
         if any(ismissing, full_annotation[:, i])
             full_annotation[ismissing.(full_annotation[:, i]), i] .= "X"

@@ -460,6 +460,7 @@ async function fitGrowthCurve() {
                 model_name: document.getElementById('fitting-model').value || 'aHPM',
                 ...buildOptimizerPayload('fit'),
                 ...buildFitOptionsPayload(),
+                ...buildLogLinCompanionPayload(),
                 ...(calFile ? { calibration_file: calFile } : {}),
             })
         });
@@ -470,12 +471,10 @@ async function fitGrowthCurve() {
         }
 
         const fitData = await response.json();
-        
-        // Display fitting results
+
         displayFittingResults(fitData);
-        
-        // Plot the data with fitted curve
         plotFittedCurve(fitData);
+        renderLogLinCompanion(fitData);
         
     } catch (error) {
         console.error('Error fitting curve:', error);
@@ -561,7 +560,40 @@ function displayFittingResults(fitData) {
             </div>
         `;
     }
-    
+
+    if (fitData.loglin_converged === true) {
+        const fmt = (v, d = 4) => (typeof v === 'number' && isFinite(v)) ? v.toFixed(d) : '—';
+        html += `
+            <div class="parameter-row" style="border-top:1px dashed #ced4da; margin-top:8px; padding-top:8px;">
+                <span class="parameter-name" style="font-weight:600;">Log-Lin companion:</span>
+                <span class="parameter-value"></span>
+            </div>
+            <div class="parameter-row">
+                <span class="parameter-name">µ (log-lin, ±SE):</span>
+                <span class="parameter-value">${fmt(fitData.gr_loglin, 5)} ± ${fmt(fitData.gr_loglin_se, 5)} /h</span>
+            </div>
+            <div class="parameter-row">
+                <span class="parameter-name">Doubling time:</span>
+                <span class="parameter-value">${fmt(fitData.doubling_time_loglin)} h</span>
+            </div>
+            <div class="parameter-row">
+                <span class="parameter-name">R²:</span>
+                <span class="parameter-value">${fmt(fitData.R_squared_loglin, 5)}</span>
+            </div>
+            <div class="parameter-row">
+                <span class="parameter-name">Exp. window:</span>
+                <span class="parameter-value">${fmt(fitData.t_exp_start_loglin, 3)} → ${fmt(fitData.t_exp_end_loglin, 3)} h</span>
+            </div>
+        `;
+    } else if (fitData.compute_loglin !== false && 'loglin_converged' in fitData) {
+        html += `
+            <div class="parameter-row" style="border-top:1px dashed #ced4da; margin-top:8px; padding-top:8px;">
+                <span class="parameter-name">Log-Lin companion:</span>
+                <span class="parameter-value" style="color:#856404;">no exponential window detected</span>
+            </div>
+        `;
+    }
+
     parametersDiv.innerHTML = html;
     resultsDiv.style.display = 'block';
 }
@@ -572,6 +604,7 @@ function onFitShowIndividualChange() {
 
 function updateFitPlot(fitData) {
     plotFittedCurve(fitData);
+    renderLogLinCompanion(fitData);
 
     const showIndividual = document.getElementById('fit-show-individual-wells').checked;
     if (state.currentFitMode === 'replicate' && showIndividual && state.lastReplicateTraces.length > 0) {
@@ -680,6 +713,94 @@ function plotFittedCurve(fitData) {
 function toggleLogLinOptions() {
     const panel = document.getElementById('loglin-options');
     if (panel) panel.style.display = panel.style.display === 'none' ? '' : 'none';
+}
+
+// Payload for the `compute_loglin` companion fit on /api/fit-curve. Reuses the
+// existing Log-Lin options panel; falls back to defaults when controls are
+// absent (e.g. headless tests).
+function buildLogLinCompanionPayload() {
+    const intnum = (id, fallback) => {
+        const v = parseInt(document.getElementById(id)?.value, 10);
+        return Number.isFinite(v) ? v : fallback;
+    };
+    const num = (id, fallback) => {
+        const v = parseFloat(document.getElementById(id)?.value);
+        return Number.isFinite(v) ? v : fallback;
+    };
+    const enabled = document.getElementById('fit-compute-loglin');
+    return {
+        compute_loglin:                  enabled ? enabled.checked : true,
+        loglin_pt_avg:                   intnum('loglin-pt-avg', 7),
+        loglin_pt_smoothing_derivative:  intnum('loglin-pt-deriv', 7),
+        loglin_pt_min_size_of_win:       intnum('loglin-pt-min-win', 7),
+        loglin_threshold_of_exp:         num('loglin-thr-exp', 0.9),
+    };
+}
+
+// Render the second (log-lin) plot under the main model fit. Hides the panel
+// when the server didn't return a converged log-lin fit.
+function renderLogLinCompanion(fitData) {
+    const div = document.getElementById('plot-fitting-loglin');
+    if (!div) return;
+    const hasFit = Array.isArray(fitData.loglin_fit_time) && fitData.loglin_fit_time.length > 0;
+    if (!hasFit || fitData.loglin_converged === false) {
+        div.style.display = 'none';
+        return;
+    }
+    const blankSub = fitData.blank_subtraction && fitData.experimental_od_subtracted;
+    const traces = [
+        {
+            x: fitData.experimental_time,
+            y: blankSub ? fitData.experimental_od_subtracted : fitData.experimental_od,
+            mode: 'markers',
+            type: 'scatter',
+            name: `${fitData.experiment}: ${fitData.well}`,
+            marker: { color: 'black', size: 5 }
+        },
+        {
+            x: fitData.loglin_fit_time,
+            y: fitData.loglin_fit_od,
+            mode: 'lines',
+            type: 'scatter',
+            name: 'Log-Lin Fit',
+            line: { color: '#d62728', width: 3 }
+        }
+    ];
+    const annotations = [];
+    if (Number.isFinite(fitData.gr_loglin)) {
+        const mu  = fitData.gr_loglin;
+        const dt  = fitData.doubling_time_loglin;
+        const r2  = fitData.R_squared_loglin;
+        const se  = fitData.gr_loglin_se;
+        const tStart = fitData.t_exp_start_loglin;
+        const tEnd   = fitData.t_exp_end_loglin;
+        annotations.push({
+            xref: 'paper', yref: 'paper', x: 0.02, y: 0.98, xanchor: 'left', yanchor: 'top',
+            showarrow: false, align: 'left',
+            text:
+                `<b>µ</b> = ${mu.toFixed(4)} ± ${Number.isFinite(se) ? se.toFixed(4) : '—'} /h<br>` +
+                `<b>doubling</b> = ${Number.isFinite(dt) ? dt.toFixed(3) : '—'} h<br>` +
+                `<b>R²</b> = ${Number.isFinite(r2) ? r2.toFixed(4) : '—'}<br>` +
+                `<b>window</b> = ${Number.isFinite(tStart) ? tStart.toFixed(2) : '—'} → ${Number.isFinite(tEnd) ? tEnd.toFixed(2) : '—'} h`,
+            font: { size: 12, color: '#222' },
+            bgcolor: 'rgba(255,255,255,0.85)',
+            bordercolor: '#aaa', borderwidth: 1, borderpad: 6,
+        });
+    }
+    const layout = {
+        title: `Log-Linear Companion Fit (log y): ${fitData.experiment} - ${fitData.well}`,
+        xaxis: { title: { text: 'Time (h)', font: { size: state.axisTitleFontSize } }, tickfont: { size: state.axisTickFontSize } },
+        yaxis: { title: { text: 'OD (log)', font: { size: state.axisTitleFontSize } }, tickfont: { size: state.axisTickFontSize }, type: 'log' },
+        showlegend: true,
+        legend: { font: { size: state.legendFontSize } },
+        hovermode: 'closest',
+        autosize: true,
+        annotations,
+    };
+    div.style.display = 'block';
+    Plotly.newPlot(div, traces, layout, { responsive: true, displayModeBar: true, displaylogo: false }).then(() => {
+        setTimeout(() => Plotly.Plots.resize(div), 100);
+    });
 }
 
 function buildLogLinPayload() {
@@ -906,4 +1027,5 @@ export {
     fitGrowthCurve, displayFittingResults, onFitShowIndividualChange,
     updateFitPlot, plotFittedCurve,
     fitLogLinCurve, displayLogLinResults, plotLogLinCurve, toggleLogLinOptions,
+    buildLogLinCompanionPayload, renderLogLinCompanion,
 };

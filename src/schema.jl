@@ -12,6 +12,12 @@ end
 Base.@kwdef mutable struct CleanDataRequest
     experiment::String = ""
     well_count::Int = 48
+    # "auto" | "synergy" | "tecan_spark". "auto" sniffs the file content/extension.
+    machine_type::String = "auto"
+    # Raw data filename inside raw_data/<experiment>/. Defaults differ per
+    # reader: Synergy uses data.csv (legacy), Tecan uses an .xlsx. When empty
+    # the route picks one based on the resolved machine_type.
+    data_filename::String = ""
 end
 
 Base.@kwdef mutable struct FitCurveRequest
@@ -31,6 +37,13 @@ Base.@kwdef mutable struct FitCurveRequest
     stochastic_runs::Int                    = 3
     maxiters::Int = DEFAULT_FIT_MAXITERS
     abstol::Float64 = 1e-15
+    # Always-on log-linear companion fit. Provides a model-free μ_max next to
+    # the parametric one for sanity checking. Set to false to skip.
+    compute_loglin::Bool = true
+    loglin_pt_avg::Int = 7
+    loglin_pt_smoothing_derivative::Int = 7
+    loglin_pt_min_size_of_win::Int = 7
+    loglin_threshold_of_exp::Float64 = 0.9
 end
 
 Base.@kwdef mutable struct BatchFitRequest
