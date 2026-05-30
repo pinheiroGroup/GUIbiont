@@ -171,20 +171,22 @@ end
 # assigned to it.
 #
 # Reaches into Kinbiont's private API (`_prescreen_constant` is underscore-
-# prefixed → not part of the public contract). The assertion below fails fast
-# at load time if the symbol disappears in a future Kinbiont release; bump the
-# Kinbiont pin and revisit this helper when that happens.
-@assert isdefined(Kinbiont, :_prescreen_constant) (
-    "Kinbiont._prescreen_constant is no longer defined. " *
-    "The prescreen mirror in clustering.jl depends on it; " *
-    "pin Kinbiont to a compatible version or update the mirror.")
-
+# prefixed → not part of the public contract). The check below fails fast the
+# first time the helper is actually called if the symbol disappears in a
+# future Kinbiont release; bump the Kinbiont pin and revisit this helper when
+# that happens. The check lives inside the function rather than at top-level
+# because clustering.jl is also loaded by the test runner without Kinbiont.
 function _prescreen_constant_mask(
     curves::Matrix{Float64};
     tol_const::Float64 = 1.5,
     q_low::Float64 = 0.05,
     q_high::Float64 = 0.95,
 )::BitVector
+    isdefined(@__MODULE__, :Kinbiont) && isdefined(Kinbiont, :_prescreen_constant) || error(
+        "Kinbiont._prescreen_constant is not available. " *
+        "Either Kinbiont was not loaded (server context expected) or the " *
+        "private symbol has been removed upstream — pin Kinbiont to a " *
+        "compatible version or update the mirror.")
     opts = Kinbiont.FitOptions(
         cluster_tol_const = tol_const,
         cluster_q_low     = q_low,
