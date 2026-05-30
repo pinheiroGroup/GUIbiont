@@ -41,96 +41,51 @@ function setAxisTickFontSize(val) {
     relayoutFontSizes();
 }
 
+// Floating containers that live OUTSIDE the tab-content divs (positioned
+// at the root of the .container). Each is owned by exactly one tab; on
+// switch we hide all of them, then re-show the ones that belong to the
+// active tab if they currently have content. Keep this in sync with the
+// HTML — any new free-standing container needs an entry below.
+const FLOATING_CONTAINER_OWNERS = {
+    'plot-growth-container':   { tab: 'plot-growth', hasContent: () => _plotHasContent('plot-growth') },
+    'stats-container':         { tab: 'plot-growth', hasContent: () => _innerNonEmpty('stats-table') },
+    'plot-fitting-container':  { tab: 'fit-curve',   hasContent: () => _plotHasContent('plot-fitting') },
+    'cluster-grid-container':  { tab: 'clustering',  hasContent: () => _innerNonEmpty('cluster-grid') },
+    'cluster-quality-panel':   { tab: 'clustering',  hasContent: () => _innerNonEmpty('cluster-quality-table') },
+    'cluster-sweep-panel':     { tab: 'clustering',  hasContent: () => _innerNonEmpty('cluster-sweep-plot-silhouette') },
+    'cluster-compare-panel':   { tab: 'clustering',  hasContent: () => state._savedClusterings && state._savedClusterings.length > 0 },
+};
+
+function _plotHasContent(id) {
+    const el = document.getElementById(id);
+    return !!el && el.hasChildNodes() && el.children.length > 0;
+}
+
+function _innerNonEmpty(id) {
+    const el = document.getElementById(id);
+    return !!el && !!el.innerHTML && !!el.innerHTML.trim();
+}
+
 function switchTab(tabName) {
-    // Hide all tab contents
-    const tabContents = document.querySelectorAll('.tab-content');
-    tabContents.forEach(content => content.classList.remove('active'));
-    
-    // Remove active class from all tab buttons
-    const tabButtons = document.querySelectorAll('.tab-button');
-    tabButtons.forEach(button => button.classList.remove('active'));
-    
-    // Show selected tab content
+    document.querySelectorAll('.tab-content')
+        .forEach(content => content.classList.remove('active'));
+    document.querySelectorAll('.tab-button')
+        .forEach(button => button.classList.remove('active'));
+
     const selectedContent = document.getElementById(`${tabName}-content`);
-    if (selectedContent) {
-        selectedContent.classList.add('active');
-    }
-    
-    // Activate selected tab button
+    if (selectedContent) selectedContent.classList.add('active');
+
     const selectedButton = document.querySelector(`[onclick="switchTab('${tabName}')"]`);
-    if (selectedButton) {
-        selectedButton.classList.add('active');
-    }
-    
-    // Show/hide appropriate plot containers based on tab
-    const growthContainer = document.getElementById('plot-growth-container');
-    const fittingContainer = document.getElementById('plot-fitting-container');
-    const statsContainer = document.getElementById('stats-container');
-    
-    const clusterGridContainer = document.getElementById('cluster-grid-container');
-    // Always hide clustering panels when leaving that tab
-    if (tabName !== 'clustering') {
-        if (clusterGridContainer) clusterGridContainer.style.display = 'none';
-        document.getElementById('cluster-quality-panel').style.display = 'none';
-        document.getElementById('cluster-sweep-panel').style.display   = 'none';
-        document.getElementById('cluster-compare-panel').style.display = 'none';
-    }
+    if (selectedButton) selectedButton.classList.add('active');
 
-    if (tabName === 'plot-growth') {
-        // Show growth plot if it has been created (check if plot div has data)
-        const growthPlotDiv = document.getElementById('plot-growth');
-        if (growthPlotDiv && growthPlotDiv.hasChildNodes() && growthPlotDiv.children.length > 0) {
-            growthContainer.style.display = 'block';
-        } else {
-            growthContainer.style.display = 'none';
-        }
-        fittingContainer.style.display = 'none';
-
-        // Show stats if they exist for growth plot
-        if (statsContainer.querySelector('#stats-table') && statsContainer.querySelector('#stats-table').innerHTML.trim()) {
-            statsContainer.style.display = 'block';
-        } else {
-            statsContainer.style.display = 'none';
-        }
-
-        document.getElementById('fitting-results').style.display = 'none';
-    } else if (tabName === 'fit-curve') {
-        // Show fitting plot if it has been created (check if plot div has data)
-        const fittingPlotDiv = document.getElementById('plot-fitting');
-        if (fittingPlotDiv && fittingPlotDiv.hasChildNodes() && fittingPlotDiv.children.length > 0) {
-            fittingContainer.style.display = 'block';
-        } else {
-            fittingContainer.style.display = 'none';
-        }
-        growthContainer.style.display = 'none';
-        if (clusterGridContainer) clusterGridContainer.style.display = 'none';
-
-        // Hide stats for fitting (not relevant)
-        statsContainer.style.display = 'none';
-        
-        // Show fitting results if they have content
-        const fittingResults = document.getElementById('fitting-results');
-        if (fittingResults && fittingResults.innerHTML.trim()) {
-            fittingResults.style.display = 'block';
-        }
-    } else if (tabName === 'clustering') {
-        growthContainer.style.display = 'none';
-        fittingContainer.style.display = 'none';
-        statsContainer.style.display = 'none';
-        if (clusterGridContainer) {
-            const hasResults = document.getElementById('cluster-grid').innerHTML.trim();
-            clusterGridContainer.style.display = hasResults ? 'block' : 'none';
-        }
-        // Restore clustering analysis panels if they have content
-        const qualityPanel = document.getElementById('cluster-quality-panel');
-        if (qualityPanel && document.getElementById('cluster-quality-table').innerHTML.trim())
-            qualityPanel.style.display = 'block';
-        const sweepPanel = document.getElementById('cluster-sweep-panel');
-        if (sweepPanel && document.getElementById('cluster-sweep-plot-silhouette').innerHTML.trim())
-            sweepPanel.style.display = 'block';
-        const comparePanel = document.getElementById('cluster-compare-panel');
-        if (comparePanel && state._savedClusterings.length)
-            comparePanel.style.display = 'block';
+    // Hide every floating container, then re-show the ones owned by this
+    // tab that actually have content. This makes tabs without their own
+    // floating output (clean-data, batch-fit, ml-analysis) automatically
+    // hide whatever the previous tab left on screen.
+    for (const [id, { tab, hasContent }] of Object.entries(FLOATING_CONTAINER_OWNERS)) {
+        const el = document.getElementById(id);
+        if (!el) continue;
+        el.style.display = (tab === tabName && hasContent()) ? 'block' : 'none';
     }
 }
 
