@@ -119,9 +119,7 @@ function compute_blank_timeseries(growth_data::DataFrame, annotations::DataFrame
         end
         length(col) == n && push!(columns, col)
     end
-    isempty(columns) && return zeros(Float64, n)
-    # Mean across blank wells at each time point, ignoring NaN
-    return [mean(filter(!isnan, [columns[j][t] for j in 1:length(columns)])) for t in 1:n]
+    return _mean_across_blanks(columns, n)
 end
 
 # Overloads that take an explicit list of blank well names instead of an annotation DataFrame.
@@ -150,8 +148,33 @@ function compute_blank_timeseries(growth_data::DataFrame, blank_wells::Vector{St
         end
         length(col) == n && push!(columns, col)
     end
+    return _mean_across_blanks(columns, n)
+end
+
+# Compute the per-timepoint mean across a set of blank-well columns, returning
+# a Vector{Float64} of length `n`. At time points where every blank well is NaN
+# (e.g. a final-row NaN written by the plate reader), fall back to the global
+# blank mean (or 0.0 if no blank reading is available at all), so the output
+# stays a finite, length-n vector usable for downstream broadcasting.
+function _mean_across_blanks(columns::Vector{Vector{Float64}}, n::Int)::Vector{Float64}
     isempty(columns) && return zeros(Float64, n)
-    return [mean(filter(!isnan, [columns[j][t] for j in 1:length(columns)])) for t in 1:n]
+    # Per-timepoint NaN-aware mean
+    out = Vector{Float64}(undef, n)
+    @inbounds for t in 1:n
+        s = 0.0; k = 0
+        for c in columns
+            v = c[t]
+            if !isnan(v); s += v; k += 1; end
+        end
+        out[t] = k > 0 ? s / k : NaN
+    end
+    # Global fallback for any all-NaN timepoint
+    valid = filter(!isnan, out)
+    fallback = isempty(valid) ? 0.0 : sum(valid) / length(valid)
+    @inbounds for t in 1:n
+        isnan(out[t]) && (out[t] = fallback)
+    end
+    return out
 end
 
 # CORS headers for allowing frontend requests

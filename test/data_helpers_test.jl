@@ -187,4 +187,14 @@ end
     # No blank wells → zeros
     ts3 = compute_blank_timeseries(gd, String[])
     @test all(iszero, ts3)
+
+    # Regression: an all-NaN row across every blank well must not error and must
+    # return a finite, length-n vector (falls back to the global blank mean).
+    # Mirrors the LG391 final-row plate-reader NaN that previously crashed
+    # /api/blank-analysis with mean(Float64[]).
+    gd_nan = copy(gd)
+    gd_nan[end, :A1] = NaN
+    ts_nan = compute_blank_timeseries(gd_nan, ["A1"])
+    @test length(ts_nan) == nrow(gd_nan)
+    @test all(isfinite, ts_nan)
 end
