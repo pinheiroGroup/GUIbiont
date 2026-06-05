@@ -253,7 +253,7 @@ function renderMlResults(data, selectedParams) {
         `${data.n_wells} wells matched between fit results and feature matrix.`;
 
     renderCorrelationChart(data.correlations);
-    renderImportanceCharts(data.importance, selectedParams);
+    renderImportanceCharts(data.importance, selectedParams, data.cv_r2 || {});
     renderPDPCharts(data.pdp, selectedParams);
 }
 
@@ -483,19 +483,34 @@ function downloadMlResultsCSV() {
     _downloadCSV(_mlResultRows(state._mlResults, getSelectedParams()), 'ml_analysis_results.csv');
 }
 
-function renderImportanceCharts(importance, selectedParams) {
+function renderImportanceCharts(importance, selectedParams, cvR2) {
     const container = document.getElementById('ml-importance-container');
     container.innerHTML = '';
+
+    const fmtR2 = (cv) => {
+        if (!cv || !Number.isFinite(cv.mean)) return '';
+        const mean = cv.mean.toFixed(3);
+        const std  = Number.isFinite(cv.std) ? cv.std.toFixed(3) : '–';
+        return `CV R² (5-fold) = ${mean} ± ${std}  (n = ${cv.n})`;
+    };
 
     selectedParams.forEach(param => {
         const imp = importance[param];
         if (!imp || imp.length === 0) return;
 
-        const top = imp.slice(0, 15);
+        const top  = imp.slice(0, 15);
+        const cv   = cvR2[param];
+        const r2Txt = fmtR2(cv);
         const divId = `ml-imp-plot-${param}`;
         const wrapper = document.createElement('div');
         wrapper.style.cssText = 'width:100%;';
-        wrapper.innerHTML = `<div id="${divId}" style="width:100%; height:400px;"></div>`;
+        wrapper.innerHTML = `
+            <div style="display:flex; justify-content:space-between; align-items:baseline;
+                        padding:0 8px 4px 8px;">
+                <div style="font-weight:600;">Feature importance — ${param}</div>
+                <div style="font-size:12px; color:#555;">${r2Txt}</div>
+            </div>
+            <div id="${divId}" style="width:100%; height:400px;"></div>`;
         container.appendChild(wrapper);
 
         const features = top.map(r => r.feature);
@@ -509,11 +524,10 @@ function renderImportanceCharts(importance, selectedParams) {
             marker:      { color: 'steelblue' },
             hovertemplate: '%{y}: %{x:.4f}<extra></extra>',
         }], {
-            margin: { l: 180, r: 20, t: 40, b: 50 },
+            margin: { l: 180, r: 20, t: 20, b: 50 },
             xaxis:  { title: 'Importance' },
             yaxis:  { autorange: 'reversed' },
             height: 360,
-            title:  `Feature importance — ${param}`,
         }, _mlPlotConfig(`ml-feature-importance-${param}`));
     });
 }

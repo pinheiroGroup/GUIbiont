@@ -3,7 +3,8 @@ using Kinbiont
 using OptimizationNLopt
 using Distributions: Normal, cdf
 using StatsBase: corspearman
-using DecisionTree: build_forest, impurity_importance, apply_forest
+using DecisionTree: build_forest, impurity_importance, apply_forest, nfoldCV_forest
+import DecisionTree
 import Clustering
 using Oxygen, StructTypes
 

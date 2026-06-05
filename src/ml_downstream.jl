@@ -78,6 +78,70 @@ function forest_importance(
 end
 
 """
+    cv_r2_score(params, features, param_col;
+                n_folds=5, n_trees=100, max_depth=5, seed=42)
+        -> NamedTuple
+
+Predictive-performance companion to `forest_importance`: delegates to
+`DecisionTree.nfoldCV_forest` using the same hyperparameters
+(`n_trees`, `max_depth`, `partial_sampling = 0.7`) as the importance
+run, so the reported R² describes the very same model whose feature
+importances are surfaced elsewhere in the response.
+
+Returns a NamedTuple with fields:
+  mean   — mean R² across folds (Float64, NaN if not computable)
+  std    — population standard deviation across folds (Float64)
+  folds  — per-fold R² values (Vector{Float64})
+  n      — number of valid (label, feature) rows used (Int)
+
+When fewer than `2 * n_folds` valid rows are available the function
+returns `(mean=NaN, std=NaN, folds=Float64[], n=k)` so the route can
+emit a sentinel without crashing the whole ML response.
+"""
+function cv_r2_score(
+    params::Matrix{Float64},
+    features::Matrix{Float64},
+    param_col::Int;
+    n_folds::Int  = 5,
+    n_trees::Int  = 100,
+    max_depth::Int = 5,
+    seed::Int     = 42,
+)::NamedTuple
+    y    = params[:, param_col]
+    mask = .!isnan.(y) .& all(.!isnan.(features), dims=2)[:]
+    k    = sum(mask)
+    if k < max(10, 2 * n_folds)
+        return (mean = NaN, std = NaN, folds = Float64[], n = k)
+    end
+    Xm = features[mask, :]
+    ym = y[mask]
+
+    # n_subfeatures = -1 and partial_sampling = 0.7 mirror forest_importance
+    # so the CV R² describes the same forest whose importances we surface.
+    # nfoldCV_forest is exported from DecisionTree at the web_server.jl top
+    # level — use the unqualified name to keep this module decoupled from
+    # how the import is wired upstream.
+    fold_r2 = nfoldCV_forest(
+        ym, Xm,
+        n_folds, -1, n_trees, 0.7, max_depth;
+        verbose = false, rng = seed,
+    )
+
+    # DecisionTree.R2 uses the textbook 1 − SS_res/SS_tot definition. When a
+    # test fold has near-zero target variance (SS_tot ≈ 0), the metric can
+    # explode to large negative values which carry no useful information
+    # — they all mean "RF is worse than the constant-mean predictor". Clip
+    # per-fold R² to [-1, 1] so the summary is interpretable: any value at
+    # the −1 floor signals "no predictive signal" without pretending the
+    # raw arithmetic is meaningful.
+    fold_r2_clipped = clamp.(Float64.(fold_r2), -1.0, 1.0)
+    finite_r2 = filter(isfinite, fold_r2_clipped)
+    μ = isempty(finite_r2) ? NaN : Statistics.mean(finite_r2)
+    σ = length(finite_r2) > 1 ? Statistics.std(finite_r2; corrected = false) : 0.0
+    return (mean = μ, std = σ, folds = fold_r2_clipped, n = k)
+end
+
+"""
     partial_dependence(model, X, feature_idx; n_grid=30)
 
 Compute the partial dependence of `model`'s predictions on column `feature_idx`
