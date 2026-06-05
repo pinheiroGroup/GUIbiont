@@ -404,22 +404,26 @@ function _run_fit_attempt(
         model_keys = [m for m in model_names if haskey(MODEL_REGISTRY, m)]
         initial_params = [smart_initial_params(model_keys[i], models[i].param_names, time_fit, od_fit) for i in eachindex(models)]
         bounds_pairs   = [smart_param_bounds(models[i].param_names, time_fit, od_fit) for i in eachindex(models)]
+        param_lower    = [b[1] for b in bounds_pairs]
+        param_upper    = [b[2] for b in bounds_pairs]
         spec = ModelSpec(
             models,
             initial_params;
-            lower = [b[1] for b in bounds_pairs],
-            upper = [b[2] for b in bounds_pairs],
+            lower = param_lower,
+            upper = param_upper,
         )
     else
         model = MODEL_REGISTRY[model_name]
         p0    = smart_initial_params(model_name, model.param_names, time_fit, od_fit)
         lo, up = smart_param_bounds(model.param_names, time_fit, od_fit)
         initial_params = [p0]
+        param_lower    = [lo]
+        param_upper    = [up]
         spec = ModelSpec(
             [model],
             [p0];
-            lower = [lo],
-            upper = [up],
+            lower = param_lower,
+            upper = param_upper,
         )
     end
 
@@ -490,6 +494,8 @@ function _run_fit_attempt(
         param_names        = r.best_model.param_names,
         model_name         = r.best_model.name,
         initial_parameters = initial_params,
+        param_lower        = param_lower,
+        param_upper        = param_upper,
         fit_time_out       = fit_time_out,
         fit_od_out         = fit_od_out,
         aic                = r.best_aic,
@@ -628,6 +634,12 @@ function fit_well_data(
         "param_names"            => win.param_names,
         "model"                  => win.model_name,
         "initial_parameters"     => win.initial_parameters,
+        # Data-driven bounds from smart_param_bounds — surfaced so the
+        # exported Julia script can reproduce the GUI fit without falling
+        # back to a uniform [0, 50] box that pulls the optimizer toward
+        # a different local minimum on non-convex models.
+        "param_lower"            => win.param_lower,
+        "param_upper"            => win.param_upper,
         "blank_value"            => blank_value,
         "blank_subtraction"      => subtract_blank,
         "blank_method"           => blank_method,

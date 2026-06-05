@@ -472,6 +472,10 @@ async function fitGrowthCurve() {
 
         const fitData = await response.json();
 
+        // Stash for the code-export modal, exactly as fitReplicateAverage
+        // does. Without this, openFitCodeExport() short-circuits on the
+        // !state.lastFitData guard and the export modal silently no-ops.
+        state.lastFitData = fitData;
         displayFittingResults(fitData);
         plotFittedCurve(fitData);
         renderLogLinCompanion(fitData);
@@ -604,6 +608,12 @@ function displayFittingResults(fitData) {
 
     parametersDiv.innerHTML = html;
     resultsDiv.style.display = 'block';
+    // Surface the code-export button now that we have a fit to export.
+    // Mirrors the batch-fit tab's behaviour (batch-export-btn shown after
+    // displayBatchResults). Without this the modal can be opened only via
+    // the console, which breaks the abstract's reproducibility claim.
+    const exportBtn = document.getElementById('fit-export-btn');
+    if (exportBtn) exportBtn.style.display = '';
 }
 
 function onFitShowIndividualChange() {
