@@ -552,19 +552,17 @@ end
 
         corr = spearman_correlations(param_mat, feat_mat, all_params, feature_names)
 
-        importance = Dict{String,Any}()
-        pdp        = Dict{String,Any}()
-        cv_r2      = Dict{String,Any}()
+        importance      = Dict{String,Any}()
+        perm_importance = Dict{String,Any}()
+        pdp             = Dict{String,Any}()
+        cv_r2           = Dict{String,Any}()
         for pname in param_names
             pcol = findfirst(==(pname), all_params)
             pcol === nothing && continue
             rankings, model, Xm = forest_importance(param_mat, feat_mat, pcol, feature_names)
             importance[pname] = rankings
             # Predictive-performance companion: 5-fold CV R² with the same
-            # RF hyperparameters as the importance run. Reported alongside
-            # the rankings so the user can read importances as "where the
-            # signal sits" (descriptive) when CV R² is low, or as a true
-            # predictive ranking when it is high.
+            # RF hyperparameters as the importance run.
             cv = cv_r2_score(param_mat, feat_mat, pcol)
             cv_r2[pname] = Dict{String,Any}(
                 "mean"  => cv.mean,
@@ -573,6 +571,16 @@ end
                 "n"     => cv.n,
             )
             (isempty(rankings) || model === nothing) && continue
+            # Permutation importance for the same forest, computed on the
+            # training matrix already produced by forest_importance — no
+            # refit. Surfaces feature-collinearity effects that the
+            # impurity ranking can mask.
+            ym = param_mat[:, pcol]
+            mask = .!isnan.(ym) .& all(.!isnan.(feat_mat), dims=2)[:]
+            ym_train = ym[mask]
+            perm_importance[pname] = forest_permutation_importance(
+                model, Xm, ym_train, feature_names,
+            )
             top5 = [findfirst(==(r["feature"]), feature_names)
                     for r in rankings[1:min(5, length(rankings))]]
             pdp[pname] = [
@@ -585,11 +593,12 @@ end
         end
 
         return sanitize_for_json(Dict(
-            "correlations" => corr,
-            "importance"   => importance,
-            "cv_r2"        => cv_r2,
-            "pdp"          => pdp,
-            "n_wells"      => nrow(joined),
+            "correlations"           => corr,
+            "importance"             => importance,
+            "permutation_importance" => perm_importance,
+            "cv_r2"                  => cv_r2,
+            "pdp"                    => pdp,
+            "n_wells"                => nrow(joined),
         ))
     catch e
                 return json(Dict("error" => "ML analysis failed: $e"); status=500)

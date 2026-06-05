@@ -142,6 +142,75 @@ function cv_r2_score(
 end
 
 """
+    forest_permutation_importance(model, X, y, feature_names;
+                                  n_iter=10, seed=42)
+        -> Vector{Dict}
+
+Permutation feature importance for the random forest already fitted by
+`forest_importance`, delegating to `DecisionTree.permutation_importance`
+(see `https://scikit-learn.org/stable/modules/permutation_importance.html`
+for the algorithm reference). For each feature column the routine
+shuffles its values `n_iter` times, measures the drop in R² caused by
+destroying that column's signal alone, and returns the mean and
+standard deviation of those drops.
+
+Returns a `Vector{Dict}` sorted descending by mean drop, with keys
+`feature`, `permutation_importance` (mean), `permutation_importance_std`.
+
+Why this is reported next to impurity importance: impurity (Gini)
+importance gives correlated features the credit of whichever one the
+tree happens to split on first, so two redundant columns share the
+"true" importance roughly proportionally and the absolute numbers can
+be misleading. Permutation importance asks instead "how much does
+destroying just this column hurt the model" — if a feature is redundant
+with another column the model can still use, its permutation importance
+is small even when its impurity importance is large. Reporting both
+lets the reviewer see when the impurity ranking is genuine versus when
+it reflects feature collinearity.
+
+Note: permutation importance is computed on the training matrix and is
+therefore model-conditional — it measures dependence within the fitted
+forest, not generalisation. The companion `cv_r2_score` reports
+generalisation R² for the same forest hyperparameters.
+"""
+function forest_permutation_importance(
+    model,
+    X::Matrix{Float64},
+    y::Vector{Float64},
+    feature_names::Vector{String};
+    n_iter::Int = 10,
+    seed::Int   = 42,
+)::Vector{Dict{String,Any}}
+    p = size(X, 2)
+    p == length(feature_names) || error(
+        "forest_permutation_importance: feature_names length $(length(feature_names)) ≠ X columns $p"
+    )
+
+    score(m, lab, feat) = DecisionTree.R2(lab, apply_forest(m, feat))
+    # DecisionTree.permutation_importance mutates the feature matrix during
+    # the shuffle loop and restores it column-by-column; pass a working
+    # copy so the caller's training X is untouched if it shares storage.
+    # rng can be an Integer — DecisionTree.mk_rng wraps it as a
+    # MersenneTwister internally, so we avoid importing Random here.
+    X_work = copy(X)
+    result = DecisionTree.permutation_importance(
+        model, y, X_work, score, n_iter; rng = seed,
+    )
+
+    means = vec(result.mean)
+    stds  = vec(result.std)
+    order = sortperm(means; rev = true)
+    return [
+        Dict{String,Any}(
+            "feature"                    => feature_names[i],
+            "permutation_importance"     => means[i],
+            "permutation_importance_std" => stds[i],
+        )
+        for i in order
+    ]
+end
+
+"""
     partial_dependence(model, X, feature_idx; n_grid=30)
 
 Compute the partial dependence of `model`'s predictions on column `feature_idx`
