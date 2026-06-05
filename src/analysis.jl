@@ -676,6 +676,8 @@ function fit_well_data(
             "t_exp_end_loglin"      => NaN,
             "doubling_time_loglin"  => NaN,
             "R_squared_loglin"      => NaN,
+            "lag_loglin"            => NaN,
+            "N_max_emp"             => NaN,
             "loglin_converged"      => false,
         )
 
@@ -701,6 +703,8 @@ function fit_well_data(
                 #   [5] t_max_gr    [6] gr_max      [7] slope        [8] sigma_b
                 #   [9] doubling_t  [10] dt − 2σ    [11] dt + 2σ     [12] intercept
                 #   [13] sigma_a    [14] rho (Pearson R, NOT R² — squared below)
+                #   [15] lag_loglin (Buchanan tangent-intercept lag)
+                #   [16] N_max_emp  (95th-percentile carrying capacity)
                 params = raw[2]
                 if length(params) >= 14 && params[7] !== missing
                     loglin_fields["gr_loglin"]            = Float64(params[7])
@@ -710,6 +714,12 @@ function fit_well_data(
                     loglin_fields["t_exp_end_loglin"]     = Float64(params[4])
                     loglin_fields["doubling_time_loglin"] = Float64(params[9])
                     loglin_fields["R_squared_loglin"]     = Float64(params[14])^2
+                    if length(params) >= 16
+                        loglin_fields["lag_loglin"]  = params[15] === missing ?
+                            NaN : Float64(params[15])
+                        loglin_fields["N_max_emp"]   = params[16] === missing ?
+                            NaN : Float64(params[16])
+                    end
                     loglin_fields["loglin_converged"]     = true
 
                     # Plottable fit segment over the detected exponential
@@ -824,6 +834,15 @@ function fit_well_loglin(
         result["t_exp_end_loglin"]      = Float64(params[4])
         result["doubling_time_loglin"]  = Float64(params[9])
         result["R_squared_loglin"]      = Float64(params[14])^2
+        if length(params) >= 16
+            result["lag_loglin"] = params[15] === missing ?
+                NaN : Float64(params[15])
+            result["N_max_emp"]  = params[16] === missing ?
+                NaN : Float64(params[16])
+        else
+            result["lag_loglin"] = NaN
+            result["N_max_emp"]  = NaN
+        end
         result["loglin_converged"]      = true
     else
         result["gr_loglin"]             = NaN
@@ -833,6 +852,8 @@ function fit_well_loglin(
         result["t_exp_end_loglin"]      = NaN
         result["doubling_time_loglin"]  = NaN
         result["R_squared_loglin"]      = NaN
+        result["lag_loglin"]            = NaN
+        result["N_max_emp"]             = NaN
         result["loglin_converged"]      = false
     end
 

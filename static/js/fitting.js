@@ -584,6 +584,14 @@ function displayFittingResults(fitData) {
                 <span class="parameter-name">Exp. window:</span>
                 <span class="parameter-value">${fmt(fitData.t_exp_start_loglin, 3)} → ${fmt(fitData.t_exp_end_loglin, 3)} h</span>
             </div>
+            <div class="parameter-row">
+                <span class="parameter-name">Lag (tangent-intercept):</span>
+                <span class="parameter-value">${fmt(fitData.lag_loglin, 3)} h</span>
+            </div>
+            <div class="parameter-row">
+                <span class="parameter-name">N<sub>max</sub> (empirical, q95):</span>
+                <span class="parameter-value">${fmt(fitData.N_max_emp, 4)}</span>
+            </div>
         `;
     } else if (fitData.compute_loglin !== false && 'loglin_converged' in fitData) {
         html += `

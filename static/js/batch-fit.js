@@ -361,7 +361,7 @@ function displayBatchResults(data) {
     let headerHtml, rowsHtml;
     if (isLoglin) {
         const headers = ['Well', 'μ_max', '1σ', 'R²', 't_exp_start', 't_exp_end',
-                         'Doubling time', 'Converged'];
+                         'Doubling time', 'Lag (h)', 'N_max (q95)', 'Converged'];
         headerHtml = headers.map(h => `<th>${h}</th>`).join('');
         rowsHtml = results.map(r => `
             <tr>
@@ -372,6 +372,8 @@ function displayBatchResults(data) {
                 <td>${_fmtNum(r.t_exp_start_loglin, 2)}</td>
                 <td>${_fmtNum(r.t_exp_end_loglin, 2)}</td>
                 <td>${_fmtNum(r.doubling_time_loglin, 2)}</td>
+                <td>${_fmtNum(r.lag_loglin, 2)}</td>
+                <td>${_fmtNum(r.N_max_emp, 3)}</td>
                 <td>${r.loglin_converged ? '✓' : '✗'}</td>
             </tr>
         `).join('');
@@ -465,6 +467,7 @@ function downloadBatchCSV() {
                    'gr_loglin', 'gr_loglin_se', 'gr_max_sliding',
                    't_exp_start_loglin', 't_exp_end_loglin',
                    'doubling_time_loglin', 'R_squared_loglin',
+                   'lag_loglin', 'N_max_emp',
                    'loglin_converged'];
         rows = results.map(r => [
             experiment, r.well, 'log_lin',
@@ -475,6 +478,8 @@ function downloadBatchCSV() {
             r.t_exp_end_loglin     ?? '',
             r.doubling_time_loglin ?? '',
             r.R_squared_loglin     ?? '',
+            r.lag_loglin           ?? '',
+            r.N_max_emp            ?? '',
             r.loglin_converged ? 'true' : 'false',
         ]);
         filenameSuffix = 'batch_fit_loglin';
@@ -493,7 +498,8 @@ function downloadBatchCSV() {
         const loglinHeaders = anyCompanion
             ? ['gr_loglin', 'gr_loglin_se', 'gr_max_sliding',
                't_exp_start_loglin', 't_exp_end_loglin',
-               'doubling_time_loglin', 'R_squared_loglin', 'loglin_converged']
+               'doubling_time_loglin', 'R_squared_loglin',
+               'lag_loglin', 'N_max_emp', 'loglin_converged']
             : [];
 
         headers = ['experiment', 'well', 'model', ...allParamNames,
@@ -514,6 +520,8 @@ function downloadBatchCSV() {
                 r.t_exp_end_loglin     ?? '',
                 r.doubling_time_loglin ?? '',
                 r.R_squared_loglin     ?? '',
+                r.lag_loglin           ?? '',
+                r.N_max_emp            ?? '',
                 r.loglin_converged == null ? '' : (r.loglin_converged ? 'true' : 'false'),
             ] : [];
             return [

@@ -649,6 +649,7 @@ end
 const LOGLIN_FIELDS = ["gr_loglin", "gr_loglin_se", "gr_max_sliding",
                        "t_exp_start_loglin", "t_exp_end_loglin",
                        "doubling_time_loglin", "R_squared_loglin",
+                       "lag_loglin", "N_max_emp",
                        "loglin_converged"]
 
 @testset "POST /api/batch-fit-loglin — single well returns gr_loglin fields" begin
