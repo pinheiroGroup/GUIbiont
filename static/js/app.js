@@ -27,7 +27,8 @@ import { initBatchFitTab, loadBatchFitModels, loadBatchFitExperiments,
          selectAllBatchWells, clearAllBatchWells,
          onBatchModeChange, onBatchFitMethodChange,
          selectAllBatchModels, clearAllBatchModels,
-         runBatchFit, displayBatchResults, downloadBatchCSV } from './batch-fit.js';
+         runBatchFit, displayBatchResults, downloadBatchCSV,
+         downloadBatchFittedCurvesCSV } from './batch-fit.js';
 import { onFitResultsFileChange, onFeatureMatrixFileChange, updateMlRunBtn,
          runMlAnalysis, onCorrParamChange, onCorrZoomToggle, onMlLabelColChange,
          downloadMlResultsCSV } from './ml-analysis.js';
@@ -272,7 +273,7 @@ Object.assign(window, {
     selectAllBatchWells, clearAllBatchWells,
     onBatchModeChange, onBatchFitMethodChange,
     selectAllBatchModels, clearAllBatchModels,
-    runBatchFit, displayBatchResults, downloadBatchCSV,
+    runBatchFit, displayBatchResults, downloadBatchCSV, downloadBatchFittedCurvesCSV,
     // ML downstream analysis
     onFitResultsFileChange, onFeatureMatrixFileChange, updateMlRunBtn,
     runMlAnalysis, onCorrParamChange, onCorrZoomToggle, onMlLabelColChange, downloadMlResultsCSV,

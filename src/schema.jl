@@ -158,7 +158,7 @@ Base.@kwdef mutable struct ClusterRequest
     lowess_frac::Float64 = 0.05
     gaussian_h_mult::Float64 = 2.0
     cluster_method::String = "kmeans"
-    maxiter::Int = 100
+    maxiter::Int = 300
     tol::Float64 = 1e-15
     dbscan_eps::Float64 = 1.0
     dbscan_min_pts::Int = 3
@@ -173,6 +173,8 @@ Base.@kwdef mutable struct ClusterRequest
     interp_quantile_hi::Float64 = 0.95
     prescreen_constant::Bool = false
     prescreen_tol_const::Float64 = 1.5
+    prescreen_q_low::Float64 = 0.05
+    prescreen_q_high::Float64 = 0.95
     trend_test_flat::Bool = false
     trend_p_thr::Float64 = 0.05
 end
@@ -186,7 +188,7 @@ Base.@kwdef mutable struct ClusterSweepRequest
     lowess_frac::Float64 = 0.05
     gaussian_h_mult::Float64 = 2.0
     cluster_method::String = "kmeans"
-    maxiter::Int = 100
+    maxiter::Int = 300
     tol::Float64 = 1e-15
     hclust_linkage::String = "ward"
     interpolate::Bool = false
@@ -195,6 +197,8 @@ Base.@kwdef mutable struct ClusterSweepRequest
     interp_quantile_hi::Float64 = 0.95
     prescreen_constant::Bool = false
     prescreen_tol_const::Float64 = 1.5
+    prescreen_q_low::Float64 = 0.05
+    prescreen_q_high::Float64 = 0.95
     trend_test_flat::Bool = false
     trend_p_thr::Float64 = 0.05
 end

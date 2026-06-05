@@ -353,6 +353,7 @@ function displayBatchResults(data) {
             ${summary.failed > 0 ? `<span class="batch-stat-err">✗ ${summary.failed} failed</span>` : ''}
             ${skippedCount > 0 ? `<span style="color:#6c757d;">⊘ ${skippedCount} skipped (flat)</span>` : ''}
             <button class="btn" style="margin-left:auto;" onclick="downloadBatchCSV()">📥 Download CSV</button>
+            <button class="btn" onclick="downloadBatchFittedCurvesCSV()">📈 Download fitted curves</button>
         </div>
     `;
 
@@ -504,7 +505,7 @@ function downloadBatchCSV() {
 
         headers = ['experiment', 'well', 'model', ...allParamNames,
                    ...loglinHeaders,
-                   'stationary_phase_start', 'aic', 'loss', 'optimizer_used'];
+                   'stationary_phase_start', 'aic', 'loss_rmse', 'loss_re', 'optimizer_used'];
 
         rows = results.map(r => {
             const paramVals = allParamNames.map(name => {
@@ -529,7 +530,8 @@ function downloadBatchCSV() {
                 ...paramVals, ...loglinVals,
                 r.stationary_phase_start != null ? r.stationary_phase_start : '',
                 r.aic != null ? r.aic : '',
-                r.loss != null ? r.loss : '',
+                r.loss_rmse != null ? r.loss_rmse : (r.loss != null ? r.loss : ''),
+                r.loss_re != null ? r.loss_re : '',
                 r.optimizer_used || '',
             ];
         });
@@ -549,11 +551,66 @@ function downloadBatchCSV() {
     URL.revokeObjectURL(url);
 }
 
+function _csvEscape(v) {
+    return `"${String(v ?? '').replace(/"/g, '""')}"`;
+}
+
+function _formatTimeHeader(t) {
+    const n = Number(t);
+    if (!Number.isFinite(n)) return String(t);
+    return Number.isInteger(n) ? String(n) : String(Number(n.toPrecision(12)));
+}
+
+function downloadBatchFittedCurvesCSV() {
+    const data = state.lastBatchFitData;
+    if (!data || !data.results || data.results.length === 0) return;
+
+    const { experiment, model, results } = data;
+    const curves = results.filter(r =>
+        Array.isArray(r.fit_time) && Array.isArray(r.fit_od) &&
+        r.fit_time.length > 0 && r.fit_od.length > 0
+    );
+    if (curves.length === 0) return;
+
+    const timeSet = new Set();
+    curves.forEach(r => {
+        r.fit_time.forEach(t => timeSet.add(_formatTimeHeader(t)));
+    });
+    const times = Array.from(timeSet).sort((a, b) => Number(a) - Number(b));
+    const headers = ['experiment', 'well', 'model', ...times.map(t => `t_${t}`)];
+
+    const rows = curves.map(r => {
+        const odByTime = new Map();
+        const n = Math.min(r.fit_time.length, r.fit_od.length);
+        for (let i = 0; i < n; i++) {
+            odByTime.set(_formatTimeHeader(r.fit_time[i]), r.fit_od[i]);
+        }
+        return [
+            experiment,
+            r.well,
+            r.model || model,
+            ...times.map(t => odByTime.has(t) ? odByTime.get(t) : ''),
+        ];
+    });
+
+    const csvContent = [headers, ...rows]
+        .map(row => row.map(_csvEscape).join(','))
+        .join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `${experiment}_batch_fit_fitted_curves.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
 export {
     initBatchFitTab, loadBatchFitModels, loadBatchFitExperiments,
     onBatchExperimentChange, updateBatchWellCount,
     selectAllBatchWells, clearAllBatchWells,
     onBatchModeChange, onBatchFitMethodChange,
     selectAllBatchModels, clearAllBatchModels,
-    runBatchFit, displayBatchResults, downloadBatchCSV,
+    runBatchFit, displayBatchResults, downloadBatchCSV, downloadBatchFittedCurvesCSV,
 };
