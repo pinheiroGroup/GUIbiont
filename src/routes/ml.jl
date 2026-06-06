@@ -463,9 +463,8 @@ end
             q_high    = prescreen_qhi) :
         nothing
     do_prescreen = prescreen_mask !== nothing && any(prescreen_mask)
-    k_min = do_prescreen ? 1 : 2
     sweep_results = []
-    for k in k_min:min(k_max, n_series)
+    for k in 1:min(k_max, n_series)
         prescreen_for_k = k > 1 && do_prescreen
         gd_sw   = GrowthData(curves_for, times, labels_all)
         sw_opts = FitOptions(
