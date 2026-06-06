@@ -277,9 +277,10 @@ end
     @test haskey(body, :sweep)
     sweep = body[:sweep]
     @test !isempty(sweep)
-    # k values should be 2..min(k_max, n_series)
+    # k=1 is included as the WCSS/elbow baseline; cluster-quality metrics that
+    # require at least two clusters are returned as nothing for that row.
     ks = [Int(s[:k]) for s in sweep]
-    @test minimum(ks) == 2
+    @test minimum(ks) == 1
     @test maximum(ks) <= 4
     @test ks == sort(ks)
     for s in sweep
@@ -292,6 +293,8 @@ end
         @test haskey(s, :xie_beni)
         @test Float64(s[:wcss]) >= 0
     end
+    k1 = only(filter(s -> Int(s[:k]) == 1, sweep))
+    @test k1[:silhouette_mean] === nothing
 end
 
 @testset "POST /api/cluster-sweep — via experiment" begin
@@ -598,7 +601,7 @@ end
     @test all(!=(sentinel), grow_ids)
 end
 
-@testset "POST /api/cluster-sweep — prescreen_constant without matches starts at k=2" begin
+@testset "POST /api/cluster-sweep — prescreen_constant without matches includes k=1 baseline" begin
     status, body = post_json("/api/cluster-sweep",
                              Dict("csv" => PRESCREEN_ALL_GROWING_CSV, "k_max" => 4,
                                   "smooth_method" => "none",
@@ -607,22 +610,23 @@ end
     @test status == 200
     sweep = body[:sweep]
     ks    = Int.([r[:k] for r in sweep])
-    @test minimum(ks) == 2
+    @test minimum(ks) == 1
     # Sweep must actually produce usable rows — guard against a regression
     # where every k errors out and the sweep still returns "[]" or all-NaN.
-    @test length(sweep) >= 2
-    silhouettes = Float64[Float64(r[:silhouette_mean]) for r in sweep]
+    @test length(sweep) >= 3
+    silhouettes = Float64[Float64(r[:silhouette_mean])
+                          for r in sweep if r[:silhouette_mean] !== nothing]
     @test any(s -> isfinite(s), silhouettes)
 end
 
-@testset "POST /api/cluster-sweep — prescreen_constant accepted, sweep starts at k=2" begin
+@testset "POST /api/cluster-sweep — prescreen_constant accepted, sweep includes k=1 baseline" begin
     status, body = post_json("/api/cluster-sweep",
                              Dict("csv" => PRESCREEN_CSV, "k_max" => 5,
                                   "smooth_method" => "none",
                                   "prescreen_constant" => true))
     @test status == 200
     ks = Int.([r[:k] for r in body[:sweep]])
-    @test minimum(ks) == 2
+    @test minimum(ks) == 1
 end
 
 # ---------------------------------------------------------------------------
