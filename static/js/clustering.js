@@ -42,33 +42,24 @@ function onClusterInterpolateChange() {
     document.getElementById('cluster-interp-params').style.display = checked ? 'flex' : 'none';
 }
 
-function getClusterInterpQuantiles() {
-    let qLo = parseFloat(document.getElementById('cluster-interp-qlo').value);
-    let qHi = parseFloat(document.getElementById('cluster-interp-qhi').value);
-    if (!Number.isFinite(qLo) || qLo < 0 || qLo > 1) qLo = 0.05;
-    if (!Number.isFinite(qHi) || qHi < 0 || qHi > 1) qHi = 0.95;
+// Read a pair of quantile inputs, validate, reset to defaults on bad input,
+// and write the canonical values back to the DOM so the user sees what got used.
+function readQuantileRange(loId, hiId, defLo = 0.05, defHi = 0.95) {
+    let qLo = parseFloat(document.getElementById(loId).value);
+    let qHi = parseFloat(document.getElementById(hiId).value);
+    if (!Number.isFinite(qLo) || qLo < 0 || qLo > 1) qLo = defLo;
+    if (!Number.isFinite(qHi) || qHi < 0 || qHi > 1) qHi = defHi;
     if (qLo >= qHi) {
-        qLo = 0.05;
-        qHi = 0.95;
+        qLo = defLo;
+        qHi = defHi;
     }
-    document.getElementById('cluster-interp-qlo').value = qLo;
-    document.getElementById('cluster-interp-qhi').value = qHi;
+    document.getElementById(loId).value = qLo;
+    document.getElementById(hiId).value = qHi;
     return { qLo, qHi };
 }
 
-function getClusterPrescreenQuantiles() {
-    let qLo = parseFloat(document.getElementById('cluster-prescreen-qlo').value);
-    let qHi = parseFloat(document.getElementById('cluster-prescreen-qhi').value);
-    if (!Number.isFinite(qLo) || qLo < 0 || qLo > 1) qLo = 0.05;
-    if (!Number.isFinite(qHi) || qHi < 0 || qHi > 1) qHi = 0.95;
-    if (qLo >= qHi) {
-        qLo = 0.05;
-        qHi = 0.95;
-    }
-    document.getElementById('cluster-prescreen-qlo').value = qLo;
-    document.getElementById('cluster-prescreen-qhi').value = qHi;
-    return { qLo, qHi };
-}
+const getClusterInterpQuantiles    = () => readQuantileRange('cluster-interp-qlo',    'cluster-interp-qhi');
+const getClusterPrescreenQuantiles = () => readQuantileRange('cluster-prescreen-qlo', 'cluster-prescreen-qhi');
 
 function updateClusteringRunBtn() {
     const hasData = state.currentClusteringMode === 'file'
@@ -160,8 +151,8 @@ async function runClustering() {
     }
     const doInterpolate = state.currentClusteringMode === 'file' &&
         document.getElementById('cluster-interpolate').checked;
-    const { qLo, qHi } = getClusterInterpQuantiles();
-    const prescreenQuantiles = getClusterPrescreenQuantiles();
+    const { qLo: interpQLo, qHi: interpQHi } = getClusterInterpQuantiles();
+    const { qLo: preQLo, qHi: preQHi }       = getClusterPrescreenQuantiles();
 
     Object.assign(body, {
         smooth_method: smooth,
@@ -178,12 +169,12 @@ async function runClustering() {
         blank_od_percentile:  parseFloat(document.getElementById('cluster-blank-od-pct').value),
         interpolate:           doInterpolate,
         interp_n:              parseInt(document.getElementById('cluster-interp-n').value) || 100,
-        interp_quantile_lo:    qLo,
-        interp_quantile_hi:    qHi,
+        interp_quantile_lo:    interpQLo,
+        interp_quantile_hi:    interpQHi,
         prescreen_constant:    document.getElementById('cluster-prescreen').checked,
         prescreen_tol_const:   parseFloat(document.getElementById('cluster-prescreen-tol').value) || 1.5,
-        prescreen_q_low:       prescreenQuantiles.qLo,
-        prescreen_q_high:      prescreenQuantiles.qHi,
+        prescreen_q_low:       preQLo,
+        prescreen_q_high:      preQHi,
         trend_test_flat:       document.getElementById('cluster-trend-test').checked,
         trend_p_thr:           parseFloat(document.getElementById('cluster-trend-p').value) || 0.05,
     });
@@ -587,19 +578,19 @@ async function runClusterSweep() {
     }
     const doInterpolate = state.currentClusteringMode === 'file' &&
         document.getElementById('cluster-interpolate').checked;
-    const { qLo, qHi } = getClusterInterpQuantiles();
-    const prescreenQuantiles = getClusterPrescreenQuantiles();
+    const { qLo: interpQLo, qHi: interpQHi } = getClusterInterpQuantiles();
+    const { qLo: preQLo, qHi: preQHi }       = getClusterPrescreenQuantiles();
     Object.assign(body, {
         smooth_method: smooth, lowess_frac: lowess, gaussian_h_mult: gHmult,
         cluster_method: method, maxiter, tol, hclust_linkage: hLink,
         interpolate:         doInterpolate,
         interp_n:            parseInt(document.getElementById('cluster-interp-n').value) || 100,
-        interp_quantile_lo:  qLo,
-        interp_quantile_hi:  qHi,
+        interp_quantile_lo:  interpQLo,
+        interp_quantile_hi:  interpQHi,
         prescreen_constant:  document.getElementById('cluster-prescreen').checked,
         prescreen_tol_const: parseFloat(document.getElementById('cluster-prescreen-tol').value) || 1.5,
-        prescreen_q_low:     prescreenQuantiles.qLo,
-        prescreen_q_high:    prescreenQuantiles.qHi,
+        prescreen_q_low:     preQLo,
+        prescreen_q_high:    preQHi,
         trend_test_flat:     document.getElementById('cluster-trend-test').checked,
         trend_p_thr:         parseFloat(document.getElementById('cluster-trend-p').value) || 0.05,
     });

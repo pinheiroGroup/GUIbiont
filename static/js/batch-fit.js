@@ -561,16 +561,29 @@ function _formatTimeHeader(t) {
     return Number.isInteger(n) ? String(n) : String(Number(n.toPrecision(12)));
 }
 
+// Export every fitted curve in the last batch run as a wide CSV (one row per
+// well, time-points as columns). We assume every well in a batch shares the
+// same time grid — true today because all wells in a single /api/batch-fit
+// response come from the same data_channel CSV. If that ever changes (e.g.
+// merging fits from heterogeneous experiments), the column-union below will
+// still produce a valid CSV but rows for wells that don't sample every
+// timepoint will contain empty cells.
 function downloadBatchFittedCurvesCSV() {
     const data = state.lastBatchFitData;
-    if (!data || !data.results || data.results.length === 0) return;
+    if (!data || !data.results || data.results.length === 0) {
+        alert('No batch-fit results to export — run a batch fit first.');
+        return;
+    }
 
     const { experiment, model, results } = data;
     const curves = results.filter(r =>
         Array.isArray(r.fit_time) && Array.isArray(r.fit_od) &&
         r.fit_time.length > 0 && r.fit_od.length > 0
     );
-    if (curves.length === 0) return;
+    if (curves.length === 0) {
+        alert('No fitted curves available to export — every well returned an empty fit.');
+        return;
+    }
 
     const timeSet = new Set();
     curves.forEach(r => {

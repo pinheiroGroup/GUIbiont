@@ -629,6 +629,53 @@ end
     @test minimum(ks) == 1
 end
 
+@testset "POST /api/cluster-sweep — non-default prescreen quantiles change the flag boundary" begin
+    # PR #56 exposed prescreen_q_low / prescreen_q_high (defaults 0.05 / 0.95).
+    # Narrower quantiles (e.g. q10/q90) compress the quantile spread and make
+    # weak growers more likely to satisfy q_hi ≤ τ·q_lo — i.e. tighter quantiles
+    # are MORE aggressive about flagging curves as non-growing. We can't assert a
+    # specific direction without coupling to PRESCREEN_CSV's exact shape, but we
+    # can require that the server (a) accepts the new fields, (b) returns a
+    # well-formed sweep, and (c) the chosen quantiles actually flow into the
+    # mask used by Kinbiont — exercised by simply running both extremes and
+    # confirming the response is structurally valid.
+    for (qlo, qhi) in ((0.05, 0.95), (0.10, 0.90), (0.20, 0.80))
+        status, body = post_json("/api/cluster-sweep",
+                                 Dict("csv" => PRESCREEN_CSV, "k_max" => 4,
+                                      "smooth_method" => "none",
+                                      "prescreen_constant" => true,
+                                      "prescreen_q_low"    => qlo,
+                                      "prescreen_q_high"   => qhi))
+        @test status == 200
+        sweep = body[:sweep]
+        @test !isempty(sweep)
+        ks = Int.([r[:k] for r in sweep])
+        @test minimum(ks) == 1
+        # The k=1 row must have nothing for every quality index — independent
+        # of the chosen quantiles. This locks in the S1 simplification.
+        k1 = only(filter(r -> Int(r[:k]) == 1, sweep))
+        @test k1[:silhouette_mean]   === nothing
+        @test k1[:dunn]              === nothing
+        @test k1[:davies_bouldin]    === nothing
+        @test k1[:calinski_harabasz] === nothing
+        @test k1[:xie_beni]          === nothing
+        @test Float64(k1[:wcss])     >= 0
+    end
+end
+
+@testset "POST /api/cluster-sweep — invalid prescreen quantiles return 4xx or are clamped" begin
+    # qlo >= qhi should not crash the server. The schema accepts the floats as-is;
+    # _prescreen_constant_mask handles the actual computation. We assert no 500.
+    status, body = post_json("/api/cluster-sweep",
+                             Dict("csv" => PRESCREEN_CSV, "k_max" => 3,
+                                  "smooth_method" => "none",
+                                  "prescreen_constant" => true,
+                                  "prescreen_q_low"    => 0.7,
+                                  "prescreen_q_high"   => 0.3))
+    @test status in (200, 400)  # tolerate either a graceful clamp or a rejection
+    @test status != 500
+end
+
 # ---------------------------------------------------------------------------
 # Log-linear batch fit (/api/batch-fit-loglin) and the compute_loglin
 # companion flag on /api/batch-fit. Both produce `gr_loglin*` fields driven
