@@ -42,6 +42,34 @@ function onClusterInterpolateChange() {
     document.getElementById('cluster-interp-params').style.display = checked ? 'flex' : 'none';
 }
 
+function getClusterInterpQuantiles() {
+    let qLo = parseFloat(document.getElementById('cluster-interp-qlo').value);
+    let qHi = parseFloat(document.getElementById('cluster-interp-qhi').value);
+    if (!Number.isFinite(qLo) || qLo < 0 || qLo > 1) qLo = 0.05;
+    if (!Number.isFinite(qHi) || qHi < 0 || qHi > 1) qHi = 0.95;
+    if (qLo >= qHi) {
+        qLo = 0.05;
+        qHi = 0.95;
+    }
+    document.getElementById('cluster-interp-qlo').value = qLo;
+    document.getElementById('cluster-interp-qhi').value = qHi;
+    return { qLo, qHi };
+}
+
+function getClusterPrescreenQuantiles() {
+    let qLo = parseFloat(document.getElementById('cluster-prescreen-qlo').value);
+    let qHi = parseFloat(document.getElementById('cluster-prescreen-qhi').value);
+    if (!Number.isFinite(qLo) || qLo < 0 || qLo > 1) qLo = 0.05;
+    if (!Number.isFinite(qHi) || qHi < 0 || qHi > 1) qHi = 0.95;
+    if (qLo >= qHi) {
+        qLo = 0.05;
+        qHi = 0.95;
+    }
+    document.getElementById('cluster-prescreen-qlo').value = qLo;
+    document.getElementById('cluster-prescreen-qhi').value = qHi;
+    return { qLo, qHi };
+}
+
 function updateClusteringRunBtn() {
     const hasData = state.currentClusteringMode === 'file'
         ? (!!document.getElementById('clustering-file').files[0] ||
@@ -110,7 +138,7 @@ async function runClustering() {
     const lowessFrac = parseFloat(document.getElementById('cluster-lowess-frac').value);
     const gHmult     = parseFloat(document.getElementById('cluster-gaussian-hmult').value);
     const method     = document.getElementById('cluster-method').value;
-    const maxiter    = parseInt(document.getElementById('cluster-maxiter').value) || 100;
+    const maxiter    = parseInt(document.getElementById('cluster-maxiter').value) || 300;
     const tol        = parseFloat(document.getElementById('cluster-tol').value) || 1e-6;
     const hLinkage   = document.getElementById('cluster-hclust-linkage').value;
     const dbscanEps  = parseFloat(document.getElementById('cluster-dbscan-eps').value);
@@ -130,6 +158,10 @@ async function runClustering() {
         if (!selected.length) return;
         body = { experiments: selected, k, normalize };
     }
+    const doInterpolate = state.currentClusteringMode === 'file' &&
+        document.getElementById('cluster-interpolate').checked;
+    const { qLo, qHi } = getClusterInterpQuantiles();
+    const prescreenQuantiles = getClusterPrescreenQuantiles();
 
     Object.assign(body, {
         smooth_method: smooth,
@@ -144,12 +176,14 @@ async function runClustering() {
         blank_method:         document.getElementById('cluster-blank-method').value,
         blank_range_thr:      parseFloat(document.getElementById('cluster-blank-range-thr').value),
         blank_od_percentile:  parseFloat(document.getElementById('cluster-blank-od-pct').value),
-        interpolate:           document.getElementById('cluster-interpolate').checked,
+        interpolate:           doInterpolate,
         interp_n:              parseInt(document.getElementById('cluster-interp-n').value) || 100,
-        interp_quantile_lo:    parseFloat(document.getElementById('cluster-interp-qlo').value) || 0.05,
-        interp_quantile_hi:    parseFloat(document.getElementById('cluster-interp-qhi').value) || 0.95,
+        interp_quantile_lo:    qLo,
+        interp_quantile_hi:    qHi,
         prescreen_constant:    document.getElementById('cluster-prescreen').checked,
         prescreen_tol_const:   parseFloat(document.getElementById('cluster-prescreen-tol').value) || 1.5,
+        prescreen_q_low:       prescreenQuantiles.qLo,
+        prescreen_q_high:      prescreenQuantiles.qHi,
         trend_test_flat:       document.getElementById('cluster-trend-test').checked,
         trend_p_thr:           parseFloat(document.getElementById('cluster-trend-p').value) || 0.05,
     });
@@ -533,7 +567,7 @@ async function runClusterSweep() {
     const method  = document.getElementById('cluster-method').value;
     const lowess  = parseFloat(document.getElementById('cluster-lowess-frac').value);
     const gHmult  = parseFloat(document.getElementById('cluster-gaussian-hmult').value);
-    const maxiter = parseInt(document.getElementById('cluster-maxiter').value) || 100;
+    const maxiter = parseInt(document.getElementById('cluster-maxiter').value) || 300;
     const tol     = parseFloat(document.getElementById('cluster-tol').value) || 1e-6;
     const hLink   = document.getElementById('cluster-hclust-linkage').value;
     let body;
@@ -551,15 +585,21 @@ async function runClusterSweep() {
         if (!selected.length) return;
         body = { experiments: selected, k_max: kMax };
     }
+    const doInterpolate = state.currentClusteringMode === 'file' &&
+        document.getElementById('cluster-interpolate').checked;
+    const { qLo, qHi } = getClusterInterpQuantiles();
+    const prescreenQuantiles = getClusterPrescreenQuantiles();
     Object.assign(body, {
         smooth_method: smooth, lowess_frac: lowess, gaussian_h_mult: gHmult,
         cluster_method: method, maxiter, tol, hclust_linkage: hLink,
-        interpolate:         document.getElementById('cluster-interpolate').checked,
+        interpolate:         doInterpolate,
         interp_n:            parseInt(document.getElementById('cluster-interp-n').value) || 100,
-        interp_quantile_lo:  parseFloat(document.getElementById('cluster-interp-qlo').value) || 0.05,
-        interp_quantile_hi:  parseFloat(document.getElementById('cluster-interp-qhi').value) || 0.95,
+        interp_quantile_lo:  qLo,
+        interp_quantile_hi:  qHi,
         prescreen_constant:  document.getElementById('cluster-prescreen').checked,
         prescreen_tol_const: parseFloat(document.getElementById('cluster-prescreen-tol').value) || 1.5,
+        prescreen_q_low:     prescreenQuantiles.qLo,
+        prescreen_q_high:    prescreenQuantiles.qHi,
         trend_test_flat:     document.getElementById('cluster-trend-test').checked,
         trend_p_thr:         parseFloat(document.getElementById('cluster-trend-p').value) || 0.05,
     });
@@ -631,10 +671,12 @@ function renderSweepPanel(sweep) {
     ];
 
     indices.forEach(({ key, divId, label, color }) => {
-        const ys = sweep.map(r => r[key]);
+        const points = sweep.filter(r => Number.isFinite(r[key]));
+        const xs = points.map(r => r.k);
+        const ys = points.map(r => r[key]);
         Plotly.newPlot(document.getElementById(divId), [{
             type: 'scatter', mode: 'lines+markers',
-            x: ks, y: ys,
+            x: xs, y: ys,
             marker: { size: 7, color },
             line:   { color },
             hovertemplate: 'k=%{x}  %{y:.4f}<extra></extra>',

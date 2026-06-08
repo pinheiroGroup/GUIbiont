@@ -89,6 +89,8 @@
     interp_n      = max(10, Int(body.interp_n))
     q_lo          = Float64(body.interp_quantile_lo)
     q_hi          = Float64(body.interp_quantile_hi)
+    prescreen_qlo = Float64(body.prescreen_q_low)
+    prescreen_qhi = Float64(body.prescreen_q_high)
     has_irregular = any(c -> any(isnan, c), curves_all)
     time_normalized = false
 
@@ -206,7 +208,9 @@
     # produces misleading elbows.
     prescreen_mask = Bool(body.prescreen_constant) ?
         _prescreen_constant_mask(curves_for_cluster;
-            tol_const = Float64(body.prescreen_tol_const)) :
+            tol_const = Float64(body.prescreen_tol_const),
+            q_low     = prescreen_qlo,
+            q_high    = prescreen_qhi) :
         nothing
     do_prescreen = prescreen_mask !== nothing && any(prescreen_mask)
 
@@ -221,6 +225,8 @@
         cluster_trend_test         = Bool(body.trend_test_flat),
         cluster_prescreen_constant = do_prescreen,
         cluster_tol_const          = Float64(body.prescreen_tol_const),
+        cluster_q_low              = prescreen_qlo,
+        cluster_q_high             = prescreen_qhi,
         cluster_hclust_linkage     = Symbol(hclust_linkage),
         cluster_dbscan_eps         = Float64(dbscan_eps),
         cluster_dbscan_minpts      = Int(dbscan_minpts),
@@ -315,7 +321,7 @@
 end
 
 # ------------------------------------------------------------------
-# /api/cluster-sweep  — run clustering for k=2..k_max and return
+# /api/cluster-sweep  — run clustering for k=1..k_max and return
 # quality indices per k so the user can find the best number of clusters.
 # ------------------------------------------------------------------
 @post "/api/cluster-sweep" function(req::HTTP.Request, body::Json{ClusterSweepRequest})
@@ -386,6 +392,8 @@ end
     interp_n      = max(10, Int(body.interp_n))
     q_lo          = Float64(body.interp_quantile_lo)
     q_hi          = Float64(body.interp_quantile_hi)
+    prescreen_qlo = Float64(body.prescreen_q_low)
+    prescreen_qhi = Float64(body.prescreen_q_high)
     has_irregular = any(c -> any(isnan, c), curves_all)
 
     if do_interp
@@ -450,25 +458,24 @@ end
     # cluster when there is actually something to put in it.
     prescreen_mask = Bool(body.prescreen_constant) ?
         _prescreen_constant_mask(curves_for;
-            tol_const = Float64(body.prescreen_tol_const)) :
+            tol_const = Float64(body.prescreen_tol_const),
+            q_low     = prescreen_qlo,
+            q_high    = prescreen_qhi) :
         nothing
     do_prescreen = prescreen_mask !== nothing && any(prescreen_mask)
-    # Always start the sweep at k=2. When `do_prescreen` is on, Kinbiont
-    # internally allocates the sentinel cluster, so k=2 still produces a valid
-    # one-real-cluster + sentinel partition and makes the elbow comparable to
-    # the no-prescreen path.
-    k_min = 2
-
     sweep_results = []
-    for k in k_min:min(k_max, n_series)
+    for k in 1:min(k_max, n_series)
+        prescreen_for_k = k > 1 && do_prescreen
         gd_sw   = GrowthData(curves_for, times, labels_all)
         sw_opts = FitOptions(
             cluster                    = true,
             n_clusters                 = k,
             cluster_method             = Symbol(cluster_method),
             cluster_trend_test         = Bool(body.trend_test_flat),
-            cluster_prescreen_constant = do_prescreen,
+            cluster_prescreen_constant = prescreen_for_k,
             cluster_tol_const          = Float64(body.prescreen_tol_const),
+            cluster_q_low              = prescreen_qlo,
+            cluster_q_high             = prescreen_qhi,
             cluster_hclust_linkage     = hclust_linkage,
             kmeans_max_iters           = maxiter,
             kmeans_tol                 = tol,
@@ -482,9 +489,19 @@ end
         ids   = gd_result.clusters
         wcss  = something(gd_result.wcss, 0.0)
 
-        ids_r, _ = _remap_ids(ids)
-        zscored   = _zscore_rows(curves_for)
-        q = _cluster_quality_indices(zscored, ids_r)
+        q = if do_prescreen && k < 2
+            Dict{String,Any}(
+                "silhouette_mean"   => nothing,
+                "dunn"              => nothing,
+                "davies_bouldin"    => nothing,
+                "calinski_harabasz" => nothing,
+                "xie_beni"          => nothing,
+            )
+        else
+            ids_r, _ = _remap_ids(ids)
+            zscored  = _zscore_rows(curves_for)
+            _cluster_quality_indices(zscored, ids_r)
+        end
         push!(sweep_results, Dict(
             "k"                 => k,
             "wcss"              => wcss,

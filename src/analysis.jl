@@ -487,7 +487,8 @@ function _run_fit_attempt(
     fit_for_loss = subtract_blank && blank_value > 0.0 ?
         Float64.(fit_od_out) .+ shift :
         Float64.(fit_od_out)
-    loss = _fit_loss_rmse(time_numeric, od_for_fit, Float64.(fit_time_out), fit_for_loss, t_peak)
+    loss_rmse = _fit_loss_rmse(time_numeric, od_for_fit, Float64.(fit_time_out), fit_for_loss, t_peak)
+    loss_re   = r.loss
 
     return (
         best_params        = r.best_params,
@@ -499,7 +500,9 @@ function _run_fit_attempt(
         fit_time_out       = fit_time_out,
         fit_od_out         = fit_od_out,
         aic                = r.best_aic,
-        loss               = loss,
+        loss               = loss_rmse,
+        loss_rmse          = loss_rmse,
+        loss_re            = loss_re,
     )
 end
 
@@ -597,14 +600,16 @@ function fit_well_data(
                 model_name, model_names, maxiters, abstol,
             )
             push!(outcomes, (optimizer = opt, run = run_idx, status = "ok",
-                              loss = res.loss, aic = res.aic, result = res))
+                              loss = res.loss_rmse, loss_rmse = res.loss_rmse,
+                              loss_re = res.loss_re, aic = res.aic, result = res))
         catch e
             push!(outcomes, (optimizer = opt, run = run_idx, status = "error: $(string(e))",
-                              loss = Inf, aic = NaN, result = nothing))
+                              loss = Inf, loss_rmse = Inf, loss_re = NaN,
+                              aic = NaN, result = nothing))
         end
     end
 
-    successful = filter(o -> o.result !== nothing && isfinite(o.loss), outcomes)
+    successful = filter(o -> o.result !== nothing && isfinite(o.loss_rmse), outcomes)
     if isempty(successful)
         # Add a flat-curve diagnostic when nothing fit — most often this is a
         # blank/non-grower with no signal, and the cryptic "all attempts
@@ -619,7 +624,7 @@ function fit_well_data(
         error("All optimizer attempts failed (first error: $first_status)")
     end
 
-    best_pos = argmin([o.loss for o in successful])
+    best_pos = argmin([o.loss_rmse for o in successful])
     best     = successful[best_pos]
     win      = best.result
 
@@ -647,6 +652,8 @@ function fit_well_data(
         "stationary_phase_start" => t_peak,
         "aic"                    => win.aic,
         "loss"                   => win.loss,
+        "loss_rmse"              => win.loss_rmse,
+        "loss_re"                => win.loss_re,
         "optimizer_used"         => best.optimizer,
         "optimizer_run"          => best.run,
         "all_attempts"           => [
@@ -655,6 +662,8 @@ function fit_well_data(
                 "run"       => o.run,
                 "status"    => o.status,
                 "loss"      => o.loss,
+                "loss_rmse" => o.loss_rmse,
+                "loss_re"   => o.loss_re,
                 "aic"       => o.aic,
             ) for o in outcomes
         ],
