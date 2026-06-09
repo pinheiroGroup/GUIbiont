@@ -436,16 +436,35 @@ println("median_R2:      ", median(filter(isfinite, r2)))
 
 export function generateClusterCode(clusterData, withComments) {
     const req           = clusterData._request || {};
-    const k             = req.k               || 3;
-    const smoothMethod  = req.smooth_method   || 'lowess';
-    const lowessFrac    = req.lowess_frac      || 0.05;
-    const gaussianHmult = req.gaussian_h_mult  || 2.0;
-    const clusterMethod = req.cluster_method   || 'kmeans';
-    const blankSub      = req.subtract_blank   || false;
-    const normalize     = req.normalize        || false;
+    const k             = req.k ?? 3;
+    const smoothMethod  = req.smooth_method ?? 'lowess';
+    const lowessFrac    = req.lowess_frac ?? 0.05;
+    const gaussianHmult = req.gaussian_h_mult ?? 2.0;
+    const clusterMethod = req.cluster_method ?? 'kmeans';
+    const maxiter       = req.maxiter ?? 300;
+    const tol           = req.tol ?? 1e-6;
+    const blankSub      = req.subtract_blank ?? false;
+    const blankMethod   = req.blank_method ?? 'pointbypoint';
+    const blankRangeThr = req.blank_range_thr ?? 0.005;
+    const blankOdPct    = req.blank_od_percentile ?? 0.10;
+    const interpolate   = req.interpolate ?? false;
+    const interpN       = req.interp_n ?? 100;
+    const interpQLo     = req.interp_quantile_lo ?? 0.05;
+    const interpQHi     = req.interp_quantile_hi ?? 0.95;
+    const prescreen     = req.prescreen_constant ?? false;
+    const prescreenTol  = req.prescreen_tol_const ?? 1.5;
+    const prescreenQLo  = req.prescreen_q_low ?? 0.05;
+    const prescreenQHi  = req.prescreen_q_high ?? 0.95;
+    const trendTest     = req.trend_test_flat ?? false;
+    const trendPThr     = req.trend_p_thr ?? 0.05;
+    const normalize     = req.normalize ?? false;
     const isFileMode    = req._mode === 'file';
+    const smoothEnabled = smoothMethod !== 'none';
+    const prescreenApplied = clusterData.prescreen_applied ?? prescreen;
+    const dynamicK      = prescreenApplied ? Math.max(1, k - 1) : k;
+    const jb = (value) => value ? 'true' : 'false';
 
-    const smoothParam = smoothMethod === 'lowess'
+    const smoothParam = !smoothEnabled ? '' : smoothMethod === 'lowess'
         ? `    # LOWESS bandwidth: fraction of points used for local regression
     lowess_frac   = ${lowessFrac},`
         : smoothMethod === 'gaussian'
@@ -453,24 +472,59 @@ export function generateClusterCode(clusterData, withComments) {
     gaussian_h_mult = ${gaussianHmult},`
         : '';
 
-    const blankLine = blankSub
-        ? `    # Blank subtraction applied before clustering
-    blank_subtraction = true,`
+    const iterParam = (clusterMethod === 'kmeans' || clusterMethod === 'kmedoids')
+        ? `
+    kmeans_max_iters       = ${maxiter},
+    kmeans_tol             = ${tol},`
         : '';
 
-    const methodNote = clusterMethod !== 'kmeans'
-        ? `# Note: GUIbiont used "${clusterMethod}" clustering.
-# KinBiont.jl preprocess() uses k-means — adapt as needed.
-`       : '';
+    const prescreenParam = prescreenApplied
+        ? `    cluster_prescreen_constant = true,
+    cluster_tol_const          = ${prescreenTol},
+    cluster_q_low              = ${prescreenQLo},
+    cluster_q_high             = ${prescreenQHi},`
+        : `    cluster_prescreen_constant = false,`;
 
     const normalizeNote = normalize
         ? `# Note: GUIbiont normalised curves before clustering (z-score per curve).
 # KinBiont.jl applies normalisation internally during clustering.
 `       : '';
 
+    const interpolationNote = interpolate
+        ? `# GUIbiont interpolation was enabled before clustering:
+#   interp_n = ${interpN}, interp_quantile_lo = ${interpQLo}, interp_quantile_hi = ${interpQHi}
+# If the original CSV has one time vector per curve, build an IrregularGrowthData
+# or apply the same interpolation before constructing GrowthData.
+`
+        : '';
+
+    const blankNote = blankSub
+        ? `# GUIbiont automatic blank subtraction was enabled before clustering:
+#   blank_method = "${blankMethod}", blank_range_thr = ${blankRangeThr}, blank_od_percentile = ${blankOdPct}
+# Kinbiont.FitOptions blank_subtraction runs after clustering; to reproduce the
+# GUI result, apply equivalent blank preprocessing before preprocess(data, opts).
+`
+        : '';
+
+    const trendNote = trendTest
+        ? `# GUIbiont trend-test reassignment was enabled with p threshold ${trendPThr}.
+# The local Kinbiont FitOptions exposes cluster_trend_test, but not a custom p threshold.
+`
+        : '';
+
     const dataNote = isFileMode
         ? `# Replace with the path to your CSV file (uploaded in GUIbiont).`
         : `# CSV format: first column = time points, remaining columns = wells.`;
+
+    const smoothBlock = smoothEnabled
+        ? `smooth_opts = FitOptions(
+    smooth        = true,
+    smooth_method = :${smoothMethod},
+${smoothParam}
+    cluster       = false,
+)
+smoothed = preprocess(data, smooth_opts)`
+        : `smoothed = data`;
 
     const code = `\
 # ================================================================
@@ -481,30 +535,37 @@ export function generateClusterCode(clusterData, withComments) {
 
 using Kinbiont
 
-${methodNote}${normalizeNote}# ${dataNote}
-data = GrowthData("your_data.csv")
+${normalizeNote}${interpolationNote}${blankNote}${trendNote}# ${dataNote}
+data = GrowthData("your_csv.csv")
 
-# Preprocessing + clustering options.
-# See FitOptions docs for all available clustering fields.
-opts = FitOptions(
-    # Smooth curves before clustering to reduce measurement noise
-    smooth        = true,
-    smooth_method = :${smoothMethod},
-${smoothParam}
-    # Cluster into ${k} groups
+const N_DYNAMIC_CLUSTERS = ${dynamicK}
+const PRESCREEN_CONSTANT = ${jb(prescreenApplied)}
+const N_CLUSTER_LABELS = N_DYNAMIC_CLUSTERS + (PRESCREEN_CONSTANT ? 1 : 0)
+
+# Kinbiont clusters before smoothing when both are enabled in one FitOptions,
+# so apply smoothing first, then cluster the smoothed data.
+${smoothBlock}
+
+cluster_opts = FitOptions(
     cluster       = true,
-    n_clusters    = ${k},
-    # Reserve one cluster label for flat / non-growing curves.
-    # Set to false to let k-means assign all clusters freely.
-    cluster_trend_test = true,
-${blankLine}
+    n_clusters    = N_CLUSTER_LABELS,
+    cluster_method = :${clusterMethod},${iterParam}
+    # Non-growing pre-screen from GUI Advanced options
+${prescreenParam}
+    # Post-hoc flat/non-growing reassignment from GUI Advanced options
+    cluster_trend_test = ${jb(trendTest)},
 )
 
-# preprocess() applies smoothing and clustering.
-# Returns a GrowthData with .clusters, .centroids, and .wcss populated.
-processed = preprocess(data, opts)
+processed = preprocess(smoothed, cluster_opts)
+
+cluster_counts = Dict(k => count(==(k), processed.clusters)
+                      for k in sort(unique(processed.clusters)))
+cluster_counts_all = Dict(k => count(==(k), processed.clusters)
+                          for k in 1:N_CLUSTER_LABELS)
 
 println("Cluster assignments: ", processed.clusters)
+println("Cluster counts:      ", cluster_counts)
+println("Cluster counts all:  ", cluster_counts_all)
 println("WCSS:                ", processed.wcss)
 
 # To find the optimal k, sweep over a range and plot WCSS (elbow method):
