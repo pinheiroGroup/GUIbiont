@@ -489,7 +489,13 @@ end
         ids   = gd_result.clusters
         wcss  = something(gd_result.wcss, 0.0)
 
-        q = if do_prescreen && k < 2
+        # At k=1 every quality index is undefined (silhouette, Dunn, Davies-Bouldin,
+        # Calinski-Harabasz and Xie-Beni all need ≥ 2 clusters). Skip the call so
+        # we don't pay for the n×n pairwise-distance allocation that
+        # `_cluster_quality_indices` does internally before short-circuiting.
+        # WCSS is still emitted (computed above) — that is what the elbow uses
+        # at k=1 as its baseline.
+        q = if k < 2
             Dict{String,Any}(
                 "silhouette_mean"   => nothing,
                 "dunn"              => nothing,

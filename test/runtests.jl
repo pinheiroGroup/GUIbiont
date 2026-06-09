@@ -429,6 +429,30 @@ else
         @test all(isfinite, Float64.(ip[1]))
     end
 
+    @testset "POST /api/fit-curve — RE and RMSE losses are both reported" begin
+        # PR #56 introduced loss_re (Kinbiont's relative-error loss) and
+        # loss_rmse (separate scoring metric) alongside the legacy loss key.
+        # loss must continue to alias loss_rmse for backward compatibility.
+        status, body = post_json("/api/fit-curve",
+                                 Dict("experiment" => SINGLE_CH_EXP, "well" => SINGLE_CH_WELL,
+                                      "model_name" => "logistic"))
+        @test status == 200
+        @test haskey(body, :loss)
+        @test haskey(body, :loss_rmse)
+        @test haskey(body, :loss_re)
+        @test isfinite(Float64(body[:loss]))
+        @test isfinite(Float64(body[:loss_rmse]))
+        @test isfinite(Float64(body[:loss_re]))
+        # The public "loss" key must remain equal to the RMSE for downstream consumers
+        @test Float64(body[:loss]) ≈ Float64(body[:loss_rmse])
+        # Per-attempt diagnostics carry the same triple
+        @test haskey(body, :all_attempts)
+        @test !isempty(body[:all_attempts])
+        att = first(body[:all_attempts])
+        @test haskey(att, :loss_rmse)
+        @test haskey(att, :loss_re)
+    end
+
     @testset "POST /api/batch-fit — explicit model" begin
         status, body = batch_fit_and_wait(
                            Dict("experiment" => SINGLE_CH_EXP,
@@ -468,6 +492,24 @@ else
         @test string(r[:model]) in ["logistic", "gompertz"]
         @test haskey(r, :aic)
         @test string(body[:model]) == "multi"
+    end
+
+    @testset "POST /api/batch-fit — per-row results carry loss_re and loss_rmse" begin
+        status, body = batch_fit_and_wait(
+                           Dict("experiment" => SINGLE_CH_EXP,
+                                "wells"      => [SINGLE_CH_WELL, "A4"],
+                                "model_name" => "logistic"))
+        @test status == 200
+        successes = filter(r -> haskey(r, :parameters), body[:results])
+        @test !isempty(successes)
+        r = first(successes)
+        @test haskey(r, :loss)
+        @test haskey(r, :loss_rmse)
+        @test haskey(r, :loss_re)
+        @test isfinite(Float64(r[:loss]))
+        @test isfinite(Float64(r[:loss_rmse]))
+        @test isfinite(Float64(r[:loss_re]))
+        @test Float64(r[:loss]) ≈ Float64(r[:loss_rmse])
     end
 
     @testset "POST /api/batch-fit — unknown model returns 400" begin
