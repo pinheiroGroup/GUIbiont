@@ -458,10 +458,15 @@ export function generateClusterCode(clusterData, withComments) {
     const trendTest     = req.trend_test_flat ?? false;
     const trendPThr     = req.trend_p_thr ?? 0.05;
     const normalize     = req.normalize ?? false;
+    // Algorithm-specific parameters (used by hclust / dbscan only)
+    const hclustLinkage = req.hclust_linkage ?? 'ward';
+    const dbscanEps     = req.dbscan_eps     ?? 1.0;
+    const dbscanMinPts  = req.dbscan_min_pts ?? 3;
     const isFileMode    = req._mode === 'file';
     const smoothEnabled = smoothMethod !== 'none';
     const prescreenApplied = clusterData.prescreen_applied ?? prescreen;
     const dynamicK      = prescreenApplied ? Math.max(1, k - 1) : k;
+    // JS bool → Julia `true`/`false` literal for interpolation into source code.
     const jb = (value) => value ? 'true' : 'false';
 
     const smoothParam = !smoothEnabled ? '' : smoothMethod === 'lowess'
@@ -472,10 +477,24 @@ export function generateClusterCode(clusterData, withComments) {
     gaussian_h_mult = ${gaussianHmult},`
         : '';
 
+    // kmeans_max_iters and kmeans_tol are shared between :kmeans and :kmedoids
+    // in Kinbiont (preprocessing.jl reads opts.kmeans_max_iters / opts.kmeans_tol
+    // for both algorithms). hclust and dbscan ignore these fields.
     const iterParam = (clusterMethod === 'kmeans' || clusterMethod === 'kmedoids')
         ? `
     kmeans_max_iters       = ${maxiter},
     kmeans_tol             = ${tol},`
+        : '';
+
+    // Algorithm-specific parameters for hclust / dbscan. These must travel with
+    // the cluster_method choice or Kinbiont silently falls back to its defaults.
+    const methodParam = clusterMethod === 'hclust'
+        ? `
+    cluster_hclust_linkage = :${hclustLinkage},`
+        : clusterMethod === 'dbscan'
+        ? `
+    cluster_dbscan_eps     = ${dbscanEps},
+    cluster_dbscan_minpts  = ${dbscanMinPts},`
         : '';
 
     const prescreenParam = prescreenApplied
@@ -484,6 +503,18 @@ export function generateClusterCode(clusterData, withComments) {
     cluster_q_low              = ${prescreenQLo},
     cluster_q_high             = ${prescreenQHi},`
         : `    cluster_prescreen_constant = false,`;
+
+    // Kinbiont's preprocess() skips the constant-curve pre-screen entirely when
+    // cluster_method = :dbscan (preprocessing.jl:380). If the user combined both
+    // in the GUI, the exported `cluster_prescreen_constant = true` line will be
+    // silently ignored at runtime — surface that explicitly so the reader isn't
+    // surprised by a mismatched cluster count.
+    const prescreenDbscanNote = (prescreenApplied && clusterMethod === 'dbscan')
+        ? `# NOTE: Kinbiont's preprocess() ignores cluster_prescreen_constant when
+#       cluster_method = :dbscan. The line below is kept for parity with the
+#       GUI request but will have no effect — DBSCAN reports outliers as the
+#       cluster label maximum(labels)+1 instead of using a reserved sentinel.
+`       : '';
 
     const normalizeNote = normalize
         ? `# Note: GUIbiont normalised curves before clustering (z-score per curve).
@@ -535,8 +566,8 @@ smoothed = preprocess(data, smooth_opts)`
 
 using Kinbiont
 
-${normalizeNote}${interpolationNote}${blankNote}${trendNote}# ${dataNote}
-data = GrowthData("your_csv.csv")
+${normalizeNote}${interpolationNote}${blankNote}${trendNote}${prescreenDbscanNote}# ${dataNote}
+data = GrowthData("your_data.csv")
 
 const N_DYNAMIC_CLUSTERS = ${dynamicK}
 const PRESCREEN_CONSTANT = ${jb(prescreenApplied)}
@@ -549,7 +580,7 @@ ${smoothBlock}
 cluster_opts = FitOptions(
     cluster       = true,
     n_clusters    = N_CLUSTER_LABELS,
-    cluster_method = :${clusterMethod},${iterParam}
+    cluster_method = :${clusterMethod},${iterParam}${methodParam}
     # Non-growing pre-screen from GUI Advanced options
 ${prescreenParam}
     # Post-hoc flat/non-growing reassignment from GUI Advanced options
