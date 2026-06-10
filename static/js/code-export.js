@@ -240,129 +240,6 @@ println("AICc:        ", r.best_aic)
     return withComments ? code : stripComments(code);
 }
 
-function generateBatchCodeLegacy(batchData, withComments) {
-    const req        = batchData._request || {};
-    const wells      = req.wells       || [];
-    const modelName  = req.model_name  || batchData.model || 'aHPM';
-    const requestedModels = req.model_names && req.model_names.length > 0 ? req.model_names : [modelName];
-    const modelNames = requestedModels;
-    const blankSub   = req.blank_subtraction || false;
-    const blankMethod= req.blank_method      || 'pointbypoint';
-    const maxiters   = req.maxiters ?? batchData.maxiters ?? 100000;
-    const abstol     = req.abstol ?? batchData.abstol ?? 1e-15;
-    const optParams  = abstol > 0
-        ? `(maxiters = ${maxiters}, abstol = ${abstol})`
-        : `(maxiters = ${maxiters},)`;
-    const detOpts    = req.deterministic_optimizers || [];
-    const stoOpts    = req.stochastic_optimizers || [];
-    const experiment = batchData.experiment || req.experiment || 'experiment';
-    const outPrefix  = `${experiment}_batch_fit`;
-    const firstOptimizer = detOpts[0] || stoOpts[0] || req.optimizer || 'LN_BOBYQA';
-    const optimizerExprMap = {
-        'LN_BOBYQA': 'OptimizationNLopt.NLopt.LN_BOBYQA',
-        'LN_COBYLA': 'OptimizationNLopt.NLopt.LN_COBYLA',
-        'GN_ISRES': 'OptimizationNLopt.NLopt.GN_ISRES',
-        'GN_DIRECT_L': 'OptimizationNLopt.NLopt.GN_DIRECT_L',
-        'BBO_adaptive_de_rand_1_bin_radiuslimited': 'OptimizationBBO.BBO_adaptive_de_rand_1_bin_radiuslimited()',
-    };
-    const optimizerExpr = optimizerExprMap[firstOptimizer] || 'OptimizationNLopt.NLopt.LN_BOBYQA';
-    const isMulti    = modelNames.length > 1;
-    const modelExprs = modelNames.map(m =>
-        m === 'log_lin' ? '    LogLinModel()' : `    MODEL_REGISTRY["${m}"]`
-    ).join(',\n');
-
-    const wellSubset = wells.length > 0
-        ? `\n# Subset to the wells that were fitted in GUIbiont
-data_subset = data[[${wells.map(w => `"${w}"`).join(', ')}]]\n`
-        : '';
-    const dataVar = wells.length > 0 ? 'data_subset' : 'data';
-
-    const specBlock = isMulti
-        ? `\
-# Multi-model comparison: best model per well is selected by AICc.
-# Models compared: ${modelNames.join(', ')}
-models = [
-${modelExprs}
-]
-# GUIbiont uses data-driven smart initialisation per well; batch export uses
-# uniform starting points as a reproducible baseline across all wells.
-spec = ModelSpec(
-    models,
-    [m isa LogLinModel ? Float64[] : fill(1.0, length(m.param_names)) for m in models];
-    lower = Union{Nothing, Vector{Float64}}[m isa LogLinModel ? nothing : fill(0.0, length(m.param_names)) for m in models],
-    upper = Union{Nothing, Vector{Float64}}[m isa LogLinModel ? nothing : fill(50.0, length(m.param_names)) for m in models],
-)`
-        : `\
-# Growth model: "${modelName}".
-# List all available models: collect(keys(MODEL_REGISTRY))
-model = ${modelName === 'log_lin' ? 'LogLinModel()' : `MODEL_REGISTRY["${modelName}"]`}
-n_params = model isa LogLinModel ? 0 : length(model.param_names)
-# GUIbiont uses data-driven smart initialisation per well; batch export uses
-# uniform starting points as a reproducible baseline across all wells.
-spec = ModelSpec(
-    [model],
-    [model isa LogLinModel ? Float64[] : fill(1.0, n_params)];
-    lower = Union{Nothing, Vector{Float64}}[model isa LogLinModel ? nothing : fill(0.0, n_params)],
-    upper = Union{Nothing, Vector{Float64}}[model isa LogLinModel ? nothing : fill(50.0, n_params)],
-)`;
-
-    const blankLine = blankSub
-        ? `    blank_subtraction               = true,  # method: "${blankMethod}"`
-        : `    blank_subtraction               = false,`;
-
-    const code = `\
-# ================================================================
-# Batch growth curve fitting — exported from GUIbiont
-# KinBiont.jl docs: https://github.com/pinheiroGroup/Kinbiont.jl
-# Install:  using Pkg; Pkg.add("Kinbiont")
-# ================================================================
-
-using Kinbiont
-import OptimizationNLopt
-import OptimizationBBO
-
-# CSV format: first column = time points, remaining columns = wells.
-data = GrowthData("your_data.csv")
-${wellSubset}
-${specBlock}
-
-# Fitting options — these match exactly what GUIbiont used.
-opts = FitOptions(
-    smooth                          = true,
-    smooth_method                   = :rolling_avg,
-    # Rolling-average window size (number of time points)
-    smooth_pt_avg                   = 14,
-    # Detect and truncate stationary phase before fitting
-    cut_stationary_phase            = true,
-    stationary_percentile_thr       = 0.05,
-    stationary_pt_smooth_derivative = 10,
-    stationary_win_size             = 5,
-    # Loss function: "RE" = relative error (also: "L2", "L2_derivative")
-    loss                            = "RE",
-    optimizer                       = ${optimizerExpr},
-    opt_params                      = ${optParams},
-${blankLine}
-)
-
-# Run batch fitting — returns one CurveFitResult per well
-results = kinbiont_fit(${dataVar}, spec, opts)
-
-# Print a summary table
-for r in results
-    println(r.label, " → ", r.best_model.name,
-            "  AICc=", round(r.best_aic; digits=2),
-            "  params=", r.best_params)
-end
-
-# Save Kinbiont-native CSVs. Rename the summary to the same basename used by
-# GUIbiont's download button: ${outPrefix}.csv
-paths = save_results(results, "."; prefix = "${outPrefix}")
-mv(paths.summary, "${outPrefix}.csv"; force = true)
-`;
-
-    return withComments ? code : stripComments(code);
-}
-
 export function generateBatchCode(batchData, withComments) {
     const req = batchData._request || {};
     const experiment = batchData.experiment || req.experiment || 'experiment';
@@ -395,8 +272,8 @@ export function generateBatchCode(batchData, withComments) {
     const code = `\
 # ================================================================
 # Batch growth curve fitting - exported from GUIbiont
-# Requires a Kinbiont version exposing kinbiont_batch_fit and
-# save_gui_batch_results.
+# KinBiont.jl docs: https://github.com/pinheiroGroup/Kinbiont.jl
+# Install:  using Pkg; Pkg.add(Pkg.PackageSpec(name="Kinbiont", version="1.4"))
 # ================================================================
 
 using Kinbiont
@@ -460,7 +337,7 @@ println("Fitted: ", length(batch.results), "  skipped: ", length(batch.skipped),
     return withComments ? code : stripComments(code);
 }
 
-function generateBatchLogLinKinbiontCode(batchData, withComments) {
+export function generateBatchLogLinKinbiontCode(batchData, withComments) {
     const req = batchData._request || {};
     const experiment = batchData.experiment || req.experiment || 'experiment';
     const wells = req.wells || [];
@@ -484,8 +361,8 @@ function generateBatchLogLinKinbiontCode(batchData, withComments) {
     const code = `\
 # ================================================================
 # Batch log-linear growth-rate fit - exported from GUIbiont
-# Requires a Kinbiont version exposing kinbiont_batch_loglin and
-# save_gui_batch_loglin_results.
+# KinBiont.jl docs: https://github.com/pinheiroGroup/Kinbiont.jl
+# Install:  using Pkg; Pkg.add(Pkg.PackageSpec(name="Kinbiont", version="1.4"))
 # ================================================================
 
 using Kinbiont
@@ -531,106 +408,6 @@ batch = kinbiont_batch_loglin(
 paths = save_gui_batch_loglin_results(batch, "."; prefix=OUT_PREFIX)
 println("Saved ", paths.summary)
 println("Fitted: ", length(batch.results), "  skipped: ", length(batch.skipped), "  failed: ", length(batch.errors))
-`;
-
-    return withComments ? code : stripComments(code);
-}
-
-// Log-linear batch-fit code export. The parametric generateBatchCode above
-// targets kinbiont_fit (ODE / NL models); log-lin runs through
-// Kinbiont.fitting_one_well_Log_Lin directly with no parametric model.
-export function generateBatchLogLinCode(batchData, withComments) {
-    const req       = batchData._request || {};
-    const wells     = req.wells || [];
-    const ptAvg     = req.pt_avg ?? 7;
-    const ptDeriv   = req.pt_smoothing_derivative ?? 7;
-    const ptMinWin  = req.pt_min_size_of_win ?? 7;
-    const thrExp    = req.threshold_of_exp ?? 0.9;
-    const flatThr   = req.skip_flat_threshold ?? 0.05;
-
-    const wellSubset = wells.length > 0
-        ? `\n# Subset to the wells fitted in GUIbiont
-const WELLS = String[${wells.map(w => `"${w}"`).join(', ')}]\n`
-        : `\n# Use every column in the CSV as a curve.
-const WELLS = String[]\n`;
-
-    const code = `\
-# ================================================================
-# Batch log-linear μ_max fit — exported from GUIbiont
-# KinBiont.jl docs: https://github.com/pinheiroGroup/Kinbiont.jl
-# ================================================================
-
-using Kinbiont
-using CSV, DataFrames, Statistics
-
-# CSV format: first column = time points, remaining columns = wells.
-df = CSV.read("your_data.csv", DataFrame)
-times = Float64.(coalesce.(df[!, 1], NaN))
-${wellSubset}
-const COLS = isempty(WELLS) ? String.(names(df))[2:end] : WELLS
-
-# Mirror GUIbiont's batch-fit-loglin: smooth with rolling average, find
-# the exponential window via R² ≥ ${thrExp}, report slope as μ_max plus
-# the model-free lag and N_max companions Kinbiont appends.
-results = NamedTuple[]
-errors = String[]
-for well in COLS
-    od_raw = Float64.(coalesce.(df[!, Symbol(well)], NaN))
-    mask = isfinite.(times) .& isfinite.(od_raw)
-    if sum(mask) < ${ptDeriv + ptMinWin + 2}
-        push!(errors, "Well '\$(well)': insufficient data points")
-        continue
-    end
-    od_valid = od_raw[mask]
-    # Skip flat curves the same way the GUI does (amplitude below
-    # skip_flat_threshold) so converged counts match.
-    if ${flatThr} > 0.0 && (maximum(od_valid) - minimum(od_valid)) < ${flatThr}
-        continue
-    end
-    # The endpoint floors OD at 1e-4 so log() is well-defined; mirror that.
-    od_fit = max.(od_valid, 1e-4)
-    data_mat = Matrix(transpose(hcat(times[mask], od_fit)))
-    raw = Kinbiont.fitting_one_well_Log_Lin(
-        data_mat, String(well), "batch_loglin";
-        type_of_smoothing       = "rolling_avg",
-        pt_avg                  = ${ptAvg},
-        pt_smoothing_derivative = ${ptDeriv},
-        pt_min_size_of_win      = ${ptMinWin},
-        type_of_win             = "maximum",
-        threshold_of_exp        = ${thrExp},
-    )
-    p = raw[2]
-    if length(p) >= 14 && p[7] !== missing
-        push!(results, (
-            well        = String(well),
-            gr_loglin   = Float64(p[7]),
-            gr_loglin_se = Float64(p[8]),
-            t_start     = Float64(p[3]),
-            t_end       = Float64(p[4]),
-            R2          = Float64(p[14])^2,
-            lag_loglin  = length(p) >= 16 && p[15] !== missing ? Float64(p[15]) : NaN,
-            N_max_emp   = length(p) >= 16 && p[16] !== missing ? Float64(p[16]) : NaN,
-            converged   = true,
-        ))
-    else
-        push!(errors, "Well '\$(well)': no exponential window found")
-    end
-end
-
-# Report the same summary statistics the SM reproducibility table compares.
-gr   = [r.gr_loglin   for r in results]
-lag  = [r.lag_loglin  for r in results]
-nmax = [r.N_max_emp   for r in results]
-t0   = [r.t_start     for r in results]
-t1   = [r.t_end       for r in results]
-r2   = [r.R2          for r in results]
-println("converged_count: ", length(results))
-println("median_gr_loglin:  ", median(filter(isfinite, gr)))
-println("median_lag_loglin: ", median(filter(isfinite, lag)))
-println("median_N_max_emp:  ", median(filter(isfinite, nmax)))
-println("median_t_start: ", median(filter(isfinite, t0)))
-println("median_t_end:   ", median(filter(isfinite, t1)))
-println("median_R2:      ", median(filter(isfinite, r2)))
 `;
 
     return withComments ? code : stripComments(code);

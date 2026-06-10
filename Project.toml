@@ -23,7 +23,7 @@ XLSX = "fdbf4ff8-1666-58a4-91e7-1b58723a45e0"
 
 [compat]
 Clustering = "0.15.8"
-Kinbiont = "1"
+Kinbiont = "1.4"
 OptimizationBBO = "0.3.0"
 OptimizationNLopt = "0.2.2"
 Oxygen = "1.7.5"
