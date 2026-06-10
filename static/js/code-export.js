@@ -12,6 +12,12 @@ function stripComments(code) {
         .trim();
 }
 
+function juliaFloatLiteral(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return '0.0';
+    return Number.isInteger(n) ? `${n}.0` : String(n);
+}
+
 // ---------------------------------------------------------------------------
 // CodeMirror instance — created lazily on first modal open
 // ---------------------------------------------------------------------------
@@ -417,7 +423,7 @@ const BLANK_SUBTRACTION = ${jb(blankSub)}
 const BLANK_METHOD = "${blankMethod}"
 # Generic exported CSVs do not carry annotation metadata. If reproducing a GUI
 # run with blank wells, set these to the values used by GUIbiont.
-const BLANK_VALUE = ${blankValue}
+const BLANK_VALUE = ${juliaFloatLiteral(blankValue)}
 const BLANK_TIMESERIES = Float64[]
 
 data = GrowthData(DATA_FILE)
@@ -490,7 +496,7 @@ const OUT_PREFIX = "${outPrefix}"
 const WELLS = ${strArray(wells)}
 const BLANK_SUBTRACTION = ${jb(blankSub)}
 const BLANK_METHOD = "${blankMethod}"
-const BLANK_VALUE = ${blankValue}
+const BLANK_VALUE = ${juliaFloatLiteral(blankValue)}
 const BLANK_TIMESERIES = Float64[]
 const TYPE_OF_SMOOTHING = "${smoothing}"
 const PT_AVG = ${ptAvg}
