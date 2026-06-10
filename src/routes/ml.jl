@@ -314,6 +314,7 @@
         "quality"          => quality,
         "assignments"      => cluster_ids,
         "series_labels"    => labels_all,
+        "prescreen_applied" => do_prescreen,
         "blank_subtracted" => subtract_blank && !isempty(blank_curves_all),
         "blank_source"     => blank_source,
         "blank_wells_used" => blank_labels_used,

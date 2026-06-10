@@ -209,6 +209,18 @@ async function runClustering() {
             dbscan_min_pts: dbscanMin,
             subtract_blank: document.getElementById('cluster-subtract-blank').checked,
             blank_method:   document.getElementById('cluster-blank-method').value,
+            blank_range_thr:     parseFloat(document.getElementById('cluster-blank-range-thr').value),
+            blank_od_percentile: parseFloat(document.getElementById('cluster-blank-od-pct').value),
+            interpolate:         doInterpolate,
+            interp_n:            parseInt(document.getElementById('cluster-interp-n').value) || 100,
+            interp_quantile_lo:  interpQLo,
+            interp_quantile_hi:  interpQHi,
+            prescreen_constant:  document.getElementById('cluster-prescreen').checked,
+            prescreen_tol_const: parseFloat(document.getElementById('cluster-prescreen-tol').value) || 1.5,
+            prescreen_q_low:     preQLo,
+            prescreen_q_high:    preQHi,
+            trend_test_flat:     document.getElementById('cluster-trend-test').checked,
+            trend_p_thr:         parseFloat(document.getElementById('cluster-trend-p').value) || 0.05,
         };
         state._lastClusterData = data;
         document.getElementById('cluster-export-btn').disabled = false;
