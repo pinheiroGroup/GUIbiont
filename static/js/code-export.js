@@ -95,7 +95,7 @@ export function openBatchCodeExport() {
     const title = isLoglin
         ? 'Export Julia code — Batch Fit (log-linear)'
         : 'Export Julia code — Batch Fit';
-    const generator = isLoglin ? generateBatchLogLinCode : generateBatchCode;
+    const generator = isLoglin ? generateBatchLogLinKinbiontCode : generateBatchCode;
     openCodeExportModal(
         title,
         (withComments) => generator(state.lastBatchFitData, withComments),
@@ -152,8 +152,8 @@ export function generateFitCode(fitData, withComments) {
     const optimizerName = fitData.optimizer_used || 'LN_BOBYQA';
     const isBBO = optimizerName.startsWith('BBO_');
     const optimizerExpr = isBBO
-        ? `${optimizerName}()`
-        : `NLopt.${optimizerName}`;
+        ? `OptimizationBBO.${optimizerName}()`
+        : `OptimizationNLopt.NLopt.${optimizerName}`;
 
     const code = `\
 # ================================================================
@@ -163,10 +163,8 @@ export function generateFitCode(fitData, withComments) {
 # ================================================================
 
 using Kinbiont
-${isBBO
-    ? 'using OptimizationBBO: ' + optimizerName
-    : 'using OptimizationNLopt: NLopt'
-}
+import OptimizationNLopt
+import OptimizationBBO
 
 # CSV format: first column = time points, remaining columns = wells.
 # Column headers become the well labels used throughout.
@@ -236,11 +234,12 @@ println("AICc:        ", r.best_aic)
     return withComments ? code : stripComments(code);
 }
 
-export function generateBatchCode(batchData, withComments) {
+function generateBatchCodeLegacy(batchData, withComments) {
     const req        = batchData._request || {};
     const wells      = req.wells       || [];
     const modelName  = req.model_name  || batchData.model || 'aHPM';
-    const modelNames = req.model_names || [];
+    const requestedModels = req.model_names && req.model_names.length > 0 ? req.model_names : [modelName];
+    const modelNames = requestedModels;
     const blankSub   = req.blank_subtraction || false;
     const blankMethod= req.blank_method      || 'pointbypoint';
     const maxiters   = req.maxiters ?? batchData.maxiters ?? 100000;
@@ -248,7 +247,23 @@ export function generateBatchCode(batchData, withComments) {
     const optParams  = abstol > 0
         ? `(maxiters = ${maxiters}, abstol = ${abstol})`
         : `(maxiters = ${maxiters},)`;
+    const detOpts    = req.deterministic_optimizers || [];
+    const stoOpts    = req.stochastic_optimizers || [];
+    const experiment = batchData.experiment || req.experiment || 'experiment';
+    const outPrefix  = `${experiment}_batch_fit`;
+    const firstOptimizer = detOpts[0] || stoOpts[0] || req.optimizer || 'LN_BOBYQA';
+    const optimizerExprMap = {
+        'LN_BOBYQA': 'OptimizationNLopt.NLopt.LN_BOBYQA',
+        'LN_COBYLA': 'OptimizationNLopt.NLopt.LN_COBYLA',
+        'GN_ISRES': 'OptimizationNLopt.NLopt.GN_ISRES',
+        'GN_DIRECT_L': 'OptimizationNLopt.NLopt.GN_DIRECT_L',
+        'BBO_adaptive_de_rand_1_bin_radiuslimited': 'OptimizationBBO.BBO_adaptive_de_rand_1_bin_radiuslimited()',
+    };
+    const optimizerExpr = optimizerExprMap[firstOptimizer] || 'OptimizationNLopt.NLopt.LN_BOBYQA';
     const isMulti    = modelNames.length > 1;
+    const modelExprs = modelNames.map(m =>
+        m === 'log_lin' ? '    LogLinModel()' : `    MODEL_REGISTRY["${m}"]`
+    ).join(',\n');
 
     const wellSubset = wells.length > 0
         ? `\n# Subset to the wells that were fitted in GUIbiont
@@ -260,29 +275,29 @@ data_subset = data[[${wells.map(w => `"${w}"`).join(', ')}]]\n`
         ? `\
 # Multi-model comparison: best model per well is selected by AICc.
 # Models compared: ${modelNames.join(', ')}
-models = [MODEL_REGISTRY[m] for m in [
-${modelNames.map(m => `    "${m}"`).join(',\n')},
-]]
+models = [
+${modelExprs}
+]
 # GUIbiont uses data-driven smart initialisation per well; batch export uses
 # uniform starting points as a reproducible baseline across all wells.
 spec = ModelSpec(
     models,
-    [fill(1.0, length(m.param_names)) for m in models];
-    lower = [fill(0.0, length(m.param_names)) for m in models],
-    upper = [fill(50.0, length(m.param_names)) for m in models],
+    [m isa LogLinModel ? Float64[] : fill(1.0, length(m.param_names)) for m in models];
+    lower = Union{Nothing, Vector{Float64}}[m isa LogLinModel ? nothing : fill(0.0, length(m.param_names)) for m in models],
+    upper = Union{Nothing, Vector{Float64}}[m isa LogLinModel ? nothing : fill(50.0, length(m.param_names)) for m in models],
 )`
         : `\
 # Growth model: "${modelName}".
 # List all available models: collect(keys(MODEL_REGISTRY))
-model = MODEL_REGISTRY["${modelName}"]
-n_params = length(model.param_names)
+model = ${modelName === 'log_lin' ? 'LogLinModel()' : `MODEL_REGISTRY["${modelName}"]`}
+n_params = model isa LogLinModel ? 0 : length(model.param_names)
 # GUIbiont uses data-driven smart initialisation per well; batch export uses
 # uniform starting points as a reproducible baseline across all wells.
 spec = ModelSpec(
     [model],
-    [fill(1.0, n_params)];
-    lower = [fill(0.0, n_params)],
-    upper = [fill(50.0, n_params)],
+    [model isa LogLinModel ? Float64[] : fill(1.0, n_params)];
+    lower = Union{Nothing, Vector{Float64}}[model isa LogLinModel ? nothing : fill(0.0, n_params)],
+    upper = Union{Nothing, Vector{Float64}}[model isa LogLinModel ? nothing : fill(50.0, n_params)],
 )`;
 
     const blankLine = blankSub
@@ -297,6 +312,8 @@ spec = ModelSpec(
 # ================================================================
 
 using Kinbiont
+import OptimizationNLopt
+import OptimizationBBO
 
 # CSV format: first column = time points, remaining columns = wells.
 data = GrowthData("your_data.csv")
@@ -316,6 +333,7 @@ opts = FitOptions(
     stationary_win_size             = 5,
     # Loss function: "RE" = relative error (also: "L2", "L2_derivative")
     loss                            = "RE",
+    optimizer                       = ${optimizerExpr},
     opt_params                      = ${optParams},
 ${blankLine}
 )
@@ -329,6 +347,184 @@ for r in results
             "  AICc=", round(r.best_aic; digits=2),
             "  params=", r.best_params)
 end
+
+# Save Kinbiont-native CSVs. Rename the summary to the same basename used by
+# GUIbiont's download button: ${outPrefix}.csv
+paths = save_results(results, "."; prefix = "${outPrefix}")
+mv(paths.summary, "${outPrefix}.csv"; force = true)
+`;
+
+    return withComments ? code : stripComments(code);
+}
+
+export function generateBatchCode(batchData, withComments) {
+    const req = batchData._request || {};
+    const experiment = batchData.experiment || req.experiment || 'experiment';
+    const wells = req.wells || [];
+    const rawModels = req.model_names && req.model_names.length > 0
+        ? req.model_names
+        : [req.model_name || batchData.model || 'aHPM'];
+    const modelNames = rawModels.filter(m => m !== 'log_lin');
+    const modelName = modelNames[0] || req.model_name || 'aHPM';
+    const detOpts = req.deterministic_optimizers || [];
+    const stoOpts = req.stochastic_optimizers || [];
+    const stochasticRuns = req.stochastic_runs ?? 1;
+    const singleOptimizer = req.optimizer || batchData.optimizer_used || 'LN_BOBYQA';
+    const maxiters = req.maxiters ?? batchData.maxiters ?? 100000;
+    const abstol = req.abstol ?? batchData.abstol ?? 1e-15;
+    const skipFlat = req.skip_flat_threshold ?? 0.05;
+    const computeLoglin = !!req.compute_loglin || rawModels.includes('log_lin');
+    const llPtAvg = req.loglin_pt_avg ?? 7;
+    const llPtDeriv = req.loglin_pt_smoothing_derivative ?? 7;
+    const llPtMinWin = req.loglin_pt_min_size_of_win ?? 7;
+    const llThrExp = req.loglin_threshold_of_exp ?? 0.9;
+    const blankSub = !!req.blank_subtraction;
+    const blankMethod = req.blank_method || 'pointbypoint';
+    const firstResult = Array.isArray(batchData.results) ? batchData.results.find(r => typeof r.blank_value === 'number') : null;
+    const blankValue = firstResult ? firstResult.blank_value : 0.0;
+    const outPrefix = `${experiment}_batch_fit`;
+    const strArray = xs => `String[${xs.map(x => `"${x}"`).join(', ')}]`;
+    const jb = x => x ? 'true' : 'false';
+
+    const code = `\
+# ================================================================
+# Batch growth curve fitting - exported from GUIbiont
+# Requires a Kinbiont version exposing kinbiont_batch_fit and
+# save_gui_batch_results.
+# ================================================================
+
+using Kinbiont
+
+const EXPERIMENT = "${experiment}"
+const DATA_FILE = "your_data.csv"
+const OUT_PREFIX = "${outPrefix}"
+const WELLS = ${strArray(wells)}
+const MODEL_NAME = "${modelName}"
+const MODEL_NAMES = ${strArray(modelNames.length > 1 ? modelNames : [])}
+const SINGLE_OPTIMIZER = "${singleOptimizer}"
+const DETERMINISTIC_OPTIMIZERS = ${strArray(detOpts)}
+const STOCHASTIC_OPTIMIZERS = ${strArray(stoOpts)}
+const STOCHASTIC_RUNS = ${stochasticRuns}
+const MAXITERS = ${maxiters}
+const ABSTOL = ${abstol}
+const SKIP_FLAT_THRESHOLD = ${skipFlat}
+const COMPUTE_LOGLIN = ${jb(computeLoglin)}
+const LOGLIN_PT_AVG = ${llPtAvg}
+const LOGLIN_PT_DERIV = ${llPtDeriv}
+const LOGLIN_PT_MIN_WIN = ${llPtMinWin}
+const LOGLIN_THR_EXP = ${llThrExp}
+const BLANK_SUBTRACTION = ${jb(blankSub)}
+const BLANK_METHOD = "${blankMethod}"
+# Generic exported CSVs do not carry annotation metadata. If reproducing a GUI
+# run with blank wells, set these to the values used by GUIbiont.
+const BLANK_VALUE = ${blankValue}
+const BLANK_TIMESERIES = Float64[]
+
+data = GrowthData(DATA_FILE)
+batch = kinbiont_batch_fit(
+    data;
+    experiment=EXPERIMENT,
+    labels=WELLS,
+    model_name=MODEL_NAME,
+    model_names=MODEL_NAMES,
+    optimizer=SINGLE_OPTIMIZER,
+    deterministic_optimizers=DETERMINISTIC_OPTIMIZERS,
+    stochastic_optimizers=STOCHASTIC_OPTIMIZERS,
+    stochastic_runs=STOCHASTIC_RUNS,
+    maxiters=MAXITERS,
+    abstol=ABSTOL,
+    skip_flat_threshold=SKIP_FLAT_THRESHOLD,
+    compute_loglin=COMPUTE_LOGLIN,
+    loglin_pt_avg=LOGLIN_PT_AVG,
+    loglin_pt_smoothing_derivative=LOGLIN_PT_DERIV,
+    loglin_pt_min_size_of_win=LOGLIN_PT_MIN_WIN,
+    loglin_threshold_of_exp=LOGLIN_THR_EXP,
+    blank_subtraction=BLANK_SUBTRACTION,
+    blank_method=BLANK_METHOD,
+    blank_value=BLANK_VALUE,
+    blank_timeseries=BLANK_TIMESERIES,
+)
+
+paths = save_gui_batch_results(batch, "."; prefix=OUT_PREFIX)
+println("Saved ", paths.summary)
+println("Saved ", paths.fitted_curves)
+println("Fitted: ", length(batch.results), "  skipped: ", length(batch.skipped), "  failed: ", length(batch.errors))
+`;
+
+    return withComments ? code : stripComments(code);
+}
+
+function generateBatchLogLinKinbiontCode(batchData, withComments) {
+    const req = batchData._request || {};
+    const experiment = batchData.experiment || req.experiment || 'experiment';
+    const wells = req.wells || [];
+    const ptAvg = req.pt_avg ?? 7;
+    const ptDeriv = req.pt_smoothing_derivative ?? 7;
+    const ptMinWin = req.pt_min_size_of_win ?? 7;
+    const thrExp = req.threshold_of_exp ?? 0.9;
+    const flatThr = req.skip_flat_threshold ?? 0.05;
+    const blankSub = !!req.blank_subtraction;
+    const blankMethod = req.blank_method || 'pointbypoint';
+    const smoothing = req.type_of_smoothing || 'rolling_avg';
+    const winType = req.type_of_win || 'maximum';
+    const startThr = req.start_exp_win_thr ?? 0.05;
+    const thrLowess = req.thr_lowess ?? 0.05;
+    const firstResult = Array.isArray(batchData.results) ? batchData.results.find(r => typeof r.blank_value === 'number') : null;
+    const blankValue = firstResult ? firstResult.blank_value : 0.0;
+    const outPrefix = `${experiment}_batch_fit_loglin`;
+    const strArray = xs => `String[${xs.map(x => `"${x}"`).join(', ')}]`;
+    const jb = x => x ? 'true' : 'false';
+
+    const code = `\
+# ================================================================
+# Batch log-linear growth-rate fit - exported from GUIbiont
+# Requires a Kinbiont version exposing kinbiont_batch_loglin and
+# save_gui_batch_loglin_results.
+# ================================================================
+
+using Kinbiont
+
+const EXPERIMENT = "${experiment}"
+const DATA_FILE = "your_data.csv"
+const OUT_PREFIX = "${outPrefix}"
+const WELLS = ${strArray(wells)}
+const BLANK_SUBTRACTION = ${jb(blankSub)}
+const BLANK_METHOD = "${blankMethod}"
+const BLANK_VALUE = ${blankValue}
+const BLANK_TIMESERIES = Float64[]
+const TYPE_OF_SMOOTHING = "${smoothing}"
+const PT_AVG = ${ptAvg}
+const PT_SMOOTHING_DERIVATIVE = ${ptDeriv}
+const PT_MIN_SIZE_OF_WIN = ${ptMinWin}
+const TYPE_OF_WIN = "${winType}"
+const THRESHOLD_OF_EXP = ${thrExp}
+const START_EXP_WIN_THR = ${startThr}
+const THR_LOWESS = ${thrLowess}
+const SKIP_FLAT_THRESHOLD = ${flatThr}
+
+data = GrowthData(DATA_FILE)
+batch = kinbiont_batch_loglin(
+    data;
+    experiment=EXPERIMENT,
+    labels=WELLS,
+    blank_subtraction=BLANK_SUBTRACTION,
+    blank_method=BLANK_METHOD,
+    blank_value=BLANK_VALUE,
+    blank_timeseries=BLANK_TIMESERIES,
+    type_of_smoothing=TYPE_OF_SMOOTHING,
+    pt_avg=PT_AVG,
+    pt_smoothing_derivative=PT_SMOOTHING_DERIVATIVE,
+    pt_min_size_of_win=PT_MIN_SIZE_OF_WIN,
+    type_of_win=TYPE_OF_WIN,
+    threshold_of_exp=THRESHOLD_OF_EXP,
+    start_exp_win_thr=START_EXP_WIN_THR,
+    thr_lowess=THR_LOWESS,
+    skip_flat_threshold=SKIP_FLAT_THRESHOLD,
+)
+
+paths = save_gui_batch_loglin_results(batch, "."; prefix=OUT_PREFIX)
+println("Saved ", paths.summary)
+println("Fitted: ", length(batch.results), "  skipped: ", length(batch.skipped), "  failed: ", length(batch.errors))
 `;
 
     return withComments ? code : stripComments(code);
