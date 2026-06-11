@@ -281,7 +281,8 @@
 
     # Remap to contiguous 1..k (required by clustering_quality)
     ids_remapped, _ = _remap_ids(ids_for_qual)
-    quality = _cluster_quality_indices(X_for_qual, ids_remapped)
+    X_for_qual_z = _zscore_rows(X_for_qual)
+    quality = _cluster_quality_indices(X_for_qual_z, ids_remapped)
 
     # Per-cluster silhouette mean (keyed by original cluster id)
     sil_per_cluster = Dict{String,Any}()

@@ -573,9 +573,11 @@ smooth_opts = FitOptions(
 ${smoothParam}
     cluster       = false,
 )
-smoothed = preprocess(data, smooth_opts)`
+smoothed = preprocess(data, smooth_opts)
+tlen = min(size(smoothed.curves, 2), length(smoothed.times))
+cluster_data = GrowthData(smoothed.curves[:, 1:tlen], smoothed.times[1:tlen], smoothed.labels)`
         : `# Smoothing was disabled in GUIbiont.
-smoothed = data`;
+cluster_data = data`;
 
     const code = `\
 # ================================================================
@@ -595,7 +597,7 @@ const PRESCREEN_CONSTANT = ${jb(prescreenApplied)}
 ${smoothBlock}
 
 # GUIbiont caps k to the number of series after blank removal/preparation.
-const N_CLUSTER_LABELS = min(N_REQUESTED_CLUSTERS, size(smoothed.curves, 1))
+const N_CLUSTER_LABELS = min(N_REQUESTED_CLUSTERS, size(cluster_data.curves, 1))
 
 # These options are the clustering controls selected in GUIbiont. Parameters
 # that do not apply to the selected algorithm are intentionally omitted.
@@ -610,27 +612,17 @@ ${prescreenParam}
     cluster_trend_p_thr = ${trendPThr},
 )
 
-processed = preprocess(smoothed, cluster_opts)
-
-# Quality indices are computed on the same smoothed curves that were clustered.
-quality = cluster_quality_indices(smoothed.curves, processed.clusters)
-quality_means = Dict{String,Union{Nothing,Float64}}()
-for (metric, value) in quality
-    if value === nothing
-        quality_means[metric] = nothing
-    elseif value isa AbstractVector
-        finite_values = Float64[]
-        for v in value
-            v === nothing && continue
-            fv = Float64(v)
-            isfinite(fv) && push!(finite_values, fv)
-        end
-        quality_means[metric] = isempty(finite_values) ? nothing :
-                                sum(finite_values) / length(finite_values)
-    elseif value isa Number
-        quality_means[metric] = Float64(value)
-    end
-end
+processed = preprocess(cluster_data, cluster_opts)
+# Quality indices are computed on the same data that was passed to clustering.
+quality = cluster_quality_indices(cluster_data.curves, processed.clusters;
+)
+quality_summary = Dict(
+    "silhouette_mean"   => quality["silhouette_mean"],
+    "dunn"              => quality["dunn"],
+    "davies_bouldin"    => quality["davies_bouldin"],
+    "calinski_harabasz" => quality["calinski_harabasz"],
+    "xie_beni"          => quality["xie_beni"],
+)
 
 cluster_counts_all = Dict(k => count(==(k), processed.clusters)
                           for k in 1:N_CLUSTER_LABELS)
@@ -639,7 +631,7 @@ cluster_counts_all = Dict(k => count(==(k), processed.clusters)
 #println("Cluster assignments: ", processed.clusters)
 println("Cluster counts:      ", cluster_counts_all)
 println("WCSS:                ", processed.wcss)
-println("Quality means:       ", quality_means)
+println("Quality summary:     ", quality_summary)
 #println("Quality indices:     ", quality)
 
 # To find the optimal k, sweep over a range and plot WCSS (elbow method):
