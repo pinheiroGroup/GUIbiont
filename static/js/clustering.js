@@ -134,6 +134,7 @@ async function runClustering() {
     const hLinkage   = document.getElementById('cluster-hclust-linkage').value;
     const dbscanEps  = parseFloat(document.getElementById('cluster-dbscan-eps').value);
     const dbscanMin  = parseInt(document.getElementById('cluster-dbscan-minpts').value);
+    let sourceInfo    = {};
     let body;
 
     if (state.currentClusteringMode === 'file') {
@@ -141,13 +142,16 @@ async function runClustering() {
         const file = document.getElementById('clustering-file').files[0];
         if (serverPath) {
             body = { csv_path: serverPath, k, normalize };
+            sourceInfo = { csv_path: serverPath };
         } else if (file) {
             body = { csv: await file.text(), k, normalize };
+            sourceInfo = { csv_name: file.name };
         } else return;
     } else {
         const selected = [...document.querySelectorAll('.clustering-exp-checkbox:checked')].map(c => c.value);
         if (!selected.length) return;
         body = { experiments: selected, k, normalize };
+        sourceInfo = { experiments: selected };
     }
     const doInterpolate = state.currentClusteringMode === 'file' &&
         document.getElementById('cluster-interpolate').checked;
@@ -196,6 +200,7 @@ async function runClustering() {
         const data = await response.json();
         data._request = {
             _mode:          state.currentClusteringMode,
+            ...sourceInfo,
             k,
             normalize,
             smooth_method:  smooth,

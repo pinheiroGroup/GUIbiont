@@ -437,6 +437,7 @@ export function generateClusterCode(clusterData, withComments) {
     const trendTest     = req.trend_test_flat ?? false;
     const trendPThr     = req.trend_p_thr ?? 0.05;
     const normalize     = req.normalize ?? false;
+    const autoBlankDetection = !prescreen && !trendTest;
     // Algorithm-specific parameters (used by hclust / dbscan only)
     const hclustLinkage = req.hclust_linkage ?? 'ward';
     const dbscanEps     = req.dbscan_eps     ?? 1.0;
@@ -444,7 +445,12 @@ export function generateClusterCode(clusterData, withComments) {
     const isFileMode    = req._mode === 'file';
     const smoothEnabled = smoothMethod !== 'none';
     const prescreenApplied = clusterData.prescreen_applied ?? prescreen;
-    const dynamicK      = prescreenApplied ? Math.max(1, k - 1) : k;
+    const experimentsLiteral = Array.isArray(req.experiments) && req.experiments.length
+        ? JSON.stringify(req.experiments)
+        : 'String[]';
+    const dataPathLiteral = req.csv_path
+        ? JSON.stringify(req.csv_path)
+        : '"your_data.csv"';
     // JS bool → Julia `true`/`false` literal for interpolation into source code.
     const jb = (value) => value ? 'true' : 'false';
 
@@ -496,45 +502,80 @@ export function generateClusterCode(clusterData, withComments) {
 `       : '';
 
     const normalizeNote = normalize
-        ? `# Note: GUIbiont normalised curves before clustering (z-score per curve).
-# KinBiont.jl applies normalisation internally during clustering.
+        ? `# Display normalisation was enabled in GUIbiont. Kinbiont already
+# z-scores curves internally for clustering, so the data are not transformed here.
 `       : '';
 
     const interpolationNote = interpolate
-        ? `# GUIbiont interpolation was enabled before clustering:
-#   interp_n = ${interpN}, interp_quantile_lo = ${interpQLo}, interp_quantile_hi = ${interpQHi}
-# If the original CSV has one time vector per curve, build an IrregularGrowthData
-# or apply the same interpolation before constructing GrowthData.
+        ? `# File-mode interpolation is part of data preparation. The quantile
+# bounds trim extreme start/end times before building the common time grid.
 `
         : '';
 
     const blankNote = blankSub
-        ? `# GUIbiont automatic blank subtraction was enabled before clustering:
-#   blank_method = "${blankMethod}", blank_range_thr = ${blankRangeThr}, blank_od_percentile = ${blankOdPct}
-# Kinbiont.FitOptions blank_subtraction runs after clustering; to reproduce the
-# GUI result, apply equivalent blank preprocessing before preprocess(data, opts).
+        ? `# Blank subtraction is applied before smoothing and clustering, matching
+# the GUIbiont clustering route rather than FitOptions.blank_subtraction.
+`
+        : '';
+    const autoBlankNote = autoBlankDetection
+        ? `# With prescreen and trend reassignment disabled, GUIbiont first removes
+# low, flat blank candidates from the clustering matrix.
 `
         : '';
 
     const trendNote = trendTest
-        ? `# GUIbiont trend-test reassignment was enabled with p threshold ${trendPThr}.
-# The local Kinbiont FitOptions exposes cluster_trend_test, but not a custom p threshold.
+        ? `# The post-hoc trend test assigns curves without a significant OD trend
+# to the reserved non-growing label after clustering.
 `
         : '';
 
-    const dataNote = isFileMode
-        ? `# Replace with the path to your CSV file (uploaded in GUIbiont).`
-        : `# CSV format: first column = time points, remaining columns = wells.`;
+    const dataPathBlock = isFileMode
+        ? `# CSV layout: first usable column is time, following columns are curves.
+# CSV files saved by pandas with an index column are handled automatically.
+const DATA_PATH = ${dataPathLiteral}`
+        : `# Point this at GUIbiont's Clean_data directory before running elsewhere.
+const CLEAN_DATA_PATH = "Clean_data"`;
+
+    const dataLoadBlock = isFileMode
+        ? `# prepare_clustering_data mirrors the GUIbiont clustering loader:
+# CSV parsing, optional interpolation, blank handling, and non-finite cleanup.
+data = prepare_clustering_data(
+    csv_path             = DATA_PATH,
+    interpolate          = ${jb(interpolate)},
+    interp_n             = ${interpN},
+    interp_quantile_lo   = ${interpQLo},
+    interp_quantile_hi   = ${interpQHi},
+    auto_detect_blanks   = ${jb(autoBlankDetection)},
+    subtract_blank       = ${jb(blankSub)},
+    blank_method         = :${blankMethod},
+    blank_range_thr      = ${blankRangeThr},
+    blank_od_percentile  = ${blankOdPct},
+)`
+        : `# prepare_clustering_data reads the selected experiments from Clean_data,
+# excludes annotated blank/discard wells, and applies the same blank handling as GUIbiont.
+data = prepare_clustering_data(
+    clean_data_path      = CLEAN_DATA_PATH,
+    experiments          = ${experimentsLiteral},
+    interpolate          = false,
+    auto_detect_blanks   = ${jb(autoBlankDetection)},
+    subtract_blank       = ${jb(blankSub)},
+    blank_method         = :${blankMethod},
+    blank_range_thr      = ${blankRangeThr},
+    blank_od_percentile  = ${blankOdPct},
+)`;
 
     const smoothBlock = smoothEnabled
-        ? `smooth_opts = FitOptions(
+        ? `# GUIbiont smooths the prepared curves before clustering. Calling preprocess
+# once for smoothing and once for clustering preserves that order in Kinbiont.
+smooth_opts = FitOptions(
     smooth        = true,
     smooth_method = :${smoothMethod},
 ${smoothParam}
     cluster       = false,
 )
 smoothed = preprocess(data, smooth_opts)`
-        : `smoothed = data`;
+        : `# Smoothing was disabled in GUIbiont.
+smoothed = data`;
 
     const code = `\
 # ================================================================
@@ -545,38 +586,61 @@ smoothed = preprocess(data, smooth_opts)`
 
 using Kinbiont
 
-${normalizeNote}${interpolationNote}${blankNote}${trendNote}${prescreenDbscanNote}# ${dataNote}
-data = GrowthData("your_data.csv")
+${normalizeNote}${interpolationNote}${blankNote}${autoBlankNote}${trendNote}${prescreenDbscanNote}${dataPathBlock}
+${dataLoadBlock}
 
-const N_DYNAMIC_CLUSTERS = ${dynamicK}
+const N_REQUESTED_CLUSTERS = ${k}
 const PRESCREEN_CONSTANT = ${jb(prescreenApplied)}
-const N_CLUSTER_LABELS = N_DYNAMIC_CLUSTERS + (PRESCREEN_CONSTANT ? 1 : 0)
 
-# Kinbiont clusters before smoothing when both are enabled in one FitOptions,
-# so apply smoothing first, then cluster the smoothed data.
 ${smoothBlock}
 
+# GUIbiont caps k to the number of series after blank removal/preparation.
+const N_CLUSTER_LABELS = min(N_REQUESTED_CLUSTERS, size(smoothed.curves, 1))
+
+# These options are the clustering controls selected in GUIbiont. Parameters
+# that do not apply to the selected algorithm are intentionally omitted.
 cluster_opts = FitOptions(
     cluster       = true,
     n_clusters    = N_CLUSTER_LABELS,
     cluster_method = :${clusterMethod},${iterParam}${methodParam}
-    # Non-growing pre-screen from GUI Advanced options
+    # Non-growing prescreen from GUIbiont Advanced options.
 ${prescreenParam}
-    # Post-hoc flat/non-growing reassignment from GUI Advanced options
+    # Post-hoc flat/non-growing reassignment from GUIbiont Advanced options.
     cluster_trend_test = ${jb(trendTest)},
+    cluster_trend_p_thr = ${trendPThr},
 )
 
 processed = preprocess(smoothed, cluster_opts)
 
-cluster_counts = Dict(k => count(==(k), processed.clusters)
-                      for k in sort(unique(processed.clusters)))
+# Quality indices are computed on the same smoothed curves that were clustered.
+quality = cluster_quality_indices(smoothed.curves, processed.clusters)
+quality_means = Dict{String,Union{Nothing,Float64}}()
+for (metric, value) in quality
+    if value === nothing
+        quality_means[metric] = nothing
+    elseif value isa AbstractVector
+        finite_values = Float64[]
+        for v in value
+            v === nothing && continue
+            fv = Float64(v)
+            isfinite(fv) && push!(finite_values, fv)
+        end
+        quality_means[metric] = isempty(finite_values) ? nothing :
+                                sum(finite_values) / length(finite_values)
+    elseif value isa Number
+        quality_means[metric] = Float64(value)
+    end
+end
+
 cluster_counts_all = Dict(k => count(==(k), processed.clusters)
                           for k in 1:N_CLUSTER_LABELS)
 
-println("Cluster assignments: ", processed.clusters)
-println("Cluster counts:      ", cluster_counts)
-println("Cluster counts all:  ", cluster_counts_all)
+# Optional diagnostics:
+#println("Cluster assignments: ", processed.clusters)
+println("Cluster counts:      ", cluster_counts_all)
 println("WCSS:                ", processed.wcss)
+println("Quality means:       ", quality_means)
+#println("Quality indices:     ", quality)
 
 # To find the optimal k, sweep over a range and plot WCSS (elbow method):
 # wcss_by_k = [preprocess(data, FitOptions(cluster=true, n_clusters=k)).wcss
