@@ -8,6 +8,7 @@
     cluster_method = string(body.cluster_method)
     maxiter        = Int(body.maxiter)
     tol            = Float64(body.tol)
+    kmeans_n_init  = clamp(Int(body.kmeans_n_init), 1, 100)
     dbscan_eps     = Float64(body.dbscan_eps)
     dbscan_minpts  = Int(body.dbscan_min_pts)
     hclust_linkage = Symbol(body.hclust_linkage)
@@ -231,6 +232,7 @@
         cluster_hclust_linkage     = Symbol(hclust_linkage),
         cluster_dbscan_eps         = Float64(dbscan_eps),
         cluster_dbscan_minpts      = Int(dbscan_minpts),
+        kmeans_n_init              = kmeans_n_init,
         kmeans_max_iters           = maxiter,
         kmeans_tol                 = tol,
     )
@@ -336,6 +338,7 @@ end
     cluster_method = string(body.cluster_method)
     maxiter        = Int(body.maxiter)
     tol            = Float64(body.tol)
+    kmeans_n_init  = clamp(Int(body.kmeans_n_init), 1, 100)
     hclust_linkage = Symbol(body.hclust_linkage)
 
     # Re-use the same data-loading logic as /api/cluster
@@ -481,6 +484,7 @@ end
             cluster_q_low              = prescreen_qlo,
             cluster_q_high             = prescreen_qhi,
             cluster_hclust_linkage     = hclust_linkage,
+            kmeans_n_init              = kmeans_n_init,
             kmeans_max_iters           = maxiter,
             kmeans_tol                 = tol,
         )

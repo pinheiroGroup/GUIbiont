@@ -422,6 +422,7 @@ export function generateClusterCode(clusterData, withComments) {
     const clusterMethod = req.cluster_method ?? 'kmeans';
     const maxiter       = req.maxiter ?? 300;
     const tol           = req.tol ?? 1e-6;
+    const nInit         = req.kmeans_n_init ?? 3;
     const blankSub      = req.subtract_blank ?? false;
     const blankMethod   = req.blank_method ?? 'pointbypoint';
     const blankRangeThr = req.blank_range_thr ?? 0.005;
@@ -462,12 +463,15 @@ export function generateClusterCode(clusterData, withComments) {
     gaussian_h_mult = ${gaussianHmult},`
         : '';
 
-    // kmeans_max_iters and kmeans_tol are shared between :kmeans and :kmedoids
-    // in Kinbiont (preprocessing.jl reads opts.kmeans_max_iters / opts.kmeans_tol
-    // for both algorithms). hclust and dbscan ignore these fields.
+    const nInitParam = clusterMethod === 'kmeans'
+        ? `    kmeans_n_init          = ${nInit},\n`
+        : '';
+
+    // kmeans_max_iters and kmeans_tol are used by :kmeans and :kmedoids.
+    // kmeans_n_init is used only by :kmeans in Kinbiont._kmeans_best.
     const iterParam = (clusterMethod === 'kmeans' || clusterMethod === 'kmedoids')
         ? `
-    kmeans_max_iters       = ${maxiter},
+${nInitParam}    kmeans_max_iters       = ${maxiter},
     kmeans_tol             = ${tol},`
         : '';
 

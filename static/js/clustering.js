@@ -118,6 +118,7 @@ function onClusterMethodChange() {
     document.getElementById('cluster-hclust-params').style.display = isHclust ? 'flex' : 'none';
     document.getElementById('cluster-dbscan-params').style.display = isDbscan ? 'flex' : 'none';
     document.getElementById('cluster-iter-params').style.display   = needsIter ? 'flex' : 'none';
+    document.getElementById('cluster-n-init-param').style.display   = method === 'kmeans' ? 'flex' : 'none';
 }
 
 // Store last cluster data for export
@@ -131,6 +132,8 @@ async function runClustering() {
     const method     = document.getElementById('cluster-method').value;
     const maxiter    = parseInt(document.getElementById('cluster-maxiter').value) || 300;
     const tol        = parseFloat(document.getElementById('cluster-tol').value) || 1e-6;
+    const nInit      = Math.min(100, Math.max(1, parseInt(document.getElementById('cluster-n-init').value, 10) || 3));
+    document.getElementById('cluster-n-init').value = nInit;
     const hLinkage   = document.getElementById('cluster-hclust-linkage').value;
     const dbscanEps  = parseFloat(document.getElementById('cluster-dbscan-eps').value);
     const dbscanMin  = parseInt(document.getElementById('cluster-dbscan-minpts').value);
@@ -163,7 +166,9 @@ async function runClustering() {
         lowess_frac: lowessFrac,
         gaussian_h_mult: gHmult,
         cluster_method: method,
-        maxiter, tol,
+        maxiter,
+        tol,
+        kmeans_n_init: nInit,
         hclust_linkage: hLinkage,
         dbscan_eps: dbscanEps,
         dbscan_min_pts: dbscanMin,
@@ -209,6 +214,7 @@ async function runClustering() {
             cluster_method: method,
             maxiter,
             tol,
+            kmeans_n_init: nInit,
             hclust_linkage: hLinkage,
             dbscan_eps:     dbscanEps,
             dbscan_min_pts: dbscanMin,
@@ -577,6 +583,8 @@ async function runClusterSweep() {
     const gHmult  = parseFloat(document.getElementById('cluster-gaussian-hmult').value);
     const maxiter = parseInt(document.getElementById('cluster-maxiter').value) || 300;
     const tol     = parseFloat(document.getElementById('cluster-tol').value) || 1e-6;
+    const nInit   = Math.min(100, Math.max(1, parseInt(document.getElementById('cluster-n-init').value, 10) || 3));
+    document.getElementById('cluster-n-init').value = nInit;
     const hLink   = document.getElementById('cluster-hclust-linkage').value;
     let body;
 
@@ -599,7 +607,7 @@ async function runClusterSweep() {
     const { qLo: preQLo, qHi: preQHi }       = getClusterPrescreenQuantiles();
     Object.assign(body, {
         smooth_method: smooth, lowess_frac: lowess, gaussian_h_mult: gHmult,
-        cluster_method: method, maxiter, tol, hclust_linkage: hLink,
+        cluster_method: method, maxiter, tol, kmeans_n_init: nInit, hclust_linkage: hLink,
         interpolate:         doInterpolate,
         interp_n:            parseInt(document.getElementById('cluster-interp-n').value) || 100,
         interp_quantile_lo:  interpQLo,
