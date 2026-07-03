@@ -8,6 +8,7 @@
     cluster_method = string(body.cluster_method)
     maxiter        = Int(body.maxiter)
     tol            = Float64(body.tol)
+    kmeans_n_init  = clamp(Int(body.kmeans_n_init), 1, 100)
     dbscan_eps     = Float64(body.dbscan_eps)
     dbscan_minpts  = Int(body.dbscan_min_pts)
     hclust_linkage = Symbol(body.hclust_linkage)
@@ -223,6 +224,7 @@
         n_clusters                 = k_eff,
         cluster_method             = Symbol(cluster_method),
         cluster_trend_test         = Bool(body.trend_test_flat),
+        cluster_trend_p_thr        = Float64(body.trend_p_thr),
         cluster_prescreen_constant = do_prescreen,
         cluster_tol_const          = Float64(body.prescreen_tol_const),
         cluster_q_low              = prescreen_qlo,
@@ -230,6 +232,7 @@
         cluster_hclust_linkage     = Symbol(hclust_linkage),
         cluster_dbscan_eps         = Float64(dbscan_eps),
         cluster_dbscan_minpts      = Int(dbscan_minpts),
+        kmeans_n_init              = kmeans_n_init,
         kmeans_max_iters           = maxiter,
         kmeans_tol                 = tol,
     )
@@ -280,7 +283,8 @@
 
     # Remap to contiguous 1..k (required by clustering_quality)
     ids_remapped, _ = _remap_ids(ids_for_qual)
-    quality = _cluster_quality_indices(X_for_qual, ids_remapped)
+    X_for_qual_z = _zscore_rows(X_for_qual)
+    quality = _cluster_quality_indices(X_for_qual_z, ids_remapped)
 
     # Per-cluster silhouette mean (keyed by original cluster id)
     sil_per_cluster = Dict{String,Any}()
@@ -334,6 +338,7 @@ end
     cluster_method = string(body.cluster_method)
     maxiter        = Int(body.maxiter)
     tol            = Float64(body.tol)
+    kmeans_n_init  = clamp(Int(body.kmeans_n_init), 1, 100)
     hclust_linkage = Symbol(body.hclust_linkage)
 
     # Re-use the same data-loading logic as /api/cluster
@@ -473,11 +478,13 @@ end
             n_clusters                 = k,
             cluster_method             = Symbol(cluster_method),
             cluster_trend_test         = Bool(body.trend_test_flat),
+            cluster_trend_p_thr        = Float64(body.trend_p_thr),
             cluster_prescreen_constant = prescreen_for_k,
             cluster_tol_const          = Float64(body.prescreen_tol_const),
             cluster_q_low              = prescreen_qlo,
             cluster_q_high             = prescreen_qhi,
             cluster_hclust_linkage     = hclust_linkage,
+            kmeans_n_init              = kmeans_n_init,
             kmeans_max_iters           = maxiter,
             kmeans_tol                 = tol,
         )

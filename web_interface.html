@@ -481,7 +481,7 @@
                                     </div>
                                 </div>
 
-                                <!-- maxiter / tol (kmeans + kmedoids) -->
+                                <!-- k-means / k-medoids optimizer controls -->
                                 <div id="cluster-iter-params" style="display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end; border-left:2px solid #dee2e6; padding-left:12px;">
                                     <div style="display:flex; flex-direction:column; gap:4px;">
                                         <label style="font-weight:600;">Max iterations</label>
@@ -490,6 +490,12 @@
                                     <div style="display:flex; flex-direction:column; gap:4px;">
                                         <label style="font-weight:600;">Tolerance</label>
                                         <input type="number" id="cluster-tol" value="1e-6" min="0" step="1e-7" style="width:90px; padding:4px 6px;">
+                                    </div>
+                                    <div id="cluster-n-init-param" style="display:flex; flex-direction:column; gap:4px;">
+                                        <label style="font-weight:600;" title="Number of k-means random starts. The best WCSS run is kept.">Initializations</label>
+                                        <input type="number" id="cluster-n-init" value="3" min="1" max="100" step="1"
+                                               title="Number of k-means random starts, clamped to 1-100."
+                                               style="width:90px; padding:4px 6px;">
                                     </div>
                                 </div>
 

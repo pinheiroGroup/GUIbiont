@@ -160,6 +160,7 @@ Base.@kwdef mutable struct ClusterRequest
     cluster_method::String = "kmeans"
     maxiter::Int = 300
     tol::Float64 = 1e-15
+    kmeans_n_init::Int = 3
     dbscan_eps::Float64 = 1.0
     dbscan_min_pts::Int = 3
     hclust_linkage::String = "ward"
@@ -190,6 +191,7 @@ Base.@kwdef mutable struct ClusterSweepRequest
     cluster_method::String = "kmeans"
     maxiter::Int = 300
     tol::Float64 = 1e-15
+    kmeans_n_init::Int = 3
     hclust_linkage::String = "ward"
     interpolate::Bool = false
     interp_n::Int = 100
