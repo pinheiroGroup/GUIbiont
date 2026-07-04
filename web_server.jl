@@ -49,5 +49,11 @@ end
 
 staticfiles("static", "static")
 
-@info "Starting GUIbiont on port $PORT"
-serve(middleware=[CORSMiddleware], host="0.0.0.0", port=PORT, async=false)
+# During the Docker build we `include` this file only to precompile the request
+# paths, then exit without binding a port. Skip serving in that mode.
+if get(ENV, "GUIBIONT_PRECOMPILE_ONLY", "false") == "true"
+    @info "Precompile-only run: routes loaded, skipping serve()"
+else
+    @info "Starting GUIbiont on port $PORT"
+    serve(middleware=[CORSMiddleware], host="0.0.0.0", port=PORT, async=false)
+end

@@ -10,7 +10,61 @@ A web platform for large-scale microbial growth curve analysis, built on KinBion
 - **Multi-experiment Support**: Compare data across multiple experiments
 - **Export Capabilities**: Export plots as PNG/SVG
 
-## Quick Start
+## Easy Install (recommended for most users)
+
+No Julia, no dependencies, no compilation wait — just Docker. The image ships
+with everything precompiled, so it starts in seconds.
+
+1. **Install [Docker Desktop](https://www.docker.com/products/docker-desktop/)** (Windows, macOS, or Linux) and start it.
+2. **Download the launcher** for your system from this repository:
+   - macOS / Linux → `run.sh`
+   - Windows → `run.ps1`
+3. **Run it:**
+
+   **macOS / Linux**
+   ```bash
+   chmod +x run.sh
+   ./run.sh
+   ```
+
+   **Windows** (right-click `run.ps1` → *Run with PowerShell*, or in a terminal):
+   ```powershell
+   .\run.ps1
+   ```
+
+The launcher automatically:
+
+- **asks (on first run) where to store your data**, then remembers your choice,
+- picks a free port (starting at 8080, skips it if busy),
+- creates your data folders and mounts them into the app,
+- pulls the latest version, and
+- opens GUIbiont in your browser once it's ready.
+
+### Choosing where your data lives
+
+On the **first run** you'll be asked for a data folder; press Enter to accept
+the default (`~/GUIbiont-data`, or `%USERPROFILE%\GUIbiont-data` on Windows) or
+type any path. Your answer is remembered, so later runs don't ask again.
+
+- **Change it later:** `./run.sh config` (or `.\run.ps1 config`) forgets the
+  saved folder, so the next run asks again.
+- **Set it non-interactively / scripted:** the `GUIBIONT_DATA` environment
+  variable always wins and is not persisted, e.g.
+  `GUIBIONT_DATA=/data/lab ./run.sh`.
+
+Whatever folder you pick gets `raw_data/` and `Clean_data/` subfolders. Because
+it lives outside the app, it is never touched by updates.
+
+**To update:** just run the launcher again — it pulls the newest image.
+
+**To stop:** `./run.sh stop` (or `.\run.ps1 stop`).
+
+> Other environment overrides: `GUIBIONT_PORT` (starting port),
+> `GUIBIONT_IMAGE` (image to run).
+
+---
+
+## Developer Setup (run from source with Julia)
 
 1. **Install Julia** (version 1.6 or higher)
 

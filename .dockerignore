@@ -1,0 +1,51 @@
+# Keep the Docker build context small and reproducible.
+# Only the server, src/, static/, calibration/, and Project.toml are needed.
+
+.git
+.github
+.venv
+.vscode
+.idea
+.agents
+.claude
+.ipynb_checkpoints
+
+# User data — mounted at runtime as volumes, never baked into the image.
+Clean_data/
+raw_data/
+data/
+
+# Notebooks, scratch, and analysis artifacts
+*.ipynb
+*.png
+*.csv
+flux/
+improved_plots/
+docs/
+
+# …but calibration curves ARE required by the server (src/data.jl reads them).
+!calibration
+!calibration/*.csv
+
+# Python side of the repo (not used by the Julia server)
+*.py
+pyproject.toml
+uv.lock
+.python-version
+.venv/
+
+# Julia scratch / experiment scripts and duplicate server copies
+check_*.jl
+compare_*.jl
+debug_*.jl
+verify_*.jl
+web_server.jl.NEW
+web_server.jl.OLD
+
+# Loose fit-curve JSON dumps
+fit-curve*.json
+
+# Lockfile for skills, misc
+skills-lock.json
+REFACTORING.md
+*.theme
