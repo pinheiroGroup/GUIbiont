@@ -261,6 +261,66 @@
             word-break: break-word;
         }
 
+        .cluster-sweep-card {
+            min-width: 0;
+        }
+
+        .cluster-sweep-titlebar {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            height: 28px;
+            margin-bottom: 2px;
+            padding: 0 2px 0 4px;
+        }
+
+        .cluster-sweep-title-text {
+            color: #495057;
+            font-size: 0.9em;
+            font-weight: 600;
+            line-height: 1.2;
+            min-width: 0;
+            max-width: calc(100% - 34px);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .cluster-sweep-download {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex: 0 0 auto;
+            width: 22px;
+            height: 22px;
+            margin: 0;
+            padding: 0;
+            border: 0;
+            border-radius: 4px;
+            background: transparent;
+            color: rgba(73, 80, 87, 0.42);
+            cursor: pointer;
+            transition: background-color 0.15s ease, color 0.15s ease;
+        }
+
+        .cluster-sweep-download:hover,
+        .cluster-sweep-download:focus-visible {
+            background: rgba(73, 80, 87, 0.08);
+            color: rgba(73, 80, 87, 0.72);
+            outline: none;
+        }
+
+        .cluster-sweep-download svg {
+            width: 15px;
+            height: 15px;
+            fill: currentColor;
+        }
+
+        .cluster-sweep-plot {
+            height: 194px;
+        }
+
         .clustering-exp-list {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));

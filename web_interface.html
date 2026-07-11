@@ -683,6 +683,7 @@
                     <div id="cluster-blank-notice" style="display:none; font-size:0.875em; padding:6px 12px; border-radius:6px; background:rgba(74,144,226,0.1); border:1px solid #4a90e2; color:#2c5f8a;"></div>
                     <div style="display:flex; gap:8px; margin-left:auto;">
                         <button class="btn" id="cluster-export-btn" onclick="openClusterCodeExport()" disabled>📋 Export Julia code</button>
+                        <button class="btn" onclick="exportClusterCentroidsCSV()">📥 Export centroids (CSV)</button>
                         <button class="btn" onclick="exportAllClustersCSV()">📥 Export all (CSV)</button>
                         <button class="btn" onclick="exportAllClustersPNG()">🖼 Export all (PNG)</button>
                     </div>
@@ -707,12 +708,60 @@
                 <div style="background:#fff; border:1px solid #dee2e6; border-radius:8px; padding:16px;">
                     <h4 style="margin:0 0 12px; color:#495057;">🔍 Best k — Quality Indices</h4>
                     <div id="cluster-sweep-grid" style="display:grid; grid-template-columns:repeat(3,1fr); gap:12px;">
-                        <div id="cluster-sweep-plot-wcss"           style="height:220px;"></div>
-                        <div id="cluster-sweep-plot-silhouette"     style="height:220px;"></div>
-                        <div id="cluster-sweep-plot-calinski"       style="height:220px;"></div>
-                        <div id="cluster-sweep-plot-xie_beni"       style="height:220px;"></div>
-                        <div id="cluster-sweep-plot-davies_bouldin" style="height:220px;"></div>
-                        <div id="cluster-sweep-plot-dunn"           style="height:220px;"></div>
+                        <div class="cluster-sweep-card" data-sweep-metric="wcss">
+                            <div class="cluster-sweep-titlebar">
+                                <span id="cluster-sweep-title-wcss" class="cluster-sweep-title-text">WCSS</span>
+                                <button type="button" class="cluster-sweep-download" data-sweep-metric="wcss" title="download metric results" aria-label="download metric results">
+                                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h12l2 2v16H5V3zm2 2v14h10V7.8L14.2 5H13v5H8V5H7zm3 0v3h1V5h-1zm-1 9h6v4H9v-4z"/></svg>
+                                </button>
+                            </div>
+                            <div id="cluster-sweep-plot-wcss" class="cluster-sweep-plot"></div>
+                        </div>
+                        <div class="cluster-sweep-card" data-sweep-metric="silhouette_mean">
+                            <div class="cluster-sweep-titlebar">
+                                <span id="cluster-sweep-title-silhouette_mean" class="cluster-sweep-title-text">Silhouette (mean)</span>
+                                <button type="button" class="cluster-sweep-download" data-sweep-metric="silhouette_mean" title="download metric results" aria-label="download metric results">
+                                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h12l2 2v16H5V3zm2 2v14h10V7.8L14.2 5H13v5H8V5H7zm3 0v3h1V5h-1zm-1 9h6v4H9v-4z"/></svg>
+                                </button>
+                            </div>
+                            <div id="cluster-sweep-plot-silhouette" class="cluster-sweep-plot"></div>
+                        </div>
+                        <div class="cluster-sweep-card" data-sweep-metric="calinski_harabasz">
+                            <div class="cluster-sweep-titlebar">
+                                <span id="cluster-sweep-title-calinski_harabasz" class="cluster-sweep-title-text">Calinski-Harabasz</span>
+                                <button type="button" class="cluster-sweep-download" data-sweep-metric="calinski_harabasz" title="download metric results" aria-label="download metric results">
+                                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h12l2 2v16H5V3zm2 2v14h10V7.8L14.2 5H13v5H8V5H7zm3 0v3h1V5h-1zm-1 9h6v4H9v-4z"/></svg>
+                                </button>
+                            </div>
+                            <div id="cluster-sweep-plot-calinski" class="cluster-sweep-plot"></div>
+                        </div>
+                        <div class="cluster-sweep-card" data-sweep-metric="xie_beni">
+                            <div class="cluster-sweep-titlebar">
+                                <span id="cluster-sweep-title-xie_beni" class="cluster-sweep-title-text">Xie-Beni</span>
+                                <button type="button" class="cluster-sweep-download" data-sweep-metric="xie_beni" title="download metric results" aria-label="download metric results">
+                                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h12l2 2v16H5V3zm2 2v14h10V7.8L14.2 5H13v5H8V5H7zm3 0v3h1V5h-1zm-1 9h6v4H9v-4z"/></svg>
+                                </button>
+                            </div>
+                            <div id="cluster-sweep-plot-xie_beni" class="cluster-sweep-plot"></div>
+                        </div>
+                        <div class="cluster-sweep-card" data-sweep-metric="davies_bouldin">
+                            <div class="cluster-sweep-titlebar">
+                                <span id="cluster-sweep-title-davies_bouldin" class="cluster-sweep-title-text">Davies-Bouldin</span>
+                                <button type="button" class="cluster-sweep-download" data-sweep-metric="davies_bouldin" title="download metric results" aria-label="download metric results">
+                                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h12l2 2v16H5V3zm2 2v14h10V7.8L14.2 5H13v5H8V5H7zm3 0v3h1V5h-1zm-1 9h6v4H9v-4z"/></svg>
+                                </button>
+                            </div>
+                            <div id="cluster-sweep-plot-davies_bouldin" class="cluster-sweep-plot"></div>
+                        </div>
+                        <div class="cluster-sweep-card" data-sweep-metric="dunn">
+                            <div class="cluster-sweep-titlebar">
+                                <span id="cluster-sweep-title-dunn" class="cluster-sweep-title-text">Dunn</span>
+                                <button type="button" class="cluster-sweep-download" data-sweep-metric="dunn" title="download metric results" aria-label="download metric results">
+                                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h12l2 2v16H5V3zm2 2v14h10V7.8L14.2 5H13v5H8V5H7zm3 0v3h1V5h-1zm-1 9h6v4H9v-4z"/></svg>
+                                </button>
+                            </div>
+                            <div id="cluster-sweep-plot-dunn" class="cluster-sweep-plot"></div>
+                        </div>
                     </div>
                 </div>
             </div>
