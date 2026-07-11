@@ -20,6 +20,7 @@ export const state = {
     searchTimeout:         null,
     currentClusteringMode: 'file',
     _lastClusterData:      null,
+    _lastClusterSweep:     [],
     _savedClusterings:     [],
     _lastBlankAnalysis:    null,
     legendFontSize:        parseInt(localStorage.getItem('legendFontSize')     || '14'),

@@ -475,6 +475,77 @@ function exportAllClustersCSV() {
     _downloadCSV(rows, 'clusters_all.csv');
 }
 
+function exportClusterCentroidsCSV() {
+    const data = state._lastClusterData;
+    if (!data || !Array.isArray(data.clusters) || data.clusters.length === 0) {
+        alert('No clustering results to export.');
+        return;
+    }
+
+    const time = Array.isArray(data.time) ? data.time : [];
+    const nTimeCols = Math.max(
+        time.length,
+        ...data.clusters.map(cluster => Math.max(
+            (cluster.centroid_raw || []).length,
+            (cluster.centroid_raw_sd || []).length,
+            (cluster.centroid_normalized || []).length,
+            (cluster.centroid_normalized_sd || []).length,
+        )),
+    );
+    const timeLabels = Array.from({ length: nTimeCols }, (_, i) => {
+        const t = time[i];
+        const n = Number(t);
+        const suffix = Number.isFinite(n)
+            ? (Number.isInteger(n) ? String(n) : String(Number(n.toPrecision(12))))
+            : String(t);
+        return suffix === '' || suffix === 'undefined' ? String(i + 1) : suffix;
+    });
+    const clusters = [...data.clusters].sort((a, b) => {
+        const ai = Number.isFinite(a.id) ? a.id : Number.MAX_SAFE_INTEGER;
+        const bi = Number.isFinite(b.id) ? b.id : Number.MAX_SAFE_INTEGER;
+        if (ai !== bi) return ai - bi;
+        return String(a.label || '').localeCompare(String(b.label || ''));
+    });
+    const hasDistinctClusterLabels = clusters.some(cluster => {
+        const id = cluster.id ?? '';
+        return String(cluster.label || id) !== String(id);
+    });
+    const clusterColumns = hasDistinctClusterLabels
+        ? ['cluster_id', 'cluster_label']
+        : ['cluster'];
+    const header = [
+        ...clusterColumns,
+        'n_series',
+        'type',
+        ...timeLabels.map(t => `centroid_t_${t}`),
+        ...timeLabels.map(t => `centroid_sd_t_${t}`),
+    ];
+    const rows = [header];
+
+    clusters.forEach(cluster => {
+        const nSeries  = cluster.n_total ?? (cluster.series_labels || []).length;
+        const idxs     = Array.from({ length: nTimeCols }, (_, i) => i);
+        const clusterValues = hasDistinctClusterLabels
+            ? [cluster.id ?? '', cluster.label || String(cluster.id ?? '')]
+            : [cluster.label || String(cluster.id ?? '')];
+
+        [
+            ['normalized', cluster.centroid_normalized || [], cluster.centroid_normalized_sd || []],
+            ['raw',        cluster.centroid_raw || [],        cluster.centroid_raw_sd || []],
+        ].forEach(([type, centroid, centroidSd]) => {
+            rows.push([
+                ...clusterValues,
+                nSeries,
+                type,
+                ...idxs.map(i => centroid[i] ?? ''),
+                ...idxs.map(i => centroidSd[i] ?? ''),
+            ]);
+        });
+    });
+
+    _downloadCSV(rows, 'cluster_centroids_raw_and_normalized.csv');
+}
+
 async function exportAllClustersPNG() {
     if (!state._lastClusterData) return;
     const plotDivs = document.querySelectorAll('.cluster-plot-div');
@@ -575,6 +646,57 @@ function renderQualityPanel(data) {
 // Best-k sweep
 // ----------------------------------------------------------------
 
+const SWEEP_METRICS = [
+    {
+        key: 'wcss',
+        divId: 'cluster-sweep-plot-wcss',
+        titleId: 'cluster-sweep-title-wcss',
+        label: 'WCSS',
+        direction: '\u2193',
+        color: '#2c7bb6',
+    },
+    {
+        key: 'silhouette_mean',
+        divId: 'cluster-sweep-plot-silhouette',
+        titleId: 'cluster-sweep-title-silhouette_mean',
+        label: 'Silhouette (mean)',
+        direction: '\u2191',
+        color: '#4a90e2',
+    },
+    {
+        key: 'calinski_harabasz',
+        divId: 'cluster-sweep-plot-calinski',
+        titleId: 'cluster-sweep-title-calinski_harabasz',
+        label: 'Calinski-Harabasz',
+        direction: '\u2191',
+        color: '#e67e22',
+    },
+    {
+        key: 'xie_beni',
+        divId: 'cluster-sweep-plot-xie_beni',
+        titleId: 'cluster-sweep-title-xie_beni',
+        label: 'Xie-Beni',
+        direction: '\u2193',
+        color: '#8e44ad',
+    },
+    {
+        key: 'davies_bouldin',
+        divId: 'cluster-sweep-plot-davies_bouldin',
+        titleId: 'cluster-sweep-title-davies_bouldin',
+        label: 'Davies-Bouldin',
+        direction: '\u2193',
+        color: '#e74c3c',
+    },
+    {
+        key: 'dunn',
+        divId: 'cluster-sweep-plot-dunn',
+        titleId: 'cluster-sweep-title-dunn',
+        label: 'Dunn',
+        direction: '\u2191',
+        color: '#27ae60',
+    },
+];
+
 async function runClusterSweep() {
     const kMax    = parseInt(document.getElementById('cluster-sweep-kmax').value) || 10;
     const smooth  = document.getElementById('cluster-smooth-method').value;
@@ -628,7 +750,8 @@ async function runClusterSweep() {
         });
         if (!res.ok) { alert('Sweep failed: ' + (await res.json()).error); return; }
         const data = await res.json();
-        renderSweepPanel(data.sweep);
+        state._lastClusterSweep = data.sweep || [];
+        renderSweepPanel(state._lastClusterSweep);
     } catch (e) {
         alert('Sweep failed: ' + e.message);
     } finally {
@@ -647,14 +770,47 @@ function _detectElbow(ks, wcss) {
     return ks[elbowIdx];
 }
 
+function _setSweepTitle(metricKey, text) {
+    const metric = SWEEP_METRICS.find(m => m.key === metricKey);
+    const titleEl = metric ? document.getElementById(metric.titleId) : null;
+    if (titleEl) titleEl.textContent = text;
+}
+
+function _bindSweepDownloadButtons() {
+    document.querySelectorAll('.cluster-sweep-download').forEach(btn => {
+        btn.onclick = () => downloadSweepMetricCSV(btn.dataset.sweepMetric);
+    });
+}
+
+function downloadSweepMetricCSV(metricKey) {
+    const metric = SWEEP_METRICS.find(m => m.key === metricKey);
+    const sweep = state._lastClusterSweep || [];
+    if (!metric || sweep.length === 0) {
+        alert('No sweep results to export.');
+        return;
+    }
+
+    const rows = [['k', metric.key]];
+    sweep.forEach(r => {
+        const value = Number.isFinite(r[metric.key]) ? r[metric.key] : '';
+        rows.push([r.k, value]);
+    });
+    _downloadCSV(rows, `cluster_sweep_${metric.key}.csv`);
+}
+
 function renderSweepPanel(sweep) {
+    sweep = sweep || [];
+    state._lastClusterSweep = sweep || [];
     document.getElementById('cluster-sweep-panel').style.display = 'block';
+    _bindSweepDownloadButtons();
+
     const ks   = sweep.map(r => r.k);
     const wcss = sweep.map(r => r.wcss);
 
     // --- WCSS elbow plot ---
     const elbowK = _detectElbow(ks, wcss);
     const elbowY = wcss[ks.indexOf(elbowK)];
+    _setSweepTitle('wcss', `WCSS (elbow: k=${elbowK}) \u2193`);
     Plotly.newPlot(document.getElementById('cluster-sweep-plot-wcss'), [
         {
             type: 'scatter', mode: 'lines+markers',
@@ -670,10 +826,10 @@ function renderSweepPanel(sweep) {
             hovertemplate: `Elbow k=${elbowK}<extra></extra>`,
         },
     ], {
-        margin: { t: 36, b: 36, l: 52, r: 10 },
+        margin: { t: 8, b: 36, l: 52, r: 10 },
         xaxis:  { title: 'N clusters', dtick: 1, tickfont: { size: 11 } },
         yaxis:  { title: 'WCSS', tickfont: { size: 11 } },
-        title:  { text: `WCSS (elbow: k=${elbowK}) ↓`, font: { size: 12 } },
+        title:  { text: '', font: { size: 12 } },
         showlegend: false,
     }, { responsive: true, displayModeBar: false });
 
@@ -687,6 +843,8 @@ function renderSweepPanel(sweep) {
     ];
 
     indices.forEach(({ key, divId, label, color }) => {
+        const metric = SWEEP_METRICS.find(m => m.key === key);
+        _setSweepTitle(key, metric ? `${metric.label} ${metric.direction}` : label);
         const points = sweep.filter(r => Number.isFinite(r[key]));
         const xs = points.map(r => r.k);
         const ys = points.map(r => r[key]);
@@ -697,10 +855,10 @@ function renderSweepPanel(sweep) {
             line:   { color },
             hovertemplate: 'k=%{x}  %{y:.4f}<extra></extra>',
         }], {
-            margin: { t: 36, b: 36, l: 52, r: 10 },
+            margin: { t: 8, b: 36, l: 52, r: 10 },
             xaxis:  { title: 'N clusters', dtick: 1, tickfont: { size: 11 } },
             yaxis:  { title: 'Quality', tickfont: { size: 11 } },
-            title:  { text: label, font: { size: 12 } },
+            title:  { text: '', font: { size: 12 } },
         }, { responsive: true, displayModeBar: false });
     });
 }
@@ -873,7 +1031,7 @@ export {
     onClusteringFileChange, updateClusteringRunBtn, toggleClusteringAdvanced,
     onClusterSmoothChange, onClusterMethodChange, onClusterBlankChange, onClusterInterpolateChange,
     renderClusterBlankNotice, runClustering, renderClusterGrid,
-    exportClusterCSV, exportAllClustersCSV, exportAllClustersPNG,
+    exportClusterCSV, exportAllClustersCSV, exportClusterCentroidsCSV, exportAllClustersPNG,
     renderQualityPanel, runClusterSweep, renderSweepPanel,
     saveCurrentClustering, clearSavedClusterings, refreshSavedClusteringSelects,
     runClusterComparison, renderComparisonResult, hexToRgba,

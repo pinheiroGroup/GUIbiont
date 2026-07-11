@@ -247,14 +247,14 @@
     # ------------------------------------------------------------------
     # Display curves (optionally z-scored)
     # ------------------------------------------------------------------
-    display_curves = copy(curves_for_cluster)
-    if normalize
-        for i in 1:n_series
-            row = display_curves[i, :]
-            s   = std(row)
-            s > 1e-12 && (display_curves[i, :] = (row .- mean(row)) ./ s)
-        end
+    raw_curves        = copy(curves_for_cluster)
+    normalized_curves = copy(curves_for_cluster)
+    for i in 1:n_series
+        row = normalized_curves[i, :]
+        s   = std(row)
+        s > 1e-12 && (normalized_curves[i, :] = (row .- mean(row)) ./ s)
     end
+    display_curves = normalize ? normalized_curves : raw_curves
 
     # Collect unique cluster ids (DBSCAN may produce arbitrary ids incl 0)
     unique_ids = sort(unique(cluster_ids))
@@ -264,13 +264,19 @@
         isempty(mask) && continue
         label = c == 0 ? "Noise" : string(c)
         centroid, centroid_sd = _centroid_with_sd(display_curves, mask)
+        centroid_raw, centroid_raw_sd = _centroid_with_sd(raw_curves, mask)
+        centroid_norm, centroid_norm_sd = _centroid_with_sd(normalized_curves, mask)
         push!(clusters, Dict(
-            "id"            => c,
-            "label"         => label,
-            "series_labels" => labels_all[mask],
-            "series_data"   => [display_curves[i, :] for i in mask],
-            "centroid"      => centroid,
-            "centroid_sd"   => centroid_sd,
+            "id"                     => c,
+            "label"                  => label,
+            "series_labels"          => labels_all[mask],
+            "series_data"            => [display_curves[i, :] for i in mask],
+            "centroid"               => centroid,
+            "centroid_sd"            => centroid_sd,
+            "centroid_raw"           => centroid_raw,
+            "centroid_raw_sd"        => centroid_raw_sd,
+            "centroid_normalized"    => centroid_norm,
+            "centroid_normalized_sd" => centroid_norm_sd,
         ))
     end
 
