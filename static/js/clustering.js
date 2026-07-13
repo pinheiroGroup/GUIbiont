@@ -40,6 +40,21 @@ function buildClusterPlotTraces(data, cluster, expColorMap, selectedIndices = nu
     const seriesLabels = cluster.series_labels || [];
 
     if (Array.isArray(selectedIndices)) {
+        const selectedSet = new Set(selectedIndices);
+        seriesData.forEach((y, i) => {
+            if (!Array.isArray(y) || selectedSet.has(i)) return;
+            traces.push({
+                x: time,
+                y,
+                mode: 'lines',
+                type: 'scatter',
+                name: '',
+                line: { width: 0.6, color: 'rgba(170,170,170,0.32)' },
+                showlegend: false,
+                hoverinfo: 'skip',
+            });
+        });
+
         selectedIndices.forEach((seriesIndex, selectedIndex) => {
             const y = seriesData[seriesIndex];
             if (!Array.isArray(y)) return;
