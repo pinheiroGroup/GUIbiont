@@ -13,6 +13,153 @@ function hexToRgba(hex, alpha) {
     return `rgba(${r},${g},${b},${alpha})`;
 }
 
+const CLUSTER_DRILL_COLORS = [
+    '#2563eb', '#dc2626', '#16a34a', '#9333ea', '#ea580c',
+    '#0891b2', '#be123c', '#4d7c0f', '#7c3aed', '#ca8a04'
+];
+
+function getClusterSeriesId(cluster, index) {
+    const label = cluster.series_labels?.[index] ?? `Series ${index + 1}`;
+    const metadata = cluster.series_metadata?.[index] || cluster.series_meta?.[index] || null;
+    if (metadata && typeof metadata === 'object') {
+        const keys = ['id', 'ID', 'Id', 'label', 'Label', 'name', 'Name', 'well', 'Well'];
+        for (const key of keys) {
+            const value = metadata[key];
+            if (value !== undefined && value !== null && String(value).trim() !== '') {
+                return String(value);
+            }
+        }
+    }
+    return String(label);
+}
+
+function buildClusterPlotTraces(data, cluster, expColorMap, selectedIndices = null) {
+    const time = data.time;
+    const traces = [];
+    const seriesData = cluster.series_data || [];
+    const seriesLabels = cluster.series_labels || [];
+
+    if (Array.isArray(selectedIndices)) {
+        selectedIndices.forEach((seriesIndex, selectedIndex) => {
+            const y = seriesData[seriesIndex];
+            if (!Array.isArray(y)) return;
+            const label = seriesLabels[seriesIndex] || `Series ${seriesIndex + 1}`;
+            const seriesId = getClusterSeriesId(cluster, seriesIndex);
+            const color = CLUSTER_DRILL_COLORS[selectedIndex % CLUSTER_DRILL_COLORS.length];
+            traces.push({
+                x: time,
+                y,
+                mode: 'lines',
+                type: 'scatter',
+                name: seriesId,
+                customdata: time.map(() => seriesId),
+                line: { width: 2.5, color },
+                showlegend: true,
+                hovertemplate: 'ID: %{customdata}<br>Time: %{x}<br>Value: %{y}<extra></extra>',
+            });
+            if (label !== seriesId) {
+                traces[traces.length - 1].legendgroup = label;
+            }
+        });
+        return traces;
+    }
+
+    seriesData.forEach((y, i) => {
+        const label = seriesLabels[i] || `Series ${i + 1}`;
+        const exp = label.includes('/') ? label.split('/')[0] : null;
+        const color = exp ? hexToRgba(expColorMap[exp], 0.45) : 'rgba(120,120,120,0.4)';
+        traces.push({
+            x: time, y,
+            mode: 'lines', type: 'scatter',
+            name: label,
+            line: { width: 1, color },
+            showlegend: false
+        });
+    });
+
+    const centroid = cluster.centroid;
+    const centroidSd = cluster.centroid_sd;
+    if (centroid && centroidSd) {
+        const upper = centroid.map((v, i) => v + centroidSd[i]);
+        const lower = centroid.map((v, i) => v - centroidSd[i]);
+        traces.push({
+            x: [...time, ...time.slice().reverse()],
+            y: [...upper, ...lower.slice().reverse()],
+            fill: 'toself', fillcolor: 'rgba(180,0,0,0.10)',
+            line: { color: 'transparent' },
+            type: 'scatter', mode: 'lines',
+            name: '+/- SD', showlegend: false, hoverinfo: 'skip',
+        });
+        traces.push({
+            x: time, y: centroid,
+            mode: 'lines', type: 'scatter',
+            name: 'Mean +/- SD',
+            line: { width: 2, color: 'rgb(180,0,0)' },
+            showlegend: true,
+        });
+    } else {
+        const avgY = time.map((_, ti) => {
+            const vals = seriesData.map(s => s[ti]).filter(v => isFinite(v));
+            return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+        });
+        traces.push({
+            x: time, y: avgY,
+            mode: 'lines', type: 'scatter',
+            name: 'Mean',
+            line: { width: 2, color: 'rgb(180,0,0)' },
+            showlegend: true,
+        });
+    }
+
+    return traces;
+}
+
+function buildClusterPlotLayout(data, selectedIndices = null) {
+    const selected = Array.isArray(selectedIndices);
+    return {
+        margin: { t: selected ? 28 : 10, r: 10, b: 40, l: 50 },
+        xaxis: { title: data.time_normalized ? 'Normalized time [0-1]' : 'Time' },
+        yaxis: { title: 'Value' },
+        legend: { x: 0, y: 1, orientation: selected ? 'h' : 'v' },
+        title: selected ? { text: `${selectedIndices.length} nearest curves`, font: { size: 14 } } : { text: '' },
+    };
+}
+
+function getPlotClickPoint(plotDiv, event) {
+    const layout = plotDiv._fullLayout;
+    if (!layout || !layout.xaxis || !layout.yaxis || !layout._size) return null;
+    const rect = plotDiv.getBoundingClientRect();
+    const xPixel = event.clientX - rect.left - layout._size.l;
+    const yPixel = event.clientY - rect.top - layout._size.t;
+    if (xPixel < 0 || yPixel < 0 || xPixel > layout._size.w || yPixel > layout._size.h) return null;
+    const x = layout.xaxis.p2c(xPixel);
+    const y = layout.yaxis.p2c(yPixel);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return { x, y };
+}
+
+function nearestClusterSeriesIndices(time, seriesData, point, xRange, yRange, count = 5) {
+    const xSpan = Math.max(Math.abs((xRange?.[1] ?? time[time.length - 1]) - (xRange?.[0] ?? time[0])), 1e-12);
+    const ySpan = Math.max(Math.abs((yRange?.[1] ?? 1) - (yRange?.[0] ?? 0)), 1e-12);
+    const distances = [];
+    seriesData.forEach((series, seriesIndex) => {
+        let best = Infinity;
+        for (let i = 0; i < Math.min(time.length, series.length); i += 1) {
+            const x = Number(time[i]);
+            const y = Number(series[i]);
+            if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+            const dx = (x - point.x) / xSpan;
+            const dy = (y - point.y) / ySpan;
+            best = Math.min(best, dx * dx + dy * dy);
+        }
+        if (Number.isFinite(best)) distances.push({ seriesIndex, distance: best });
+    });
+    return distances
+        .sort((a, b) => a.distance - b.distance)
+        .slice(0, count)
+        .map(item => item.seriesIndex);
+}
+
 function setClusteringMode(mode) {
     state.currentClusteringMode = mode;
     document.getElementById('cluster-mode-btn-file').classList.toggle('active', mode === 'file');
@@ -307,6 +454,28 @@ function renderClusterGrid(data) {
 
         cell.appendChild(title);
 
+        const drillNav = document.createElement('div');
+        drillNav.className = 'cluster-drill-nav';
+        const drillPrevBtn = document.createElement('button');
+        drillPrevBtn.type = 'button';
+        drillPrevBtn.className = 'cluster-drill-nav-btn';
+        drillPrevBtn.textContent = '<';
+        drillPrevBtn.title = 'Previous selection';
+        const drillHomeBtn = document.createElement('button');
+        drillHomeBtn.type = 'button';
+        drillHomeBtn.className = 'cluster-drill-nav-btn';
+        drillHomeBtn.textContent = 'Home';
+        drillHomeBtn.title = 'Original cluster view';
+        const drillNextBtn = document.createElement('button');
+        drillNextBtn.type = 'button';
+        drillNextBtn.className = 'cluster-drill-nav-btn';
+        drillNextBtn.textContent = '>';
+        drillNextBtn.title = 'Next selection';
+        drillNav.appendChild(drillPrevBtn);
+        drillNav.appendChild(drillHomeBtn);
+        drillNav.appendChild(drillNextBtn);
+        cell.appendChild(drillNav);
+
         // Plot div
         const plotDiv = document.createElement('div');
         plotDiv.className = 'cluster-plot-div';
@@ -345,6 +514,46 @@ function renderClusterGrid(data) {
 
         grid.appendChild(cell);
 
+        const drillState = {
+            history: [null],
+            index: 0,
+        };
+
+        function currentSelection() {
+            return drillState.history[drillState.index];
+        }
+
+        function updateDrillNav() {
+            const isFs = cell.classList.contains('fullscreen');
+            drillNav.hidden = !isFs;
+            drillPrevBtn.disabled = drillState.index <= 0;
+            drillHomeBtn.disabled = drillState.index === 0;
+            drillNextBtn.disabled = drillState.index >= drillState.history.length - 1;
+        }
+
+        function renderClusterPlot() {
+            const selected = currentSelection();
+            const traces = buildClusterPlotTraces(data, cluster, expColorMap, selected);
+            const layout = buildClusterPlotLayout(data, selected);
+            return Plotly.react(plotDiv, traces, layout, { responsive: true, displayModeBar: false }).then(() => {
+                Plotly.Plots.resize(plotDiv);
+                updateDrillNav();
+            });
+        }
+
+        function resetClusterDrill() {
+            drillState.history = [null];
+            drillState.index = 0;
+            return renderClusterPlot();
+        }
+
+        function moveClusterDrill(offset) {
+            const next = drillState.index + offset;
+            if (next < 0 || next >= drillState.history.length) return;
+            drillState.index = next;
+            renderClusterPlot();
+        }
+
         seriesBtn.onclick = () => {
             seriesList.classList.toggle('open');
             seriesBtn.textContent = seriesList.classList.contains('open') ? '📋 Hide' : '📋 Series';
@@ -354,7 +563,27 @@ function renderClusterGrid(data) {
             const isFs = cell.classList.toggle('fullscreen');
             fsBtn.textContent = isFs ? '✕ Exit' : '⛶ Fullscreen';
             document.body.style.overflow = isFs ? 'hidden' : '';
-            Plotly.Plots.resize(plotDiv);
+            if (isFs) {
+                updateDrillNav();
+                Plotly.Plots.resize(plotDiv);
+            } else {
+                resetClusterDrill();
+            }
+        };
+
+        drillPrevBtn.onclick = event => {
+            event.stopPropagation();
+            moveClusterDrill(-1);
+        };
+        drillNextBtn.onclick = event => {
+            event.stopPropagation();
+            moveClusterDrill(1);
+        };
+        drillHomeBtn.onclick = event => {
+            event.stopPropagation();
+            if (drillState.index === 0) return;
+            drillState.index = 0;
+            renderClusterPlot();
         };
 
         exportCsvBtn.onclick = () => exportClusterCSV(cluster);
@@ -363,70 +592,27 @@ function renderClusterGrid(data) {
             filename: `cluster_${clusterLabel}`
         });
 
-        // Build traces
-        const traces = [];
-        const seriesData   = cluster.series_data;
-        const seriesLabels = cluster.series_labels;
-
-        seriesData.forEach((y, i) => {
-            const label = seriesLabels[i];
-            const exp   = label.includes('/') ? label.split('/')[0] : null;
-            const color = exp ? hexToRgba(expColorMap[exp], 0.45) : 'rgba(120,120,120,0.4)';
-            traces.push({
-                x: time, y,
-                mode: 'lines', type: 'scatter',
-                name: label,
-                line: { width: 1, color },
-                showlegend: false
-            });
+        plotDiv.addEventListener('click', event => {
+            if (!cell.classList.contains('fullscreen')) return;
+            if (event.target.closest('.modebar') || event.target.closest('.legend')) return;
+            const point = getPlotClickPoint(plotDiv, event);
+            if (!point) return;
+            const selected = nearestClusterSeriesIndices(
+                time,
+                cluster.series_data || [],
+                point,
+                plotDiv._fullLayout?.xaxis?.range,
+                plotDiv._fullLayout?.yaxis?.range,
+                5
+            );
+            if (!selected.length) return;
+            drillState.history = drillState.history.slice(0, drillState.index + 1);
+            drillState.history.push(selected);
+            drillState.index = drillState.history.length - 1;
+            renderClusterPlot();
         });
 
-        // SD band (filled area between centroid−SD and centroid+SD)
-        const centroid   = cluster.centroid;
-        const centroidSd = cluster.centroid_sd;
-        if (centroid && centroidSd) {
-            const upper = centroid.map((v, i) => v + centroidSd[i]);
-            const lower = centroid.map((v, i) => v - centroidSd[i]);
-            traces.push({
-                x: [...time, ...time.slice().reverse()],
-                y: [...upper, ...lower.slice().reverse()],
-                fill: 'toself', fillcolor: 'rgba(180,0,0,0.10)',
-                line: { color: 'transparent' },
-                type: 'scatter', mode: 'lines',
-                name: '±SD', showlegend: false, hoverinfo: 'skip',
-            });
-            traces.push({
-                x: time, y: centroid,
-                mode: 'lines', type: 'scatter',
-                name: 'Mean ± SD',
-                line: { width: 2, color: 'rgb(180,0,0)' },
-                showlegend: true,
-            });
-        } else {
-            // Fallback: compute mean client-side if backend didn't supply centroid
-            const avgY = time.map((_, ti) => {
-                const vals = seriesData.map(s => s[ti]).filter(v => isFinite(v));
-                return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
-            });
-            traces.push({
-                x: time, y: avgY,
-                mode: 'lines', type: 'scatter',
-                name: 'Mean',
-                line: { width: 2, color: 'rgb(180,0,0)' },
-                showlegend: true,
-            });
-        }
-
-        const layout = {
-            margin: { t: 10, r: 10, b: 40, l: 50 },
-            xaxis: { title: data.time_normalized ? 'Normalized time [0–1]' : 'Time' },
-            yaxis: { title: 'Value' },
-            legend: { x: 0, y: 1 }
-        };
-
-        Plotly.newPlot(plotDiv, traces, layout, { responsive: true, displayModeBar: false }).then(() => {
-            Plotly.Plots.resize(plotDiv);
-        });
+        renderClusterPlot();
     });
 
     document.getElementById('cluster-grid-container').style.display = 'block';

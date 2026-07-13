@@ -286,6 +286,11 @@ Object.assign(window, {
 
 // Handle window resize — fullscreen plots need manual relayout, others use resizePlot
 window.addEventListener('resize', () => {
+    const clusterFullscreenPlot = document.querySelector('.cluster-cell.fullscreen .cluster-plot-div');
+    if (clusterFullscreenPlot && typeof Plotly !== 'undefined') {
+        Plotly.Plots.resize(clusterFullscreenPlot);
+        return;
+    }
     if (state.isFullscreen) {
         const growthContainer   = document.getElementById('plot-growth-container');
         const fittingContainer  = document.getElementById('plot-fitting-container');
