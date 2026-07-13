@@ -129,15 +129,19 @@ function buildClusterPlotTraces(data, cluster, expColorMap, selectedIndices = nu
     return traces;
 }
 
-function buildClusterPlotLayout(data, selectedIndices = null) {
+function buildClusterPlotLayout(data, selectedIndices = null, viewRange = null, lensActive = false) {
     const selected = Array.isArray(selectedIndices);
-    return {
+    const layout = {
         margin: { t: selected ? 28 : 10, r: 10, b: 40, l: 50 },
         xaxis: { title: data.time_normalized ? 'Normalized time [0-1]' : 'Time' },
         yaxis: { title: 'Value' },
         legend: { x: 0, y: 1, orientation: selected ? 'h' : 'v' },
         title: selected ? { text: `${selectedIndices.length} nearest curves`, font: { size: 14 } } : { text: '' },
+        dragmode: lensActive ? 'zoom' : false,
     };
+    if (viewRange?.xRange) layout.xaxis.range = viewRange.xRange;
+    if (viewRange?.yRange) layout.yaxis.range = viewRange.yRange;
+    return layout;
 }
 
 function getPlotClickPoint(plotDiv, event) {
@@ -173,6 +177,62 @@ function nearestClusterSeriesIndices(time, seriesData, point, xRange, yRange, co
         .sort((a, b) => a.distance - b.distance)
         .slice(0, count)
         .map(item => item.seriesIndex);
+}
+
+function cloneClusterView(view) {
+    return {
+        selected: Array.isArray(view?.selected) ? [...view.selected] : null,
+        xRange: Array.isArray(view?.xRange) ? [...view.xRange] : null,
+        yRange: Array.isArray(view?.yRange) ? [...view.yRange] : null,
+    };
+}
+
+function rangesAreEqual(a, b) {
+    if (!Array.isArray(a) && !Array.isArray(b)) return true;
+    if (!Array.isArray(a) || !Array.isArray(b)) return false;
+    return Math.abs(Number(a[0]) - Number(b[0])) < 1e-10 &&
+        Math.abs(Number(a[1]) - Number(b[1])) < 1e-10;
+}
+
+function clusterViewsAreEqual(a, b) {
+    const aSelected = Array.isArray(a?.selected) ? a.selected : null;
+    const bSelected = Array.isArray(b?.selected) ? b.selected : null;
+    const sameSelected = (!aSelected && !bSelected) ||
+        (aSelected && bSelected &&
+            aSelected.length === bSelected.length &&
+            aSelected.every((value, index) => value === bSelected[index]));
+    return sameSelected &&
+        rangesAreEqual(a?.xRange, b?.xRange) &&
+        rangesAreEqual(a?.yRange, b?.yRange);
+}
+
+function getCurrentClusterPlotRange(plotDiv) {
+    const xRange = plotDiv._fullLayout?.xaxis?.range;
+    const yRange = plotDiv._fullLayout?.yaxis?.range;
+    return {
+        xRange: Array.isArray(xRange) ? [Number(xRange[0]), Number(xRange[1])] : null,
+        yRange: Array.isArray(yRange) ? [Number(yRange[0]), Number(yRange[1])] : null,
+    };
+}
+
+function rangeFromClusterRelayout(eventData, axisName) {
+    const start = eventData?.[`${axisName}.range[0]`];
+    const end = eventData?.[`${axisName}.range[1]`];
+    if (start !== undefined && end !== undefined) return [Number(start), Number(end)];
+    const range = eventData?.[`${axisName}.range`];
+    if (Array.isArray(range) && range.length >= 2) return [Number(range[0]), Number(range[1])];
+    if (eventData?.[`${axisName}.autorange`]) return null;
+    return undefined;
+}
+
+function createClusterIconButton(title, svgContent) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'cluster-drill-nav-btn cluster-icon-btn';
+    button.title = title;
+    button.setAttribute('aria-label', title);
+    button.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${svgContent}</svg>`;
+    return button;
 }
 
 function setClusteringMode(mode) {
@@ -475,20 +535,29 @@ function renderClusterGrid(data) {
         drillPrevBtn.type = 'button';
         drillPrevBtn.className = 'cluster-drill-nav-btn';
         drillPrevBtn.textContent = '<';
-        drillPrevBtn.title = 'Previous selection';
-        const drillHomeBtn = document.createElement('button');
-        drillHomeBtn.type = 'button';
-        drillHomeBtn.className = 'cluster-drill-nav-btn';
-        drillHomeBtn.textContent = 'Home';
-        drillHomeBtn.title = 'Original cluster view';
+        drillPrevBtn.title = 'Previous view';
+        const drillHomeBtn = createClusterIconButton(
+            'Reset view',
+            '<path d="M4 11.5L12 5l8 6.5"></path><path d="M6.5 10.5V20h11V10.5"></path><path d="M9.5 20v-5h5v5"></path>'
+        );
         const drillNextBtn = document.createElement('button');
         drillNextBtn.type = 'button';
         drillNextBtn.className = 'cluster-drill-nav-btn';
         drillNextBtn.textContent = '>';
-        drillNextBtn.title = 'Next selection';
+        drillNextBtn.title = 'Next view';
+        const zoomBtn = createClusterIconButton(
+            'Draw rectangle to zoom',
+            '<circle cx="10.5" cy="10.5" r="6"></circle><line x1="15" y1="15" x2="21" y2="21"></line>'
+        );
+        const resetZoomBtn = createClusterIconButton(
+            'Reset zoom, keep selected curves',
+            '<circle cx="10.5" cy="10.5" r="6"></circle><line x1="15" y1="15" x2="21" y2="21"></line><line class="cluster-reset-x" x1="8.3" y1="8.3" x2="12.7" y2="12.7"></line><line class="cluster-reset-x" x1="12.7" y1="8.3" x2="8.3" y2="12.7"></line>'
+        );
         drillNav.appendChild(drillPrevBtn);
         drillNav.appendChild(drillHomeBtn);
         drillNav.appendChild(drillNextBtn);
+        drillNav.appendChild(zoomBtn);
+        drillNav.appendChild(resetZoomBtn);
         cell.appendChild(drillNav);
 
         // Plot div
@@ -529,44 +598,100 @@ function renderClusterGrid(data) {
 
         grid.appendChild(cell);
 
-        const drillState = {
-            history: [null],
+        const viewState = {
+            history: [{ selected: null, xRange: null, yRange: null }],
             index: 0,
+            lensActive: false,
+            suppressRelayout: false,
         };
 
+        function currentView() {
+            return viewState.history[viewState.index] || { selected: null, xRange: null, yRange: null };
+        }
+
         function currentSelection() {
-            return drillState.history[drillState.index];
+            return currentView().selected;
         }
 
         function updateDrillNav() {
             const isFs = cell.classList.contains('fullscreen');
+            const view = currentView();
             drillNav.hidden = !isFs;
-            drillPrevBtn.disabled = drillState.index <= 0;
-            drillHomeBtn.disabled = drillState.index === 0;
-            drillNextBtn.disabled = drillState.index >= drillState.history.length - 1;
+            drillPrevBtn.disabled = viewState.index <= 0;
+            drillHomeBtn.disabled = viewState.index === 0;
+            drillNextBtn.disabled = viewState.index >= viewState.history.length - 1;
+            resetZoomBtn.disabled = !view.xRange && !view.yRange;
+            zoomBtn.classList.toggle('active', viewState.lensActive);
+            plotDiv.classList.toggle('cluster-zoom-active', isFs && viewState.lensActive);
+        }
+
+        function pushClusterView(nextView) {
+            const normalized = cloneClusterView(nextView);
+            if (clusterViewsAreEqual(currentView(), normalized)) {
+                updateDrillNav();
+                return;
+            }
+            viewState.history = viewState.history.slice(0, viewState.index + 1);
+            viewState.history.push(normalized);
+            viewState.index = viewState.history.length - 1;
+            updateDrillNav();
         }
 
         function renderClusterPlot() {
-            const selected = currentSelection();
+            const view = currentView();
+            const selected = view.selected;
             const traces = buildClusterPlotTraces(data, cluster, expColorMap, selected);
-            const layout = buildClusterPlotLayout(data, selected);
+            const layout = buildClusterPlotLayout(data, selected, view, viewState.lensActive);
+            viewState.suppressRelayout = true;
             return Plotly.react(plotDiv, traces, layout, { responsive: true, displayModeBar: false }).then(() => {
                 Plotly.Plots.resize(plotDiv);
+                viewState.suppressRelayout = false;
                 updateDrillNav();
             });
         }
 
         function resetClusterDrill() {
-            drillState.history = [null];
-            drillState.index = 0;
+            viewState.history = [{ selected: null, xRange: null, yRange: null }];
+            viewState.index = 0;
+            viewState.lensActive = false;
             return renderClusterPlot();
         }
 
         function moveClusterDrill(offset) {
-            const next = drillState.index + offset;
-            if (next < 0 || next >= drillState.history.length) return;
-            drillState.index = next;
+            const next = viewState.index + offset;
+            if (next < 0 || next >= viewState.history.length) return;
+            viewState.index = next;
             renderClusterPlot();
+        }
+
+        function resetClusterZoom() {
+            const view = cloneClusterView(currentView());
+            if (!view.xRange && !view.yRange) return;
+            viewState.lensActive = false;
+            pushClusterView({
+                selected: view.selected,
+                xRange: null,
+                yRange: null,
+            });
+            renderClusterPlot();
+        }
+
+        function bindClusterZoomHistory() {
+            if (plotDiv._clusterZoomHistoryBound || typeof plotDiv.on !== 'function') return;
+            plotDiv._clusterZoomHistoryBound = true;
+            plotDiv.on('plotly_relayout', eventData => {
+                if (viewState.suppressRelayout || !cell.classList.contains('fullscreen') || !viewState.lensActive) return;
+                const current = cloneClusterView(currentView());
+                const xRange = rangeFromClusterRelayout(eventData, 'xaxis');
+                const yRange = rangeFromClusterRelayout(eventData, 'yaxis');
+                if (xRange === undefined && yRange === undefined) return;
+                const fullRange = getCurrentClusterPlotRange(plotDiv);
+                pushClusterView({
+                    selected: current.selected,
+                    xRange: xRange === undefined ? fullRange.xRange : xRange,
+                    yRange: yRange === undefined ? fullRange.yRange : yRange,
+                });
+            });
         }
 
         seriesBtn.onclick = () => {
@@ -596,9 +721,18 @@ function renderClusterGrid(data) {
         };
         drillHomeBtn.onclick = event => {
             event.stopPropagation();
-            if (drillState.index === 0) return;
-            drillState.index = 0;
+            if (viewState.index === 0) return;
+            viewState.index = 0;
             renderClusterPlot();
+        };
+        zoomBtn.onclick = event => {
+            event.stopPropagation();
+            viewState.lensActive = !viewState.lensActive;
+            renderClusterPlot();
+        };
+        resetZoomBtn.onclick = event => {
+            event.stopPropagation();
+            resetClusterZoom();
         };
 
         exportCsvBtn.onclick = () => exportClusterCSV(cluster);
@@ -609,25 +743,29 @@ function renderClusterGrid(data) {
 
         plotDiv.addEventListener('click', event => {
             if (!cell.classList.contains('fullscreen')) return;
+            if (viewState.lensActive) return;
             if (event.target.closest('.modebar') || event.target.closest('.legend')) return;
             const point = getPlotClickPoint(plotDiv, event);
             if (!point) return;
+            const currentRange = getCurrentClusterPlotRange(plotDiv);
             const selected = nearestClusterSeriesIndices(
                 time,
                 cluster.series_data || [],
                 point,
-                plotDiv._fullLayout?.xaxis?.range,
-                plotDiv._fullLayout?.yaxis?.range,
+                currentRange.xRange,
+                currentRange.yRange,
                 5
             );
             if (!selected.length) return;
-            drillState.history = drillState.history.slice(0, drillState.index + 1);
-            drillState.history.push(selected);
-            drillState.index = drillState.history.length - 1;
+            pushClusterView({
+                selected,
+                xRange: currentRange.xRange,
+                yRange: currentRange.yRange,
+            });
             renderClusterPlot();
         });
 
-        renderClusterPlot();
+        renderClusterPlot().then(bindClusterZoomHistory);
     });
 
     document.getElementById('cluster-grid-container').style.display = 'block';
