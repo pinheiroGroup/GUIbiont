@@ -33,10 +33,58 @@ function getClusterSeriesId(cluster, index) {
     return String(label);
 }
 
+function clusterPlotsUseNormalized() {
+    const bottom = document.getElementById('cluster-plot-normalize');
+    if (bottom) return bottom.checked;
+    return !!state._clusterPlotsNormalized;
+}
+
+function getClusterSeriesData(cluster) {
+    if (clusterPlotsUseNormalized()) {
+        return cluster.series_data_normalized || cluster.series_data || [];
+    }
+    return cluster.series_data_raw || cluster.series_data || [];
+}
+
+function getClusterCentroidData(cluster) {
+    if (clusterPlotsUseNormalized()) {
+        return {
+            centroid: cluster.centroid_normalized || cluster.centroid,
+            centroidSd: cluster.centroid_normalized_sd || cluster.centroid_sd,
+        };
+    }
+    return {
+        centroid: cluster.centroid_raw || cluster.centroid,
+        centroidSd: cluster.centroid_raw_sd || cluster.centroid_sd,
+    };
+}
+
+function syncClusterNormalizeCheckboxes(source = null) {
+    const bottom = document.getElementById('cluster-plot-normalize');
+    const fullscreenChecks = document.querySelectorAll('.cluster-fullscreen-normalize');
+    let checked;
+    if (source && typeof source === 'object' && 'checked' in source) {
+        checked = !!source.checked;
+    } else if (source === 'bottom' && bottom) {
+        checked = bottom.checked;
+    } else if (bottom) {
+        checked = bottom.checked;
+    } else {
+        checked = !!state._clusterPlotsNormalized;
+    }
+    state._clusterPlotsNormalized = checked;
+    if (bottom) bottom.checked = checked;
+    fullscreenChecks.forEach(input => { input.checked = checked; });
+    if (state._lastClusterData?._request) {
+        state._lastClusterData._request.normalize = checked;
+    }
+    return checked;
+}
+
 function buildClusterPlotTraces(data, cluster, expColorMap, selectedIndices = null) {
     const time = data.time;
     const traces = [];
-    const seriesData = cluster.series_data || [];
+    const seriesData = getClusterSeriesData(cluster);
     const seriesLabels = cluster.series_labels || [];
 
     if (Array.isArray(selectedIndices)) {
@@ -92,8 +140,7 @@ function buildClusterPlotTraces(data, cluster, expColorMap, selectedIndices = nu
         });
     });
 
-    const centroid = cluster.centroid;
-    const centroidSd = cluster.centroid_sd;
+    const { centroid, centroidSd } = getClusterCentroidData(cluster);
     if (centroid && centroidSd) {
         const upper = centroid.map((v, i) => v + centroidSd[i]);
         const lower = centroid.map((v, i) => v - centroidSd[i]);
@@ -134,7 +181,7 @@ function buildClusterPlotLayout(data, selectedIndices = null, viewRange = null, 
     const layout = {
         margin: { t: selected ? 28 : 10, r: 10, b: 40, l: 50 },
         xaxis: { title: data.time_normalized ? 'Normalized time [0-1]' : 'Time' },
-        yaxis: { title: 'Value' },
+        yaxis: { title: clusterPlotsUseNormalized() ? 'Normalized value (z-score)' : 'Value' },
         legend: { x: 0, y: 1, orientation: selected ? 'h' : 'v' },
         title: selected ? { text: `${selectedIndices.length} nearest curves`, font: { size: 14 } } : { text: '' },
         dragmode: lensActive ? 'zoom' : false,
@@ -319,6 +366,18 @@ function onClusteringFileChange() {
     updateClusteringRunBtn();
 }
 
+function onClusterNormalizeChange(source = null) {
+    const checked = syncClusterNormalizeCheckboxes(source);
+    if (!state._lastClusterData) return;
+    state._lastClusterData.display_normalized = checked;
+    const refreshers = state._clusterPlotRefreshers || [];
+    if (refreshers.length) {
+        refreshers.forEach(refresh => refresh());
+    } else {
+        renderClusterGrid(state._lastClusterData);
+    }
+}
+
 function toggleClusteringAdvanced() {
     const adv = document.getElementById('clustering-advanced');
     adv.style.display = adv.style.display === 'none' ? 'block' : 'none';
@@ -347,7 +406,7 @@ function onClusterMethodChange() {
 
 async function runClustering() {
     const k          = parseInt(document.getElementById('clustering-k').value) || 3;
-    const normalize  = document.getElementById('clustering-normalize').checked;
+    const normalize  = syncClusterNormalizeCheckboxes('bottom');
     const smooth     = document.getElementById('cluster-smooth-method').value;
     const lowessFrac = parseFloat(document.getElementById('cluster-lowess-frac').value);
     const gHmult     = parseFloat(document.getElementById('cluster-gaussian-hmult').value);
@@ -456,6 +515,7 @@ async function runClustering() {
             trend_p_thr:         parseFloat(document.getElementById('cluster-trend-p').value) || 0.05,
         };
         state._lastClusterData = data;
+        data.display_normalized = syncClusterNormalizeCheckboxes('bottom');
         document.getElementById('cluster-export-btn').disabled = false;
         renderClusterGrid(data);
         renderQualityPanel(data);
@@ -473,6 +533,7 @@ async function runClustering() {
 function renderClusterGrid(data) {
     const grid = document.getElementById('cluster-grid');
     grid.innerHTML = '';
+    state._clusterPlotRefreshers = [];
 
     const time = data.time;
     const clusters = data.clusters;
@@ -553,11 +614,24 @@ function renderClusterGrid(data) {
             'Reset zoom, keep selected curves',
             '<circle cx="10.5" cy="10.5" r="6"></circle><line x1="15" y1="15" x2="21" y2="21"></line><line class="cluster-reset-x" x1="8.3" y1="8.3" x2="12.7" y2="12.7"></line><line class="cluster-reset-x" x1="12.7" y1="8.3" x2="8.3" y2="12.7"></line>'
         );
+        const fsNormalizeLabel = document.createElement('label');
+        fsNormalizeLabel.className = 'cluster-fullscreen-normalize-label';
+        const fsNormalizeInput = document.createElement('input');
+        fsNormalizeInput.type = 'checkbox';
+        fsNormalizeInput.className = 'cluster-fullscreen-normalize';
+        fsNormalizeInput.checked = clusterPlotsUseNormalized();
+        fsNormalizeInput.onchange = event => {
+            event.stopPropagation();
+            onClusterNormalizeChange(fsNormalizeInput);
+        };
+        fsNormalizeLabel.appendChild(fsNormalizeInput);
+        fsNormalizeLabel.appendChild(document.createTextNode(' Normalize'));
         drillNav.appendChild(drillPrevBtn);
         drillNav.appendChild(drillHomeBtn);
         drillNav.appendChild(drillNextBtn);
         drillNav.appendChild(zoomBtn);
         drillNav.appendChild(resetZoomBtn);
+        drillNav.appendChild(fsNormalizeLabel);
         cell.appendChild(drillNav);
 
         // Plot div
@@ -603,6 +677,7 @@ function renderClusterGrid(data) {
             index: 0,
             lensActive: false,
             suppressRelayout: false,
+            displayNormalized: clusterPlotsUseNormalized(),
         };
 
         function currentView() {
@@ -622,6 +697,7 @@ function renderClusterGrid(data) {
             drillNextBtn.disabled = viewState.index >= viewState.history.length - 1;
             resetZoomBtn.disabled = !view.xRange && !view.yRange;
             zoomBtn.classList.toggle('active', viewState.lensActive);
+            fsNormalizeInput.checked = clusterPlotsUseNormalized();
             plotDiv.classList.toggle('cluster-zoom-active', isFs && viewState.lensActive);
         }
 
@@ -638,6 +714,14 @@ function renderClusterGrid(data) {
         }
 
         function renderClusterPlot() {
+            const displayNormalized = clusterPlotsUseNormalized();
+            if (viewState.displayNormalized !== displayNormalized) {
+                viewState.history = viewState.history.map(view => ({
+                    ...view,
+                    yRange: null,
+                }));
+                viewState.displayNormalized = displayNormalized;
+            }
             const view = currentView();
             const selected = view.selected;
             const traces = buildClusterPlotTraces(data, cluster, expColorMap, selected);
@@ -649,6 +733,7 @@ function renderClusterGrid(data) {
                 updateDrillNav();
             });
         }
+        state._clusterPlotRefreshers.push(renderClusterPlot);
 
         function resetClusterDrill() {
             viewState.history = [{ selected: null, xRange: null, yRange: null }];
@@ -750,7 +835,7 @@ function renderClusterGrid(data) {
             const currentRange = getCurrentClusterPlotRange(plotDiv);
             const selected = nearestClusterSeriesIndices(
                 time,
-                cluster.series_data || [],
+                getClusterSeriesData(cluster),
                 point,
                 currentRange.xRange,
                 currentRange.yRange,
@@ -1367,7 +1452,7 @@ async function runBatchAverage() {
 export {
     setClusteringMode, populateClusteringExperiments,
     selectAllClusteringExperiments, clearAllClusteringExperiments,
-    onClusteringFileChange, updateClusteringRunBtn, toggleClusteringAdvanced,
+    onClusteringFileChange, onClusterNormalizeChange, updateClusteringRunBtn, toggleClusteringAdvanced,
     onClusterSmoothChange, onClusterMethodChange, onClusterBlankChange, onClusterInterpolateChange,
     renderClusterBlankNotice, runClustering, renderClusterGrid,
     exportClusterCSV, exportAllClustersCSV, exportClusterCentroidsCSV, exportAllClustersPNG,

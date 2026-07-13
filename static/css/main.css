@@ -446,6 +446,19 @@
             opacity: 0.7;
         }
 
+        .cluster-fullscreen-normalize-label {
+            height: 28px;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 0 8px;
+            border-left: 1px solid #dee2e6;
+            color: #495057;
+            font-size: 0.82em;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
         .cluster-plot-div.cluster-zoom-active .nsewdrag {
             cursor: crosshair !important;
         }

@@ -271,6 +271,8 @@
             "label"                  => label,
             "series_labels"          => labels_all[mask],
             "series_data"            => [display_curves[i, :] for i in mask],
+            "series_data_raw"        => [raw_curves[i, :] for i in mask],
+            "series_data_normalized" => [normalized_curves[i, :] for i in mask],
             "centroid"               => centroid,
             "centroid_sd"            => centroid_sd,
             "centroid_raw"           => centroid_raw,
