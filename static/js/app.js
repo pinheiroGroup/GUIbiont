@@ -3,7 +3,9 @@ import { relayoutFontSizes, setLegendFontSize, setAxisTitleFontSize, setAxisTick
          switchTab, showLoading, hideLoading, showError, hideWellsAndPlot, hidePlotAndStats,
          toggleExperimentSection } from './ui.js';
 import { plotGrowthCurves, buildMultiChannelLayout, channelToYAxis,
-         toggleSplitChannels, renderSplitChannels, displayStats, resizePlot } from './plot.js';
+         toggleSplitChannels, renderSplitChannels, displayStats, resizePlot,
+         onGrowthGroupSizeChange, goToGrowthGroup, previousGrowthGroup, nextGrowthGroup,
+         resizeGrowthNumericInput } from './plot.js';
 import { buildReplicateList, toggleReplicate, selectAllReplicates, clearAllReplicates,
          updateSelectedReplicatesCount, onShowIndividualChange, setPlotMode,
          computeReplicateAverage, trapezoidalAUC, plotReplicates } from './replicates.js';
@@ -236,6 +238,8 @@ Object.assign(window, {
     // Plot
     plotGrowthCurves, buildMultiChannelLayout, channelToYAxis,
     toggleSplitChannels, renderSplitChannels, displayStats, resizePlot,
+    onGrowthGroupSizeChange, goToGrowthGroup, previousGrowthGroup, nextGrowthGroup,
+    resizeGrowthNumericInput,
     // Replicates
     buildReplicateList, toggleReplicate, selectAllReplicates, clearAllReplicates,
     updateSelectedReplicatesCount, onShowIndividualChange, setPlotMode,

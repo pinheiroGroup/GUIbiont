@@ -8,6 +8,13 @@ function toggleFullscreen(plotType = 'plot-growth') {
     const plotContainer = document.getElementById(containerId);
     const plotDiv = document.getElementById(plotType);
     const fullscreenBtn = document.getElementById(buttonId);
+
+    function plotAvailableHeight() {
+        const controls = plotContainer.querySelector('.plot-controls');
+        const controlsHeight = controls ? Math.ceil(controls.getBoundingClientRect().height) : 80;
+        plotContainer.style.setProperty('--plot-controls-height', `${controlsHeight}px`);
+        return Math.max(240, window.innerHeight - controlsHeight);
+    }
     
     if (!state.isFullscreen) {
         // Enter fullscreen
@@ -21,7 +28,7 @@ function toggleFullscreen(plotType = 'plot-growth') {
         // Force resize plot after DOM update with multiple attempts
         setTimeout(() => {
             const newWidth = window.innerWidth;
-            const newHeight = window.innerHeight - 80; // Account for control bar
+            const newHeight = plotAvailableHeight();
             
             // Use Plotly's relayout to properly resize
             if (plotDiv && typeof Plotly !== 'undefined') {
@@ -39,12 +46,19 @@ function toggleFullscreen(plotType = 'plot-growth') {
         // Additional resize after a longer delay
         setTimeout(() => {
             if (plotDiv && typeof Plotly !== 'undefined') {
+                const newHeight = plotAvailableHeight();
+                Plotly.relayout(plotDiv, {
+                    width: window.innerWidth,
+                    height: newHeight,
+                    autosize: true
+                });
                 Plotly.Plots.resize(plotDiv);
             }
         }, 300);
     } else {
         // Exit fullscreen
         plotContainer.classList.remove('fullscreen-plot');
+        plotContainer.style.removeProperty('--plot-controls-height');
         fullscreenBtn.innerHTML = '🔍 Fullscreen';
         state.isFullscreen = false;
         

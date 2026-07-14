@@ -163,6 +163,25 @@
             box-shadow: 0 4px 12px rgba(0,0,0,0.05);
         }
 
+        #stats-table.stats-scrollable {
+            max-height: 760px;
+            overflow-y: auto;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            background: white;
+        }
+
+        #stats-table.stats-scrollable table {
+            margin: 0;
+        }
+
+        #stats-table.stats-scrollable thead th {
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            box-shadow: inset 0 -1px 0 #dee2e6;
+        }
+
         .clustering-container {
             background: white;
             border-radius: 10px;
@@ -472,7 +491,7 @@
 
         .fullscreen-plot #plot-growth,
         .fullscreen-plot #plot-fitting {
-            height: calc(100vh - 80px) !important;
+            height: calc(100vh - var(--plot-controls-height, 80px)) !important;
             width: 100% !important;
         }
 
@@ -487,16 +506,142 @@
             z-index: 10000 !important;
         }
 
+        .fullscreen-plot .plot-controls h3 {
+            display: none !important;
+        }
+
+        .fullscreen-plot .plot-toolbar-stack {
+            width: 100%;
+            flex-direction: row;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+        }
+
+        .fullscreen-plot .plot-options-row {
+            justify-content: flex-start;
+        }
+
+        .fullscreen-plot .plot-actions-row {
+            justify-content: flex-end;
+            padding-top: 0;
+            border-top: none;
+            flex-wrap: nowrap;
+        }
+
         .plot-buttons {
             display: flex;
             gap: 10px;
             align-items: center;
         }
 
+        .plot-toolbar-stack {
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 8px;
+            max-width: 100%;
+        }
+
+        .plot-options-row,
+        .plot-actions-row {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .plot-actions-row {
+            padding-top: 6px;
+            border-top: 1px solid #dee2e6;
+        }
+
+        #plot-growth-container .plot-controls h3 {
+            font-size: 24px;
+            line-height: 1.2;
+        }
+
+        #plot-growth-container .plot-options-row label,
+        #plot-growth-container .plot-options-row select,
+        #plot-growth-container .growth-group-controls input,
+        #plot-growth-container .growth-group-controls span {
+            font-size: 15px !important;
+        }
+
         .plot-buttons .btn {
             margin: 0;
             font-size: 14px;
             padding: 8px 16px;
+        }
+
+        .growth-group-controls {
+            align-items: center;
+            gap: 6px;
+            padding: 4px 6px;
+            border: 1px solid #ced4da;
+            border-radius: 6px;
+            background: #fff;
+            color: #495057;
+            font-size: 13px;
+            white-space: nowrap;
+        }
+
+        .growth-group-controls label {
+            margin: 0;
+            font-size: 13px;
+            color: #495057;
+        }
+
+        .growth-group-controls input {
+            height: 28px;
+            border: 1px solid #ced4da;
+            border-radius: 5px;
+            background: #fff;
+            color: #212529;
+            font-size: 13px;
+        }
+
+        .growth-group-controls input {
+            width: var(--digits-width, 4ch);
+            min-width: 3.4ch;
+            max-width: 8ch;
+            padding: 2px 5px;
+            text-align: center;
+        }
+
+        .growth-group-controls .growth-group-size-input {
+            min-width: 4ch;
+            max-width: 9ch;
+        }
+
+        .plot-nav-btn {
+            width: 28px;
+            height: 28px;
+            border: 1px solid #ced4da;
+            border-radius: 5px;
+            background: #f8f9fa;
+            color: #495057;
+            cursor: pointer;
+            font-size: 14px;
+            line-height: 1;
+        }
+
+        .plot-nav-btn:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
+
+        .plot-all-btn {
+            width: auto;
+            padding: 0 8px;
+            font-size: 12px;
+        }
+
+        .plot-all-btn.active {
+            background: #e9ecef;
+            border-color: #adb5bd;
+            color: #212529;
+            font-weight: 600;
         }
 
         /* Accordion styles for experiments */

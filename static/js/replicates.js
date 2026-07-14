@@ -1,6 +1,6 @@
 import { state, API_BASE } from './state.js';
 import { buildMultiChannelLayout, channelToYAxis, displayStats } from './plot.js';
-import { hidePlotAndStats } from './ui.js';
+import { showLoading, hideLoading, showError, hidePlotAndStats } from './ui.js';
 
 function buildReplicateList(wells) {
     state.allReplicates = {};
@@ -170,6 +170,7 @@ async function plotReplicates() {
 
             const avg = computeReplicateAverage(groupTraces);
             plotTraces.push({
+                type: 'scattergl',
                 x: avg.x, y: avg.y,
                 mode: 'lines+markers',
                 name: `${rep.label} (avg, n=${groupTraces.length})`,
@@ -193,6 +194,7 @@ async function plotReplicates() {
             if (showIndividual) {
                 groupTraces.forEach(trace => {
                     plotTraces.push({
+                        type: 'scattergl',
                         x: trace.x, y: trace.y,
                         mode: 'lines',
                         name: trace.well,

@@ -2,63 +2,51 @@ import { state, CHANNEL_AXIS_COLORS, API_BASE } from './state.js';
 import { showLoading, hideLoading, showError } from './ui.js';
 
 function resizePlot() {
-    // Resize both plots if they exist
     const growthPlot = document.getElementById('plot-growth');
     const fittingPlot = document.getElementById('plot-fitting');
-    
+
     if (growthPlot && typeof Plotly !== 'undefined' && document.getElementById('plot-growth-container').style.display === 'block') {
-        setTimeout(() => {
-            Plotly.Plots.resize(growthPlot);
-        }, 100);
+        setTimeout(() => Plotly.Plots.resize(growthPlot), 100);
     }
-    
+
     if (fittingPlot && typeof Plotly !== 'undefined' && document.getElementById('plot-fitting-container').style.display === 'block') {
-        setTimeout(() => {
-            Plotly.Plots.resize(fittingPlot);
-        }, 100);
+        setTimeout(() => Plotly.Plots.resize(fittingPlot), 100);
     }
 }
 
-// Plot growth curves
-// Build a Plotly layout with one y-axis per channel. Channels 2..N stack on
-// the right; the x-domain shrinks to make room. Beyond ~4 right-side axes the
-// overlay gets crowded — at that point the "Split by Channel" view is nicer,
-// but every channel still renders here.
 function buildMultiChannelLayout(channelList, title) {
     const N = channelList.length;
     const multi = N > 1;
-    // Number of axes that need to sit on the right side (index 1..N-1).
     const rightAxes = Math.max(0, N - 1);
-    // Each extra right-side axis (beyond the first one which hugs the plot
-    // edge) steps out by 0.08 in normalized x.
     const STEP = 0.08;
     const xDomainEnd = rightAxes <= 1 ? 1.0 : Math.max(0.5, 1.0 - STEP * (rightAxes - 1));
     const layout = {
         title: { text: title, font: { size: 20, color: '#495057' } },
         xaxis: {
-            title: { text: 'Time (hours)', font: { size: state.axisTitleFontSize } },
+            title: { text: 'Time (hours)', font: { size: state.axisTitleFontSize }, standoff: 4 },
             tickfont: { size: state.axisTickFontSize },
             gridcolor: '#e9ecef',
             domain: [0, xDomainEnd]
         },
         hovermode: 'x unified',
         template: 'plotly_white',
-        legend: { orientation: 'h', xanchor: 'center', x: 0.5, y: -0.2, font: { size: state.legendFontSize } },
-        margin: { l: 70, r: multi ? 90 + 80 * Math.max(0, rightAxes - 1) : 30, t: 80, b: 120 },
+        legend: { orientation: 'h', xanchor: 'center', x: 0.5, y: -0.22, font: { size: state.legendFontSize } },
+        margin: { l: 70, r: multi ? 90 + 80 * Math.max(0, rightAxes - 1) : 30, t: 70, b: 130 },
         autosize: true
     };
+
     channelList.forEach((ch, i) => {
         const axKey = i === 0 ? 'yaxis' : `yaxis${i + 1}`;
         const color = CHANNEL_AXIS_COLORS[ch] || '#333';
         layout[axKey] = {
-            title: { text: `Ch ${ch} — OD`, font: { size: state.axisTitleFontSize, color } },
+            title: { text: `Ch ${ch} - OD`, font: { size: state.axisTitleFontSize, color } },
             tickfont: { size: state.axisTickFontSize, color },
             gridcolor: '#e9ecef',
         };
         if (i === 1) {
             layout[axKey].overlaying = 'y';
             layout[axKey].side = 'right';
-            layout[axKey].anchor = 'x';                       // hugs xDomainEnd
+            layout[axKey].anchor = 'x';
         } else if (i >= 2) {
             layout[axKey].overlaying = 'y';
             layout[axKey].side = 'right';
@@ -66,101 +54,313 @@ function buildMultiChannelLayout(channelList, title) {
             layout[axKey].position = Math.min(0.99, xDomainEnd + STEP * (i - 1));
         }
     });
-    if (!multi) layout.yaxis.title.text = 'Optical Density (OD)';
+
+    if (!multi && layout.yaxis) layout.yaxis.title.text = 'Optical Density (OD)';
     return layout;
 }
 
-// Return the Plotly yaxis ref ('y', 'y2', 'y3') for a channel given the ordered channel list.
 function channelToYAxis(ch, channelList) {
     const idx = channelList.indexOf(ch);
     return idx === 0 ? 'y' : `y${idx + 1}`;
 }
 
+function growthTraceMax(trace) {
+    let maxVal = -Infinity;
+    (trace.y || []).forEach(v => {
+        if (v === null || Number.isNaN(v)) return;
+        const numeric = Number(v);
+        if (Number.isFinite(numeric) && numeric > maxVal) maxVal = numeric;
+    });
+    return maxVal;
+}
+
+function growthTraceXRange(traces) {
+    let minX = Infinity;
+    let maxX = -Infinity;
+
+    traces.forEach(trace => {
+        const xs = trace.x || [];
+        const ys = trace.y || [];
+        xs.forEach((x, i) => {
+            const y = ys[i];
+            if (y === null || y === undefined || Number.isNaN(y)) return;
+            const numericY = Number(y);
+            if (!Number.isFinite(numericY)) return;
+
+            const numericX = Number(x);
+            if (!Number.isFinite(numericX)) return;
+            if (numericX < minX) minX = numericX;
+            if (numericX > maxX) maxX = numericX;
+        });
+    });
+
+    if (!Number.isFinite(minX) || !Number.isFinite(maxX)) return null;
+    if (minX === maxX) {
+        const pad = Math.max(Math.abs(minX) * 0.01, 0.5);
+        return [minX - pad, maxX + pad];
+    }
+    return [minX, maxX];
+}
+
+function prepareGrowthPagedData(data) {
+    const stats = data.stats || [];
+    const entries = (data.traces || []).map((trace, index) => ({
+        trace,
+        stat: stats[index],
+        maxY: growthTraceMax(trace)
+    }));
+
+    entries.sort((a, b) => {
+        if (a.maxY === b.maxY) return String(a.trace.well).localeCompare(String(b.trace.well));
+        if (!Number.isFinite(a.maxY)) return 1;
+        if (!Number.isFinite(b.maxY)) return -1;
+        return a.maxY - b.maxY;
+    });
+
+    return {
+        traces: entries.map(e => e.trace),
+        stats: entries.map(e => e.stat).filter(Boolean)
+    };
+}
+
+function currentGrowthPageSize(totalTraces) {
+    const raw = String(state.growthPlotGroupSize || '20');
+    if (raw === 'all') return Math.max(totalTraces, 1);
+    const parsed = parseInt(raw, 10);
+    if (!Number.isFinite(parsed) || parsed < 1) return 20;
+    return parsed;
+}
+
+function growthPageCount(totalTraces) {
+    return Math.max(1, Math.ceil(totalTraces / currentGrowthPageSize(totalTraces)));
+}
+
+function growthPageSlice(data) {
+    const total = data.traces.length;
+    const pageCount = growthPageCount(total);
+    state._growthPlotPageIndex = Math.min(Math.max(state._growthPlotPageIndex, 0), pageCount - 1);
+    const baseSize = Math.floor(total / pageCount);
+    const largerGroups = total % pageCount;
+    const pageSize = baseSize + (state._growthPlotPageIndex < largerGroups ? 1 : 0);
+    const start = state._growthPlotPageIndex * baseSize + Math.min(state._growthPlotPageIndex, largerGroups);
+    const end = Math.min(start + pageSize, total);
+    return {
+        traces: data.traces.slice(start, end),
+        stats: data.stats.slice(start, end),
+        start,
+        end,
+        total,
+        pageSize,
+        pageCount
+    };
+}
+
+function updateGrowthGroupControls(slice) {
+    const controls = document.getElementById('growth-group-controls');
+    if (!controls) return;
+
+    const shouldShow = slice.total > 20 || state.growthPlotGroupSize !== '20';
+    controls.style.display = shouldShow ? 'flex' : 'none';
+
+    const sizeInput = document.getElementById('growth-group-size');
+    if (sizeInput) {
+        sizeInput.value = state.growthPlotGroupSize === 'all'
+            ? String(Math.max(slice.total, 1))
+            : state.growthPlotGroupSize;
+        resizeNumericInput(sizeInput);
+    }
+
+    const allBtn = document.getElementById('growth-group-all');
+    if (allBtn) allBtn.classList.toggle('active', state.growthPlotGroupSize === 'all');
+
+    const pageInput = document.getElementById('growth-group-page');
+    if (pageInput) {
+        pageInput.value = String(state._growthPlotPageIndex + 1);
+        pageInput.max = String(slice.pageCount);
+        resizeNumericInput(pageInput);
+    }
+
+    const pageTotal = document.getElementById('growth-group-total-pages');
+    if (pageTotal) pageTotal.textContent = `/ ${slice.pageCount}`;
+
+    const curveRange = document.getElementById('growth-group-curve-range');
+    if (curveRange) {
+        const first = slice.total === 0 ? 0 : slice.start + 1;
+        curveRange.textContent = `${first}-${slice.end} / ${slice.total}`;
+    }
+
+    const prevBtn = document.getElementById('growth-group-prev');
+    const nextBtn = document.getElementById('growth-group-next');
+    if (prevBtn) prevBtn.disabled = state._growthPlotPageIndex <= 0;
+    if (nextBtn) nextBtn.disabled = state._growthPlotPageIndex >= slice.pageCount - 1;
+}
+
+function resizeNumericInput(input) {
+    const digits = Math.max(String(input.value || '').length, 1);
+    const extraPx = input.classList.contains('growth-group-size-input') ? 30 : 0;
+    input.style.setProperty('--digits-width', `calc(${digits + 1.4}ch + ${extraPx}px)`);
+}
+
+function resizeGrowthNumericInput(input) {
+    resizeNumericInput(input);
+}
+
+function buildGrowthPlotTrace(trace, channelList, multi) {
+    const ch = trace.channel || 1;
+    const wellName = trace.well_name || trace.well.split('_').slice(1).join('_');
+    const chLabel = multi ? ` [Ch ${ch}]` : '';
+    const color = multi ? (CHANNEL_AXIS_COLORS[ch] || undefined) : undefined;
+    return {
+        type: 'scattergl',
+        x: trace.x,
+        y: trace.y,
+        mode: 'lines+markers',
+        name: `${trace.experiment}: ${wellName}${chLabel} (${trace.condition})`,
+        yaxis: channelToYAxis(ch, channelList),
+        line: { width: 2, color },
+        marker: { size: 4, color }
+    };
+}
+
+async function renderGrowthPage() {
+    const data = state._growthPlotPagedData;
+    if (!data) return;
+
+    const slice = growthPageSlice(data);
+    const pageChannels = [...new Set(slice.traces.map(t => t.channel || 1))].sort((a, b) => a - b);
+    const allChannels = [...new Set(data.traces.map(t => t.channel || 1))].sort((a, b) => a - b);
+    const channelList = pageChannels.length > 0 ? pageChannels : allChannels;
+    const multi = allChannels.length > 1;
+    const traces = slice.traces.map(trace => buildGrowthPlotTrace(trace, channelList, multi));
+
+    const experimentNames = Array.from(state.selectedExperiments).join(', ');
+    const pageSuffix = slice.pageCount > 1
+        ? ` | group ${state._growthPlotPageIndex + 1}/${slice.pageCount}, curves ${slice.start + 1}-${slice.end}/${slice.total}`
+        : '';
+    const layout = buildMultiChannelLayout(
+        channelList,
+        `Growth Curves - ${experimentNames} (${slice.total} wells${pageSuffix})`
+    );
+    const xRange = growthTraceXRange(slice.traces);
+    if (xRange) layout.xaxis.range = xRange;
+    const config = { responsive: true, displayModeBar: true, modeBarButtonsToRemove: ['lasso2d', 'select2d'] };
+
+    document.getElementById('plot-growth-container').style.display = 'block';
+    document.getElementById('stats-container').style.display = 'block';
+    document.getElementById('plot-growth').style.display = '';
+    document.getElementById('plot-growth-split').style.display = 'none';
+
+    const splitBtn = document.getElementById('split-channels-btn');
+    if (splitBtn) {
+        splitBtn.style.display = multi ? '' : 'none';
+        splitBtn.textContent = 'Split by Channel';
+    }
+    state._splitChannelsActive = false;
+
+    updateGrowthGroupControls(slice);
+
+    const plotDiv = document.getElementById('plot-growth');
+    Plotly.purge(plotDiv);
+    await Plotly.newPlot(plotDiv, traces, layout, config);
+    displayStats(slice.stats);
+}
+
 async function plotGrowthCurves() {
     if (state.selectedWellIds.size === 0) return;
+    const requestId = ++state._growthPlotRequestId;
     showLoading();
 
     try {
+        const wellInfoById = new Map(state.allWells.map(w => [w.well_id, w]));
         const wellSelections = Array.from(state.selectedWellIds).map(wellId => {
-            const wellInfo = state.allWells.find(w => w.well_id === wellId);
+            const wellInfo = wellInfoById.get(wellId);
+            if (!wellInfo) return null;
             return { experiment: wellInfo.experiment, well: wellInfo.well, channel: wellInfo.channel || 1 };
-        });
+        }).filter(Boolean);
 
         const response = await fetch(`${API_BASE}/api/plot-data`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ well_selections: wellSelections })
         });
         const data = await response.json();
+        if (requestId !== state._growthPlotRequestId) return;
+
         state._lastGrowthData = data;
-        const channelList = [...new Set(data.traces.map(t => t.channel || 1))].sort((a, b) => a - b);
-        const multi = channelList.length > 1;
-
-        const traces = data.traces.map(trace => {
-            const ch = trace.channel || 1;
-            const wellName = trace.well_name || trace.well.split('_').slice(1).join('_');
-            const chLabel = multi ? ` [Ch ${ch}]` : '';
-            const color = multi ? (CHANNEL_AXIS_COLORS[ch] || undefined) : undefined;
-            return {
-                x: trace.x, y: trace.y,
-                mode: 'lines+markers',
-                name: `${trace.experiment}: ${wellName}${chLabel} (${trace.condition})`,
-                yaxis: channelToYAxis(ch, channelList),
-                line: { width: 2, color },
-                marker: { size: 4, color }
-            };
-        });
-
-        const experimentNames = Array.from(state.selectedExperiments).join(', ');
-        const layout = buildMultiChannelLayout(
-            channelList,
-            `Growth Curves — ${experimentNames} (${state.selectedWellIds.size} wells)`
-        );
-        const config = { responsive: true, displayModeBar: true, modeBarButtonsToRemove: ['lasso2d', 'select2d'] };
-
-        document.getElementById('plot-growth-container').style.display = 'block';
-        document.getElementById('stats-container').style.display = 'block';
-        // Reset split view
-        document.getElementById('plot-growth').style.display = '';
-        document.getElementById('plot-growth-split').style.display = 'none';
-        const splitBtn = document.getElementById('split-channels-btn');
-        splitBtn.style.display = multi ? '' : 'none';
-        splitBtn.textContent = '📊 Split by Channel';
-
-        const plotDiv = document.getElementById('plot-growth');
-        Plotly.purge(plotDiv);
-        await Plotly.newPlot(plotDiv, traces, layout, config);
-        displayStats(data.stats);
+        state._growthPlotPagedData = prepareGrowthPagedData(data);
+        state._growthPlotPageIndex = 0;
+        await renderGrowthPage();
         hideLoading();
     } catch (error) {
         console.error('Error plotting data:', error);
-        hideLoading();
-        showError('Error loading plot data');
+        if (requestId === state._growthPlotRequestId) {
+            hideLoading();
+            showError('Error loading plot data');
+        }
     }
 }
 
+function onGrowthGroupSizeChange(value) {
+    const raw = String(value || '').trim().toLowerCase();
+    if (raw === 'all') {
+        state.growthPlotGroupSize = 'all';
+    } else {
+        const parsed = Math.max(1, parseInt(raw, 10) || 20);
+        state.growthPlotGroupSize = String(parsed);
+    }
+    localStorage.setItem('growthPlotGroupSize', state.growthPlotGroupSize);
+    state._growthPlotPageIndex = 0;
+    renderGrowthPage();
+}
+
+function goToGrowthGroup(value) {
+    const data = state._growthPlotPagedData;
+    if (!data) return;
+
+    const requested = parseInt(value, 10);
+    if (!Number.isFinite(requested)) {
+        updateGrowthGroupControls(growthPageSlice(data));
+        return;
+    }
+    state._growthPlotPageIndex = Math.min(Math.max(requested - 1, 0), growthPageCount(data.traces.length) - 1);
+    renderGrowthPage();
+}
+
+function previousGrowthGroup() {
+    state._growthPlotPageIndex = Math.max(state._growthPlotPageIndex - 1, 0);
+    renderGrowthPage();
+}
+
+function nextGrowthGroup() {
+    const data = state._growthPlotPagedData;
+    if (!data) return;
+    state._growthPlotPageIndex = Math.min(state._growthPlotPageIndex + 1, growthPageCount(data.traces.length) - 1);
+    renderGrowthPage();
+}
 
 function toggleSplitChannels() {
     state._splitChannelsActive = !state._splitChannelsActive;
     const btn = document.getElementById('split-channels-btn');
     if (state._splitChannelsActive) {
-        btn.textContent = '📈 Combined View';
+        if (btn) btn.textContent = 'Combined View';
         document.getElementById('plot-growth').style.display = 'none';
         renderSplitChannels(state._lastGrowthData);
     } else {
-        btn.textContent = '📊 Split by Channel';
-        document.getElementById('plot-growth').style.display = '';
-        document.getElementById('plot-growth-split').style.display = 'none';
+        if (btn) btn.textContent = 'Split by Channel';
+        renderGrowthPage();
     }
 }
 
 function renderSplitChannels(data) {
     if (!data) return;
+    const pageData = state._growthPlotPagedData ? growthPageSlice(state._growthPlotPagedData) : null;
+    const tracesForSplit = pageData ? pageData.traces : data.traces;
     const splitDiv = document.getElementById('plot-growth-split');
     splitDiv.innerHTML = '';
     splitDiv.style.display = 'block';
 
     const byChannel = {};
-    data.traces.forEach(trace => {
+    tracesForSplit.forEach(trace => {
         const ch = trace.channel || 1;
         if (!byChannel[ch]) byChannel[ch] = [];
         byChannel[ch].push(trace);
@@ -168,8 +368,8 @@ function renderSplitChannels(data) {
 
     const config = { responsive: true, displayModeBar: true, modeBarButtonsToRemove: ['lasso2d', 'select2d'] };
 
-    Object.keys(byChannel).sort().forEach(ch => {
-        ch = parseInt(ch);
+    Object.keys(byChannel).sort((a, b) => Number(a) - Number(b)).forEach(chRaw => {
+        const ch = parseInt(chRaw, 10);
         const color = CHANNEL_AXIS_COLORS[ch] || '#333';
         const container = document.createElement('div');
         container.style.cssText = `border-top: 3px solid ${color}; margin-top: 8px;`;
@@ -181,33 +381,54 @@ function renderSplitChannels(data) {
         const traces = byChannel[ch].map(trace => {
             const wellName = trace.well_name || trace.well.split('_').slice(1).join('_');
             return {
-                x: trace.x, y: trace.y,
+                type: 'scattergl',
+                x: trace.x,
+                y: trace.y,
                 mode: 'lines+markers',
                 name: `${trace.experiment}: ${wellName} (${trace.condition})`,
-                line: { width: 2 }, marker: { size: 4 }
+                line: { width: 2 },
+                marker: { size: 4 }
             };
         });
+
         const layout = {
             title: { text: `Channel ${ch}`, font: { size: 16, color } },
             xaxis: { title: { text: 'Time (hours)', font: { size: state.axisTitleFontSize } }, tickfont: { size: state.axisTickFontSize }, gridcolor: '#e9ecef' },
-            yaxis: { title: { text: `Ch ${ch} — OD`, font: { size: state.axisTitleFontSize, color } }, tickfont: { size: state.axisTickFontSize, color }, gridcolor: '#e9ecef' },
-            hovermode: 'x unified', template: 'plotly_white',
+            yaxis: { title: { text: `Ch ${ch} - OD`, font: { size: state.axisTitleFontSize, color } }, tickfont: { size: state.axisTickFontSize, color }, gridcolor: '#e9ecef' },
+            hovermode: 'x unified',
+            template: 'plotly_white',
             legend: { orientation: 'h', xanchor: 'center', x: 0.5, y: -0.25, font: { size: state.legendFontSize } },
-            margin: { l: 70, r: 30, t: 50, b: 100 }, autosize: true
+            margin: { l: 70, r: 30, t: 50, b: 100 },
+            autosize: true
         };
+        const xRange = growthTraceXRange(byChannel[ch]);
+        if (xRange) layout.xaxis.range = xRange;
         Plotly.newPlot(plotEl, traces, layout, config);
     });
 }
 
-// Display statistics table
+const STATS_VISIBLE_ROWS = 11;
+
+function updateStatsTableScroll(statsTable, rowCount) {
+    statsTable.classList.toggle('stats-scrollable', rowCount > STATS_VISIBLE_ROWS);
+    statsTable.style.maxHeight = '';
+
+    if (rowCount <= STATS_VISIBLE_ROWS) return;
+
+    const header = statsTable.querySelector('thead');
+    const rows = Array.from(statsTable.querySelectorAll('tbody tr')).slice(0, STATS_VISIBLE_ROWS);
+    const visibleHeight = rows.reduce((sum, row) => sum + row.getBoundingClientRect().height, header?.getBoundingClientRect().height || 0);
+    statsTable.style.maxHeight = `${Math.ceil(visibleHeight) + 2}px`;
+}
+
 function displayStats(stats) {
     const statsTable = document.getElementById('stats-table');
-    
     if (stats.length === 0) {
+        updateStatsTableScroll(statsTable, 0);
         statsTable.innerHTML = '<p>No data available</p>';
         return;
     }
-    
+
     let tableHTML = `
         <table>
             <thead>
@@ -222,7 +443,7 @@ function displayStats(stats) {
             </thead>
             <tbody>
     `;
-    
+
     stats.forEach(stat => {
         tableHTML += `
             <tr>
@@ -235,13 +456,15 @@ function displayStats(stats) {
             </tr>
         `;
     });
-    
+
     tableHTML += '</tbody></table>';
     statsTable.innerHTML = tableHTML;
+    updateStatsTableScroll(statsTable, stats.length);
 }
-
 
 export {
     resizePlot, buildMultiChannelLayout, channelToYAxis,
     plotGrowthCurves, toggleSplitChannels, renderSplitChannels, displayStats,
+    onGrowthGroupSizeChange, goToGrowthGroup, previousGrowthGroup, nextGrowthGroup,
+    resizeGrowthNumericInput,
 };

@@ -1,6 +1,7 @@
 import { state, API_BASE } from './state.js';
 import { plotGrowthCurves } from './plot.js';
 import { buildReplicateList } from './replicates.js';
+import { hidePlotAndStats } from './ui.js';
 
 function displayWells(wells) {
     console.log('displayWells called with', wells.length, 'wells');
@@ -175,8 +176,9 @@ function _wellColumnId(experiment, channel, type) {
     return `${type}-${experiment}${chSuffix}`;
 }
 
-function toggleWell(wellId) {
+function toggleWell(wellId, refreshPlot = true, refreshCounts = true) {
     const wellItem = document.querySelector(`[data-well-id="${wellId}"]`);
+    if (!wellItem) return;
     const experiment = wellItem.dataset.experiment;
     const channel = parseInt(wellItem.dataset.channel || '1');
 
@@ -199,14 +201,18 @@ function toggleWell(wellId) {
     }
 
     // Update headers and counts
-    updateExperimentHeaders();
-    updateSelectedCount();
+    if (refreshCounts) {
+        updateExperimentHeaders();
+        updateSelectedCount();
+    }
 
     // Update plot
-    if (state.selectedWellIds.size > 0) {
-        plotGrowthCurves();
-    } else {
-        hidePlotAndStats();
+    if (refreshPlot) {
+        if (state.selectedWellIds.size > 0) {
+            plotGrowthCurves();
+        } else {
+            hidePlotAndStats();
+        }
     }
 }
 
@@ -256,12 +262,23 @@ function updateSelectedCount() {
 // Select all filtered wells
 function selectAllFilteredWells() {
     const visibleWells = document.querySelectorAll('.well-item:not([style*="display: none"])');
+    let changed = false;
     visibleWells.forEach(wellItem => {
         const wellId = wellItem.dataset.wellId;
         if (!state.selectedWellIds.has(wellId)) {
-            toggleWell(wellId);
+            toggleWell(wellId, false, false);
+            changed = true;
         }
     });
+    if (!changed) return;
+
+    updateExperimentHeaders();
+    updateSelectedCount();
+    if (state.selectedWellIds.size > 0) {
+        plotGrowthCurves();
+    } else {
+        hidePlotAndStats();
+    }
 }
 
 // Clear all selected wells
@@ -292,7 +309,7 @@ function clearAllSelectedWells() {
     updateSelectedCount();
     
     // Update the plot (clear it)
-    updatePlotWithSelectedWells();
+    hidePlotAndStats();
 }
 
 // Filter wells in accordion based on condition and antibiotic text
