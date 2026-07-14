@@ -485,11 +485,17 @@
             z-index: 9999 !important;
             background: white !important;
             margin: 0 !important;
+            padding-bottom: 10px !important;
             border-radius: 0 !important;
             box-shadow: none !important;
+            overflow: hidden !important;
         }
 
-        .fullscreen-plot #plot-growth,
+        .fullscreen-plot #plot-growth {
+            height: var(--growth-fullscreen-plot-height, calc((100vh - var(--plot-controls-height, 80px)) * 0.65)) !important;
+            width: 100% !important;
+        }
+
         .fullscreen-plot #plot-fitting {
             height: calc(100vh - var(--plot-controls-height, 80px)) !important;
             width: 100% !important;
@@ -498,6 +504,11 @@
         .fullscreen-plot .plotly {
             height: 100% !important;
             width: 100% !important;
+        }
+
+        .fullscreen-plot .growth-legend-panel {
+            max-height: var(--growth-fullscreen-legend-height, 220px);
+            margin: 6px 16px 8px 70px;
         }
 
         .fullscreen-plot .plot-controls {
@@ -559,6 +570,10 @@
         #plot-growth-container .plot-controls h3 {
             font-size: 24px;
             line-height: 1.2;
+        }
+
+        #plot-growth-container {
+            padding-bottom: 18px;
         }
 
         #plot-growth-container .plot-options-row label,
@@ -642,6 +657,116 @@
             border-color: #adb5bd;
             color: #212529;
             font-weight: 600;
+        }
+
+        .growth-hover-tooltip {
+            position: absolute;
+            z-index: 20;
+            display: none;
+            width: min(420px, calc(100% - 16px));
+            max-height: none;
+            overflow: visible;
+            padding: 8px;
+            border: 1px solid rgba(33, 37, 41, 0.18);
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.96);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+            color: #212529;
+            font-size: 12px;
+            line-height: 1.35;
+            pointer-events: none;
+        }
+
+        .growth-hover-tooltip.visible {
+            display: block;
+        }
+
+        .growth-hover-title {
+            margin-bottom: 6px;
+            color: #495057;
+            font-weight: 700;
+        }
+
+        .growth-hover-row {
+            display: grid;
+            grid-template-columns: 10px minmax(0, 1fr) auto;
+            gap: 7px;
+            align-items: center;
+            padding: 2px 0;
+        }
+
+        .growth-hover-swatch {
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15);
+        }
+
+        .growth-hover-name {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .growth-hover-values {
+            color: #495057;
+            font-family: 'Courier New', monospace;
+            white-space: nowrap;
+        }
+
+        .growth-legend-panel {
+            position: relative;
+            z-index: 12;
+            display: flex;
+            align-content: flex-start;
+            align-items: flex-start;
+            flex-wrap: wrap;
+            gap: 4px 10px;
+            overflow-y: auto;
+            max-height: var(--growth-legend-max-height, 245px);
+            margin: 6px 16px 0 70px;
+            padding: 2px 4px 8px 0;
+            background: #fff;
+        }
+
+        .growth-legend-item {
+            display: inline-flex;
+            align-items: center;
+            max-width: 260px;
+            min-width: 0;
+            gap: 5px;
+            border: 0;
+            background: transparent;
+            color: #444;
+            cursor: pointer;
+            font-size: var(--growth-legend-font-size, 12px);
+            line-height: 1.2;
+            padding: 1px 2px;
+        }
+
+        .growth-legend-item:hover {
+            background: rgba(73, 80, 87, 0.08);
+            border-radius: 3px;
+        }
+
+        .growth-legend-item.hidden-trace {
+            opacity: 0.35;
+        }
+
+        .growth-legend-swatch {
+            width: 10px;
+            height: 10px;
+            flex: 0 0 10px;
+            border-radius: 50%;
+            box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.16);
+        }
+
+        .growth-legend-label {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         /* Accordion styles for experiments */

@@ -1,6 +1,12 @@
 import { state, API_BASE } from './state.js';
 
 function relayoutFontSizes() {
+    document.querySelectorAll('.growth-legend-panel')
+        .forEach(el => el.style.setProperty('--growth-legend-font-size', `${state.legendFontSize}px`));
+    if (document.querySelector('.fullscreen-plot .growth-legend-panel')) {
+        requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
+    }
+
     const plots = [
         { divId: 'plot-growth', containerId: 'plot-growth-container' },
         { divId: 'plot-fitting', containerId: 'plot-fitting-container' }
@@ -22,7 +28,7 @@ function relayoutFontSizes() {
 
 function setLegendFontSize(val) {
     state.legendFontSize = parseInt(val);
-    localStorage.setItem('state.legendFontSize', String(val));
+    localStorage.setItem('legendFontSize', String(val));
     document.querySelectorAll('.legend-font-select').forEach(s => s.value = val);
     relayoutFontSizes();
 }

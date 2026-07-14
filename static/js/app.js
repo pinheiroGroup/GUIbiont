@@ -49,6 +49,10 @@ import { setClusteringMode, populateClusteringExperiments,
          runClusterComparison, renderComparisonResult, hexToRgba,
          runBatchAverage } from './clustering.js';
 
+const FULLSCREEN_GROWTH_PLOT_FRACTION = 0.65;
+const FULLSCREEN_GROWTH_MIN_PLOT_HEIGHT = 220;
+const FULLSCREEN_GROWTH_MIN_LEGEND_HEIGHT = 48;
+
 // ---------------------------------------------------------------------------
 // Initialization functions (wired here because they call many other modules)
 // ---------------------------------------------------------------------------
@@ -299,9 +303,32 @@ window.addEventListener('resize', () => {
         else if (fittingContainer && fittingContainer.classList.contains('fullscreen-plot'))
             activePlotDiv = document.getElementById('plot-fitting');
         if (activePlotDiv && typeof Plotly !== 'undefined') {
+            let plotHeight = window.innerHeight - 80;
+            if (growthContainer && growthContainer.classList.contains('fullscreen-plot') && activePlotDiv.id === 'plot-growth') {
+                const controls = growthContainer.querySelector('.plot-controls');
+                const controlsHeight = controls ? Math.ceil(controls.getBoundingClientRect().height) : 80;
+                const containerStyle = getComputedStyle(growthContainer);
+                const paddingY = (parseFloat(containerStyle.paddingTop) || 0) + (parseFloat(containerStyle.paddingBottom) || 0);
+                const availableHeight = Math.max(180, window.innerHeight - controlsHeight - paddingY);
+                const legend = activePlotDiv.nextElementSibling?.classList?.contains('growth-legend-panel')
+                    ? activePlotDiv.nextElementSibling
+                    : null;
+                const legendStyle = legend ? getComputedStyle(legend) : null;
+                const legendMargins = legendStyle
+                    ? (parseFloat(legendStyle.marginTop) || 0) + (parseFloat(legendStyle.marginBottom) || 0)
+                    : 0;
+                const minPlotHeight = Math.max(FULLSCREEN_GROWTH_MIN_PLOT_HEIGHT, Math.floor(availableHeight * FULLSCREEN_GROWTH_PLOT_FRACTION));
+                const legendHeight = Math.max(FULLSCREEN_GROWTH_MIN_LEGEND_HEIGHT, availableHeight - minPlotHeight - legendMargins);
+                const legendNeededHeight = legend ? Math.min(legend.scrollHeight, legendHeight) : 0;
+                plotHeight = Math.max(minPlotHeight, availableHeight - legendNeededHeight - legendMargins);
+                growthContainer.style.setProperty('--plot-controls-height', `${controlsHeight}px`);
+                growthContainer.style.setProperty('--growth-fullscreen-plot-height', `${plotHeight}px`);
+                growthContainer.style.setProperty('--growth-fullscreen-legend-height', `${legendHeight}px`);
+                if (legend) legend.style.setProperty('--growth-legend-max-height', `${legendHeight}px`);
+            }
             Plotly.relayout(activePlotDiv, {
                 width:  window.innerWidth,
-                height: window.innerHeight - 80,
+                height: plotHeight,
             });
         }
     } else {

@@ -1,6 +1,12 @@
 import { state, CHANNEL_AXIS_COLORS, API_BASE } from './state.js';
 import { showLoading, hideLoading, showError } from './ui.js';
 
+const GROWTH_HOVER_LIMIT = 20;
+const GROWTH_X_TITLE_STANDOFF = 2;
+const GROWTH_MAIN_PLOT_HEIGHT = 485;
+const GROWTH_SPLIT_PLOT_HEIGHT = 345;
+const GROWTH_LEGEND_MAX_HEIGHT = 245;
+
 function resizePlot() {
     const growthPlot = document.getElementById('plot-growth');
     const fittingPlot = document.getElementById('plot-fitting');
@@ -14,6 +20,253 @@ function resizePlot() {
     }
 }
 
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function formatHoverNumber(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return String(value ?? '');
+    return Math.abs(numeric) >= 1000 || (Math.abs(numeric) > 0 && Math.abs(numeric) < 0.001)
+        ? numeric.toExponential(3)
+        : numeric.toPrecision(4).replace(/\.?0+$/, '');
+}
+
+function yAxisLayoutKey(trace) {
+    const axis = trace.yaxis || 'y';
+    return axis === 'y' ? 'yaxis' : `yaxis${axis.slice(1)}`;
+}
+
+function axisPixelToData(axis, pixel) {
+    if (!axis) return NaN;
+    if (typeof axis.p2c === 'function') return axis.p2c(pixel);
+    if (typeof axis.p2l === 'function') return axis.p2l(pixel);
+    const range = axis.range || [];
+    if (range.length < 2 || !Number.isFinite(range[0]) || !Number.isFinite(range[1]) || !axis._length) return NaN;
+    return range[0] + (pixel / axis._length) * (range[1] - range[0]);
+}
+
+function nearestSortedIndex(values, target) {
+    let lo = 0;
+    let hi = values.length - 1;
+    while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        const value = Number(values[mid]);
+        if (!Number.isFinite(value) || value < target) lo = mid + 1;
+        else hi = mid - 1;
+    }
+    return lo;
+}
+
+function closestGrowthPoint(plotDiv, trace, curveNumber, cursorXByAxis, cursorYByAxis, cursorDataX) {
+    const xAxis = plotDiv._fullLayout?.xaxis;
+    const yAxis = plotDiv._fullLayout?.[yAxisLayoutKey(trace)] || plotDiv._fullLayout?.yaxis;
+    const xs = trace.x || [];
+    const ys = trace.y || [];
+    if (!xAxis || !yAxis || xs.length === 0 || ys.length === 0) return null;
+
+    const center = nearestSortedIndex(xs, cursorDataX);
+    const start = Math.max(0, center - 3);
+    const end = Math.min(xs.length - 1, center + 3);
+    let best = null;
+
+    for (let pointNumber = start; pointNumber <= end; pointNumber += 1) {
+        const xVal = Number(xs[pointNumber]);
+        const yRaw = ys[pointNumber];
+        const yVal = Number(yRaw);
+        if (!Number.isFinite(xVal) || !Number.isFinite(yVal)) continue;
+
+        const px = xAxis.l2p(xVal);
+        const py = yAxis.l2p(yVal);
+        if (!Number.isFinite(px) || !Number.isFinite(py)) continue;
+
+        const dx = px - cursorXByAxis;
+        const dy = py - cursorYByAxis;
+        const d2 = dx * dx + dy * dy;
+        if (!best || d2 < best.d2) {
+            const fullTrace = plotDiv._fullData?.[curveNumber] || trace;
+            best = {
+                d2,
+                x: xVal,
+                y: yVal,
+                name: trace.name || fullTrace.name || `Curve ${curveNumber + 1}`,
+                color: fullTrace.line?.color || fullTrace.marker?.color || trace.line?.color || trace.marker?.color || '#495057'
+            };
+        }
+    }
+
+    return best;
+}
+
+function positionGrowthTooltip(plotDiv, tooltip, event) {
+    const rect = plotDiv.getBoundingClientRect();
+    let left = event.clientX - rect.left + 14;
+    let top = event.clientY - rect.top + 14;
+
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${top}px`;
+
+    const width = tooltip.offsetWidth;
+    const height = tooltip.offsetHeight;
+    if (left + width > plotDiv.clientWidth - 8) left = event.clientX - rect.left - width - 14;
+    if (top + height > plotDiv.clientHeight - 8) top = event.clientY - rect.top - height - 14;
+
+    tooltip.style.left = `${Math.max(8, left)}px`;
+    tooltip.style.top = `${Math.max(8, top)}px`;
+}
+
+function renderGrowthTooltip(plotDiv, tooltip, event) {
+    const fullLayout = plotDiv._fullLayout;
+    const xAxis = fullLayout?.xaxis;
+    const yAxis = fullLayout?.yaxis;
+    if (!xAxis || !yAxis || !plotDiv.data) return;
+
+    const rect = plotDiv.getBoundingClientRect();
+    const cursorXByAxis = event.clientX - rect.left - xAxis._offset;
+    const cursorYByPrimaryAxis = event.clientY - rect.top - yAxis._offset;
+    if (
+        cursorXByAxis < 0 || cursorXByAxis > xAxis._length ||
+        cursorYByPrimaryAxis < 0 || cursorYByPrimaryAxis > yAxis._length
+    ) {
+        tooltip.classList.remove('visible');
+        return;
+    }
+
+    const cursorDataX = axisPixelToData(xAxis, cursorXByAxis);
+    if (!Number.isFinite(cursorDataX)) {
+        tooltip.classList.remove('visible');
+        return;
+    }
+
+    const closest = [];
+    plotDiv.data.forEach((trace, curveNumber) => {
+        if (!trace || trace.visible === 'legendonly' || trace.visible === false) return;
+        const traceYAxis = fullLayout[yAxisLayoutKey(trace)] || yAxis;
+        const cursorYByAxis = event.clientY - rect.top - traceYAxis._offset;
+        const point = closestGrowthPoint(plotDiv, trace, curveNumber, cursorXByAxis, cursorYByAxis, cursorDataX);
+        if (point) closest.push(point);
+    });
+
+    closest.sort((a, b) => a.d2 - b.d2);
+    const rows = closest.slice(0, GROWTH_HOVER_LIMIT);
+    if (rows.length === 0) {
+        tooltip.classList.remove('visible');
+        return;
+    }
+
+    tooltip.innerHTML = `
+        ${rows.map(row => `
+            <div class="growth-hover-row">
+                <span class="growth-hover-swatch" style="background:${escapeHtml(row.color)}"></span>
+                <span class="growth-hover-name">${escapeHtml(row.name)}</span>
+                <span class="growth-hover-values">t=${formatHoverNumber(row.x)} OD=${formatHoverNumber(row.y)}</span>
+            </div>
+        `).join('')}
+    `;
+    tooltip.classList.add('visible');
+    positionGrowthTooltip(plotDiv, tooltip, event);
+}
+
+function detachGrowthHover(plotDiv) {
+    if (plotDiv?._growthHoverCleanup) {
+        plotDiv._growthHoverCleanup();
+        delete plotDiv._growthHoverCleanup;
+    }
+}
+
+function detachGrowthLegend(plotDiv) {
+    plotDiv?.querySelector('.growth-legend-panel')?.remove();
+    plotDiv?.nextElementSibling?.classList?.contains('growth-legend-panel') && plotDiv.nextElementSibling.remove();
+}
+
+function traceDisplayColor(plotDiv, trace, traceIndex) {
+    const fullTrace = plotDiv._fullData?.[traceIndex] || trace;
+    return fullTrace.line?.color || fullTrace.marker?.color || trace.line?.color || trace.marker?.color || '#495057';
+}
+
+function setGrowthPlotHeight(plotDiv, height = GROWTH_MAIN_PLOT_HEIGHT) {
+    if (plotDiv) plotDiv.style.height = `${height}px`;
+}
+
+function installGrowthLegend(plotDiv) {
+    if (!plotDiv) return;
+    detachGrowthLegend(plotDiv);
+
+    const legend = document.createElement('div');
+    legend.className = 'growth-legend-panel';
+    legend.style.setProperty('--growth-legend-font-size', `${state.legendFontSize}px`);
+    legend.style.setProperty('--growth-legend-max-height', `${GROWTH_LEGEND_MAX_HEIGHT}px`);
+
+    (plotDiv.data || []).forEach((trace, traceIndex) => {
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.className = 'growth-legend-item';
+        item.title = trace.name || `Curve ${traceIndex + 1}`;
+
+        const swatch = document.createElement('span');
+        swatch.className = 'growth-legend-swatch';
+        swatch.style.background = traceDisplayColor(plotDiv, trace, traceIndex);
+
+        const label = document.createElement('span');
+        label.className = 'growth-legend-label';
+        label.textContent = trace.name || `Curve ${traceIndex + 1}`;
+
+        item.append(swatch, label);
+        item.classList.toggle('hidden-trace', trace.visible === 'legendonly' || trace.visible === false);
+        item.addEventListener('click', () => {
+            const isHidden = plotDiv.data?.[traceIndex]?.visible === 'legendonly' || plotDiv.data?.[traceIndex]?.visible === false;
+            const nextVisible = isHidden ? true : 'legendonly';
+            item.classList.toggle('hidden-trace', !isHidden);
+            Plotly.restyle(plotDiv, { visible: [nextVisible] }, [traceIndex]);
+        });
+
+        legend.appendChild(item);
+    });
+
+    plotDiv.insertAdjacentElement('afterend', legend);
+    if (plotDiv.closest('.fullscreen-plot')) {
+        requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
+    }
+}
+
+function installGrowthHover(plotDiv) {
+    if (!plotDiv) return;
+    detachGrowthHover(plotDiv);
+
+    plotDiv.style.position = plotDiv.style.position || 'relative';
+    plotDiv.dataset.growthHoverInstalled = 'true';
+    const tooltip = document.createElement('div');
+    tooltip.className = 'growth-hover-tooltip';
+    plotDiv.appendChild(tooltip);
+
+    let lastEvent = null;
+    let frame = null;
+    const scheduleRender = event => {
+        lastEvent = event;
+        if (frame !== null) return;
+        frame = requestAnimationFrame(() => {
+            frame = null;
+            renderGrowthTooltip(plotDiv, tooltip, lastEvent);
+        });
+    };
+    const hide = () => tooltip.classList.remove('visible');
+
+    plotDiv.addEventListener('mousemove', scheduleRender);
+    plotDiv.addEventListener('mouseleave', hide);
+    plotDiv._growthHoverCleanup = () => {
+        plotDiv.removeEventListener('mousemove', scheduleRender);
+        plotDiv.removeEventListener('mouseleave', hide);
+        if (frame !== null) cancelAnimationFrame(frame);
+        tooltip.remove();
+        delete plotDiv.dataset.growthHoverInstalled;
+    };
+}
+
 function buildMultiChannelLayout(channelList, title) {
     const N = channelList.length;
     const multi = N > 1;
@@ -23,15 +276,15 @@ function buildMultiChannelLayout(channelList, title) {
     const layout = {
         title: { text: title, font: { size: 20, color: '#495057' } },
         xaxis: {
-            title: { text: 'Time (hours)', font: { size: state.axisTitleFontSize }, standoff: 4 },
+            title: { text: 'Time (hours)', font: { size: state.axisTitleFontSize }, standoff: GROWTH_X_TITLE_STANDOFF },
             tickfont: { size: state.axisTickFontSize },
             gridcolor: '#e9ecef',
             domain: [0, xDomainEnd]
         },
         hovermode: 'x unified',
         template: 'plotly_white',
-        legend: { orientation: 'h', xanchor: 'center', x: 0.5, y: -0.22, font: { size: state.legendFontSize } },
-        margin: { l: 70, r: multi ? 90 + 80 * Math.max(0, rightAxes - 1) : 30, t: 70, b: 130 },
+        showlegend: false,
+        margin: { l: 70, r: multi ? 90 + 80 * Math.max(0, rightAxes - 1) : 30, t: 70, b: 55 },
         autosize: true
     };
 
@@ -218,7 +471,8 @@ function buildGrowthPlotTrace(trace, channelList, multi) {
         name: `${trace.experiment}: ${wellName}${chLabel} (${trace.condition})`,
         yaxis: channelToYAxis(ch, channelList),
         line: { width: 2, color },
-        marker: { size: 4, color }
+        marker: { size: 4, color },
+        hoverinfo: 'skip'
     };
 }
 
@@ -241,6 +495,7 @@ async function renderGrowthPage() {
         channelList,
         `Growth Curves - ${experimentNames} (${slice.total} wells${pageSuffix})`
     );
+    layout.hovermode = false;
     const xRange = growthTraceXRange(slice.traces);
     if (xRange) layout.xaxis.range = xRange;
     const config = { responsive: true, displayModeBar: true, modeBarButtonsToRemove: ['lasso2d', 'select2d'] };
@@ -260,8 +515,13 @@ async function renderGrowthPage() {
     updateGrowthGroupControls(slice);
 
     const plotDiv = document.getElementById('plot-growth');
+    detachGrowthLegend(plotDiv);
+    detachGrowthHover(plotDiv);
     Plotly.purge(plotDiv);
+    setGrowthPlotHeight(plotDiv);
     await Plotly.newPlot(plotDiv, traces, layout, config);
+    installGrowthLegend(plotDiv);
+    installGrowthHover(plotDiv);
     displayStats(slice.stats);
 }
 
@@ -343,7 +603,9 @@ function toggleSplitChannels() {
     const btn = document.getElementById('split-channels-btn');
     if (state._splitChannelsActive) {
         if (btn) btn.textContent = 'Combined View';
-        document.getElementById('plot-growth').style.display = 'none';
+        const mainPlot = document.getElementById('plot-growth');
+        detachGrowthLegend(mainPlot);
+        mainPlot.style.display = 'none';
         renderSplitChannels(state._lastGrowthData);
     } else {
         if (btn) btn.textContent = 'Split by Channel';
@@ -356,6 +618,8 @@ function renderSplitChannels(data) {
     const pageData = state._growthPlotPagedData ? growthPageSlice(state._growthPlotPagedData) : null;
     const tracesForSplit = pageData ? pageData.traces : data.traces;
     const splitDiv = document.getElementById('plot-growth-split');
+    splitDiv.querySelectorAll('.growth-legend-panel').forEach(el => el.remove());
+    splitDiv.querySelectorAll('[data-growth-hover-installed="true"]').forEach(detachGrowthHover);
     splitDiv.innerHTML = '';
     splitDiv.style.display = 'block';
 
@@ -374,7 +638,7 @@ function renderSplitChannels(data) {
         const container = document.createElement('div');
         container.style.cssText = `border-top: 3px solid ${color}; margin-top: 8px;`;
         const plotEl = document.createElement('div');
-        plotEl.style.cssText = 'width:100%; height:500px;';
+        plotEl.style.cssText = `width:100%; height:${GROWTH_SPLIT_PLOT_HEIGHT}px;`;
         container.appendChild(plotEl);
         splitDiv.appendChild(container);
 
@@ -387,23 +651,27 @@ function renderSplitChannels(data) {
                 mode: 'lines+markers',
                 name: `${trace.experiment}: ${wellName} (${trace.condition})`,
                 line: { width: 2 },
-                marker: { size: 4 }
+                marker: { size: 4 },
+                hoverinfo: 'skip'
             };
         });
 
         const layout = {
             title: { text: `Channel ${ch}`, font: { size: 16, color } },
-            xaxis: { title: { text: 'Time (hours)', font: { size: state.axisTitleFontSize } }, tickfont: { size: state.axisTickFontSize }, gridcolor: '#e9ecef' },
+            xaxis: { title: { text: 'Time (hours)', font: { size: state.axisTitleFontSize }, standoff: GROWTH_X_TITLE_STANDOFF }, tickfont: { size: state.axisTickFontSize }, gridcolor: '#e9ecef' },
             yaxis: { title: { text: `Ch ${ch} - OD`, font: { size: state.axisTitleFontSize, color } }, tickfont: { size: state.axisTickFontSize, color }, gridcolor: '#e9ecef' },
-            hovermode: 'x unified',
+            hovermode: false,
             template: 'plotly_white',
-            legend: { orientation: 'h', xanchor: 'center', x: 0.5, y: -0.25, font: { size: state.legendFontSize } },
-            margin: { l: 70, r: 30, t: 50, b: 100 },
+            showlegend: false,
+            margin: { l: 70, r: 30, t: 50, b: 55 },
             autosize: true
         };
         const xRange = growthTraceXRange(byChannel[ch]);
         if (xRange) layout.xaxis.range = xRange;
-        Plotly.newPlot(plotEl, traces, layout, config);
+        Plotly.newPlot(plotEl, traces, layout, config).then(() => {
+            installGrowthLegend(plotEl);
+            installGrowthHover(plotEl);
+        });
     });
 }
 
@@ -466,5 +734,7 @@ export {
     resizePlot, buildMultiChannelLayout, channelToYAxis,
     plotGrowthCurves, toggleSplitChannels, renderSplitChannels, displayStats,
     onGrowthGroupSizeChange, goToGrowthGroup, previousGrowthGroup, nextGrowthGroup,
-    resizeGrowthNumericInput,
+    resizeGrowthNumericInput, installGrowthHover, detachGrowthHover,
+    setGrowthPlotHeight,
+    installGrowthLegend, detachGrowthLegend,
 };

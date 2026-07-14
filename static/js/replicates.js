@@ -1,5 +1,7 @@
 import { state, API_BASE } from './state.js';
-import { buildMultiChannelLayout, channelToYAxis, displayStats } from './plot.js';
+import { buildMultiChannelLayout, channelToYAxis, displayStats,
+         installGrowthHover, detachGrowthHover, setGrowthPlotHeight,
+         installGrowthLegend, detachGrowthLegend } from './plot.js';
 import { showLoading, hideLoading, showError, hidePlotAndStats } from './ui.js';
 
 function buildReplicateList(wells) {
@@ -176,7 +178,8 @@ async function plotReplicates() {
                 name: `${rep.label} (avg, n=${groupTraces.length})`,
                 yaxis: yax,
                 line: { width: 3, color },
-                marker: { size: 5, color }
+                marker: { size: 5, color },
+                hoverinfo: 'skip'
             });
             traceGroupMeta[key] = { avgIdx: traceIdx, individualIdxs: [] };
             traceIdx++;
@@ -200,7 +203,8 @@ async function plotReplicates() {
                         name: trace.well,
                         yaxis: yax,
                         line: { width: 1, color, dash: 'dot' },
-                        opacity: 0.5
+                        opacity: 0.5,
+                        hoverinfo: 'skip'
                     });
                     traceGroupMeta[key].individualIdxs.push(traceIdx);
                     traceIdx++;
@@ -209,13 +213,19 @@ async function plotReplicates() {
         });
 
         const layout = buildMultiChannelLayout(repChannelList, 'Growth Curves — Replicates');
+        layout.hovermode = false;
         const config = { responsive: true, displayModeBar: true, modeBarButtonsToRemove: ['lasso2d', 'select2d'] };
 
         document.getElementById('plot-growth-container').style.display = 'block';
         document.getElementById('stats-container').style.display = 'block';
         const plotDiv = document.getElementById('plot-growth');
+        detachGrowthLegend(plotDiv);
+        detachGrowthHover(plotDiv);
         Plotly.purge(plotDiv);
+        setGrowthPlotHeight(plotDiv);
         await Plotly.newPlot(plotDiv, plotTraces, layout, config);
+        installGrowthLegend(plotDiv);
+        installGrowthHover(plotDiv);
         displayStats(stats);
 
         // Recalculate the group average whenever an individual trace is shown/hidden via the legend
