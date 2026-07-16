@@ -684,10 +684,6 @@ function renderClusterGrid(data) {
             return viewState.history[viewState.index] || { selected: null, xRange: null, yRange: null };
         }
 
-        function currentSelection() {
-            return currentView().selected;
-        }
-
         function updateDrillNav() {
             const isFs = cell.classList.contains('fullscreen');
             const view = currentView();
@@ -790,7 +786,7 @@ function renderClusterGrid(data) {
             document.body.style.overflow = isFs ? 'hidden' : '';
             if (isFs) {
                 updateDrillNav();
-                Plotly.Plots.resize(plotDiv);
+            Plotly.Plots.resize(plotDiv);
             } else {
                 resetClusterDrill();
             }
@@ -848,7 +844,7 @@ function renderClusterGrid(data) {
                 yRange: currentRange.yRange,
             });
             renderClusterPlot();
-        });
+            });
 
         renderClusterPlot().then(bindClusterZoomHistory);
     });
