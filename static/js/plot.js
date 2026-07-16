@@ -620,6 +620,9 @@ function renderSplitChannels(data) {
     const splitDiv = document.getElementById('plot-growth-split');
     splitDiv.querySelectorAll('.growth-legend-panel').forEach(el => el.remove());
     splitDiv.querySelectorAll('[data-growth-hover-installed="true"]').forEach(detachGrowthHover);
+    splitDiv.querySelectorAll('.js-plotly-plot').forEach(el => {
+        if (typeof Plotly !== 'undefined') Plotly.purge(el);
+    });
     splitDiv.innerHTML = '';
     splitDiv.style.display = 'block';
 
@@ -715,9 +718,9 @@ function displayStats(stats) {
     stats.forEach(stat => {
         tableHTML += `
             <tr>
-                <td><strong>${stat.well}</strong></td>
-                <td>${stat.condition}</td>
-                <td>${stat.antibiotic || 'Unknown'}</td>
+                <td><strong>${escapeHtml(stat.well)}</strong></td>
+                <td>${escapeHtml(stat.condition)}</td>
+                <td>${escapeHtml(stat.antibiotic || 'Unknown')}</td>
                 <td>${stat.max_od}</td>
                 <td>${stat.final_od}</td>
                 <td>${stat.auc}</td>
