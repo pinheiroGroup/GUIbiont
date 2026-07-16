@@ -38,7 +38,7 @@ import { loadOptimizers, onFitOptimizerModeChange, onBatchFitOptimizerModeChange
          buildOptimizerPayload } from './optimizers.js';
 import { setClusteringMode, populateClusteringExperiments,
          selectAllClusteringExperiments, clearAllClusteringExperiments,
-         onClusteringFileChange, updateClusteringRunBtn, toggleClusteringAdvanced,
+         onClusteringFileChange, onClusterNormalizeChange, updateClusteringRunBtn, toggleClusteringAdvanced,
          onClusterSmoothChange, onClusterMethodChange, onClusterBlankChange, onClusterInterpolateChange,
          renderClusterBlankNotice, runClustering, renderClusterGrid,
          exportClusterCSV, exportAllClustersCSV, exportClusterCentroidsCSV, exportAllClustersPNG,
@@ -259,7 +259,7 @@ Object.assign(window, {
     // Clustering
     setClusteringMode, populateClusteringExperiments,
     selectAllClusteringExperiments, clearAllClusteringExperiments,
-    onClusteringFileChange, updateClusteringRunBtn, toggleClusteringAdvanced,
+    onClusteringFileChange, onClusterNormalizeChange, updateClusteringRunBtn, toggleClusteringAdvanced,
     onClusterSmoothChange, onClusterMethodChange, onClusterBlankChange, onClusterInterpolateChange,
     renderClusterBlankNotice, runClustering, renderClusterGrid,
     exportClusterCSV, exportAllClustersCSV, exportClusterCentroidsCSV, exportAllClustersPNG,
@@ -286,6 +286,11 @@ Object.assign(window, {
 
 // Handle window resize — fullscreen plots need manual relayout, others use resizePlot
 window.addEventListener('resize', () => {
+    const clusterFullscreenPlot = document.querySelector('.cluster-cell.fullscreen .cluster-plot-div');
+    if (clusterFullscreenPlot && typeof Plotly !== 'undefined') {
+        Plotly.Plots.resize(clusterFullscreenPlot);
+        return;
+    }
     if (state.isFullscreen) {
         const growthContainer   = document.getElementById('plot-growth-container');
         const fittingContainer  = document.getElementById('plot-fitting-container');

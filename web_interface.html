@@ -352,9 +352,6 @@
                         <div class="clustering-controls">
                             <label for="clustering-k" id="clustering-k-label">k =</label>
                             <input type="number" id="clustering-k" value="3" min="1" max="50">
-                            <label style="display: flex; align-items: center; gap: 6px;">
-                                <input type="checkbox" id="clustering-normalize"> Normalize
-                            </label>
                             <button class="btn" style="padding: 6px 12px; font-size: 0.85em;" onclick="toggleClusteringAdvanced()">⚙ Advanced</button>
                             <button class="btn fit-btn" id="clustering-run-btn" onclick="runClustering()" disabled>▶ Run Clustering</button>
                         </div>
@@ -681,7 +678,10 @@
             <div id="cluster-grid-container" style="display: none; padding: 20px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
                     <div id="cluster-blank-notice" style="display:none; font-size:0.875em; padding:6px 12px; border-radius:6px; background:rgba(74,144,226,0.1); border:1px solid #4a90e2; color:#2c5f8a;"></div>
-                    <div style="display:flex; gap:8px; margin-left:auto;">
+                    <div style="display:flex; align-items:center; gap:8px; margin-left:auto; flex-wrap:wrap;">
+                        <label style="display:flex; align-items:center; gap:4px; font-size:0.875em; color:#495057; white-space:nowrap;">
+                            <input type="checkbox" id="cluster-plot-normalize" onchange="onClusterNormalizeChange('bottom')"> Show in Normalized Space
+                        </label>
                         <button class="btn" id="cluster-export-btn" onclick="openClusterCodeExport()" disabled>📋 Export Julia code</button>
                         <button class="btn" onclick="exportClusterCentroidsCSV()">📥 Export centroids (CSV)</button>
                         <button class="btn" onclick="exportAllClustersCSV()">📥 Export all (CSV)</button>

@@ -20,6 +20,8 @@ export const state = {
     searchTimeout:         null,
     currentClusteringMode: 'file',
     _lastClusterData:      null,
+    _clusterPlotsNormalized: false,
+    _clusterPlotRefreshers: [],
     _lastClusterSweep:     [],
     _savedClusterings:     [],
     _lastBlankAnalysis:    null,

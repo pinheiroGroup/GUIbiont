@@ -196,6 +196,14 @@
             font-size: 0.9em;
         }
 
+        .clustering-controls button[onclick="toggleClusteringAdvanced()"] {
+            padding: 12px 20px !important;
+            font-size: 16px !important;
+            font-weight: 600;
+            border-radius: 8px;
+            white-space: nowrap;
+        }
+
         .cluster-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
@@ -208,6 +216,7 @@
             border-radius: 8px;
             overflow: hidden;
             background: white;
+            position: relative;
         }
 
         .cluster-cell-title {
@@ -360,6 +369,98 @@
         .cluster-cell.fullscreen .cluster-plot-div {
             flex: 1;
             height: 0 !important;
+        }
+
+        .cluster-drill-nav {
+            display: none;
+            position: absolute;
+            top: 48px;
+            right: 16px;
+            z-index: 10001;
+            gap: 6px;
+            padding: 5px;
+            border: 1px solid rgba(73, 80, 87, 0.18);
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.92);
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.08);
+        }
+
+        .cluster-cell.fullscreen .cluster-drill-nav {
+            display: flex;
+        }
+
+        .cluster-drill-nav[hidden] {
+            display: none !important;
+        }
+
+        .cluster-drill-nav-btn {
+            min-width: 32px;
+            height: 28px;
+            padding: 0 9px;
+            border: 1px solid #ced4da;
+            border-radius: 5px;
+            background: white;
+            color: #495057;
+            font-size: 0.82em;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .cluster-drill-nav-btn.cluster-icon-btn {
+            width: 32px;
+            min-width: 32px;
+            padding: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .cluster-drill-nav-btn.cluster-icon-btn svg {
+            width: 17px;
+            height: 17px;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        .cluster-drill-nav-btn.cluster-icon-btn .cluster-reset-x {
+            stroke: #dc2626;
+            stroke-width: 2.4;
+        }
+
+        .cluster-drill-nav-btn:hover:not(:disabled) {
+            background: #e9ecef;
+        }
+
+        .cluster-drill-nav-btn.active {
+            border-color: #4a90e2;
+            background: rgba(74, 144, 226, 0.12);
+            color: #2c5f8a;
+        }
+
+        .cluster-drill-nav-btn:disabled {
+            color: #adb5bd;
+            cursor: default;
+            opacity: 0.7;
+        }
+
+        .cluster-fullscreen-normalize-label {
+            height: 28px;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 0 8px;
+            border-left: 1px solid #dee2e6;
+            color: #495057;
+            font-size: 0.82em;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        .cluster-plot-div.cluster-zoom-active .nsewdrag {
+            cursor: crosshair !important;
         }
 
         .stats-title {
