@@ -204,8 +204,10 @@ end
         @test haskey(c, :id)
         @test haskey(c, :label)
         @test haskey(c, :series_labels)
-        @test haskey(c, :series_data)
-        @test !isempty(c[:series_data])
+        @test haskey(c, :series_data_raw)
+        @test !isempty(c[:series_data_raw])
+        @test haskey(c, :series_data_normalized)
+        @test !isempty(c[:series_data_normalized])
     end
     # Assignments: one per series (6 series in CLUSTER_CSV)
     @test length(body[:assignments]) == 6
@@ -434,13 +436,13 @@ end
     end
 end
 
-@testset "POST /api/cluster — centroid is pointwise mean of series_data" begin
+@testset "POST /api/cluster — centroid is pointwise mean of series_data_raw" begin
     status, body = post_json("/api/cluster",
                              Dict("csv" => CLUSTER_CSV, "k" => 2, "smooth_method" => "none"))
     @test status == 200
     for c in body[:clusters]
-        series = c[:series_data]
-        centroid = Float64.(c[:centroid])
+        series = c[:series_data_raw]
+        centroid = Float64.(c[:centroid_raw])
         length(series) == 0 && continue
         n_tp = length(centroid)
         for t in 1:n_tp
@@ -472,9 +474,9 @@ const UNEQUAL_CSV = """Time,S1,S2,S3
                                   "smooth_method" => "none"))
     @test status == 200
     @test length(body[:time]) == 20
-    # All series_data in all clusters should match the grid length
+    # All series_data_raw in all clusters should match the grid length
     for c in body[:clusters]
-        for s in c[:series_data]
+        for s in c[:series_data_raw]
             @test length(s) == 20
         end
     end

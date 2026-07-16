@@ -75,9 +75,6 @@ function syncClusterNormalizeCheckboxes(source = null) {
     state._clusterPlotsNormalized = checked;
     if (bottom) bottom.checked = checked;
     fullscreenChecks.forEach(input => { input.checked = checked; });
-    if (state._lastClusterData?._request) {
-        state._lastClusterData._request.normalize = checked;
-    }
     return checked;
 }
 
@@ -369,7 +366,6 @@ function onClusteringFileChange() {
 function onClusterNormalizeChange(source = null) {
     const checked = syncClusterNormalizeCheckboxes(source);
     if (!state._lastClusterData) return;
-    state._lastClusterData.display_normalized = checked;
     const refreshers = state._clusterPlotRefreshers || [];
     if (refreshers.length) {
         refreshers.forEach(refresh => refresh());
@@ -515,7 +511,6 @@ async function runClustering() {
             trend_p_thr:         parseFloat(document.getElementById('cluster-trend-p').value) || 0.05,
         };
         state._lastClusterData = data;
-        data.display_normalized = syncClusterNormalizeCheckboxes('bottom');
         document.getElementById('cluster-export-btn').disabled = false;
         renderClusterGrid(data);
         renderQualityPanel(data);
@@ -727,6 +722,9 @@ function renderClusterGrid(data) {
                 Plotly.Plots.resize(plotDiv);
                 viewState.suppressRelayout = false;
                 updateDrillNav();
+            }).catch((err) => {
+                viewState.suppressRelayout = false;
+                console.error('Cluster plot render failed:', err);
             });
         }
         state._clusterPlotRefreshers.push(renderClusterPlot);
