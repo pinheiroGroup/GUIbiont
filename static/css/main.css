@@ -163,6 +163,25 @@
             box-shadow: 0 4px 12px rgba(0,0,0,0.05);
         }
 
+        #stats-table.stats-scrollable {
+            max-height: 760px;
+            overflow-y: auto;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            background: white;
+        }
+
+        #stats-table.stats-scrollable table {
+            margin: 0;
+        }
+
+        #stats-table.stats-scrollable thead th {
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            box-shadow: inset 0 -1px 0 #dee2e6;
+        }
+
         .clustering-container {
             background: white;
             border-radius: 10px;
@@ -567,13 +586,19 @@
             z-index: 9999 !important;
             background: white !important;
             margin: 0 !important;
+            padding-bottom: 10px !important;
             border-radius: 0 !important;
             box-shadow: none !important;
+            overflow: hidden !important;
         }
 
-        .fullscreen-plot #plot-growth,
+        .fullscreen-plot #plot-growth {
+            height: var(--growth-fullscreen-plot-height, calc((100vh - var(--plot-controls-height, 80px)) * 0.65)) !important;
+            width: 100% !important;
+        }
+
         .fullscreen-plot #plot-fitting {
-            height: calc(100vh - 80px) !important;
+            height: calc(100vh - var(--plot-controls-height, 80px)) !important;
             width: 100% !important;
         }
 
@@ -582,10 +607,38 @@
             width: 100% !important;
         }
 
+        .fullscreen-plot .growth-legend-panel {
+            max-height: var(--growth-fullscreen-legend-height, 220px);
+            margin: 6px 16px 8px 70px;
+        }
+
         .fullscreen-plot .plot-controls {
             position: sticky !important;
             top: 0 !important;
             z-index: 10000 !important;
+        }
+
+        .fullscreen-plot .plot-controls h3 {
+            display: none !important;
+        }
+
+        .fullscreen-plot .plot-toolbar-stack {
+            width: 100%;
+            flex-direction: row;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+        }
+
+        .fullscreen-plot .plot-options-row {
+            justify-content: flex-start;
+        }
+
+        .fullscreen-plot .plot-actions-row {
+            justify-content: flex-end;
+            padding-top: 0;
+            border-top: none;
+            flex-wrap: nowrap;
         }
 
         .plot-buttons {
@@ -594,10 +647,227 @@
             align-items: center;
         }
 
+        .plot-toolbar-stack {
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 8px;
+            max-width: 100%;
+        }
+
+        .plot-options-row,
+        .plot-actions-row {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .plot-actions-row {
+            padding-top: 6px;
+            border-top: 1px solid #dee2e6;
+        }
+
+        #plot-growth-container .plot-controls h3 {
+            font-size: 24px;
+            line-height: 1.2;
+        }
+
+        #plot-growth-container {
+            padding-bottom: 18px;
+        }
+
+        #plot-growth-container .plot-options-row label,
+        #plot-growth-container .plot-options-row select,
+        #plot-growth-container .growth-group-controls input,
+        #plot-growth-container .growth-group-controls span {
+            font-size: 15px !important;
+        }
+
         .plot-buttons .btn {
             margin: 0;
             font-size: 14px;
             padding: 8px 16px;
+        }
+
+        .growth-group-controls {
+            align-items: center;
+            gap: 6px;
+            padding: 4px 6px;
+            border: 1px solid #ced4da;
+            border-radius: 6px;
+            background: #fff;
+            color: #495057;
+            font-size: 13px;
+            white-space: nowrap;
+        }
+
+        .growth-group-controls label {
+            margin: 0;
+            font-size: 13px;
+            color: #495057;
+        }
+
+        .growth-group-controls input {
+            height: 28px;
+            border: 1px solid #ced4da;
+            border-radius: 5px;
+            background: #fff;
+            color: #212529;
+            font-size: 13px;
+        }
+
+        .growth-group-controls input {
+            width: var(--digits-width, 4ch);
+            min-width: 3.4ch;
+            max-width: 8ch;
+            padding: 2px 5px;
+            text-align: center;
+        }
+
+        .growth-group-controls .growth-group-size-input {
+            min-width: 4ch;
+            max-width: 9ch;
+        }
+
+        .plot-nav-btn {
+            width: 28px;
+            height: 28px;
+            border: 1px solid #ced4da;
+            border-radius: 5px;
+            background: #f8f9fa;
+            color: #495057;
+            cursor: pointer;
+            font-size: 14px;
+            line-height: 1;
+        }
+
+        .plot-nav-btn:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
+
+        .plot-all-btn {
+            width: auto;
+            padding: 0 8px;
+            font-size: 12px;
+        }
+
+        .plot-all-btn.active {
+            background: #e9ecef;
+            border-color: #adb5bd;
+            color: #212529;
+            font-weight: 600;
+        }
+
+        .growth-hover-tooltip {
+            position: absolute;
+            z-index: 20;
+            display: none;
+            width: min(420px, calc(100% - 16px));
+            max-height: none;
+            overflow: visible;
+            padding: 8px;
+            border: 1px solid rgba(33, 37, 41, 0.18);
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.96);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+            color: #212529;
+            font-size: 12px;
+            line-height: 1.35;
+            pointer-events: none;
+        }
+
+        .growth-hover-tooltip.visible {
+            display: block;
+        }
+
+        .growth-hover-title {
+            margin-bottom: 6px;
+            color: #495057;
+            font-weight: 700;
+        }
+
+        .growth-hover-row {
+            display: grid;
+            grid-template-columns: 10px minmax(0, 1fr) auto;
+            gap: 7px;
+            align-items: center;
+            padding: 2px 0;
+        }
+
+        .growth-hover-swatch {
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15);
+        }
+
+        .growth-hover-name {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .growth-hover-values {
+            color: #495057;
+            font-family: 'Courier New', monospace;
+            white-space: nowrap;
+        }
+
+        .growth-legend-panel {
+            position: relative;
+            z-index: 12;
+            display: flex;
+            align-content: flex-start;
+            align-items: flex-start;
+            flex-wrap: wrap;
+            gap: 4px 10px;
+            overflow-y: auto;
+            max-height: var(--growth-legend-max-height, 245px);
+            margin: 6px 16px 0 70px;
+            padding: 2px 4px 8px 0;
+            background: #fff;
+        }
+
+        .growth-legend-item {
+            display: inline-flex;
+            align-items: center;
+            max-width: 260px;
+            min-width: 0;
+            gap: 5px;
+            border: 0;
+            background: transparent;
+            color: #444;
+            cursor: pointer;
+            font-size: var(--growth-legend-font-size, 12px);
+            line-height: 1.2;
+            padding: 1px 2px;
+        }
+
+        .growth-legend-item:hover {
+            background: rgba(73, 80, 87, 0.08);
+            border-radius: 3px;
+        }
+
+        .growth-legend-item.hidden-trace {
+            opacity: 0.35;
+        }
+
+        .growth-legend-swatch {
+            width: 10px;
+            height: 10px;
+            flex: 0 0 10px;
+            border-radius: 50%;
+            box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.16);
+        }
+
+        .growth-legend-label {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         /* Accordion styles for experiments */
