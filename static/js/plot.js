@@ -207,6 +207,13 @@ function displayStats(stats) {
         statsTable.innerHTML = '<p>No data available</p>';
         return;
     }
+
+    const formatStat = (value, digits) => {
+        const numeric = Number(value);
+        return value !== null && value !== undefined && Number.isFinite(numeric)
+            ? numeric.toFixed(digits)
+            : '—';
+    };
     
     let tableHTML = `
         <table>
@@ -215,8 +222,8 @@ function displayStats(stats) {
                     <th>Well</th>
                     <th>Condition</th>
                     <th>Antibiotic</th>
-                    <th>Max OD</th>
-                    <th>Final OD</th>
+                    <th>Specific growth rate (/h)</th>
+                    <th>Saturation OD</th>
                     <th>AUC</th>
                 </tr>
             </thead>
@@ -229,8 +236,8 @@ function displayStats(stats) {
                 <td><strong>${stat.well}</strong></td>
                 <td>${stat.condition}</td>
                 <td>${stat.antibiotic || 'Unknown'}</td>
-                <td>${stat.max_od}</td>
-                <td>${stat.final_od}</td>
+                <td>${formatStat(stat.specific_growth_rate, 4)}</td>
+                <td>${formatStat(stat.saturation_od, 3)}</td>
                 <td>${stat.auc}</td>
             </tr>
         `;

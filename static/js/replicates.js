@@ -142,6 +142,19 @@ async function plotReplicates() {
 
         const traceMap = {};
         data.traces.forEach(trace => { traceMap[trace.well] = trace; });
+        const stationaryStatMap = {};
+        (data.stats || []).forEach(stat => { stationaryStatMap[stat.well] = stat; });
+        const meanStationaryStat = (items, field, digits) => {
+            const values = items.flatMap(item => {
+                const value = item?.[field];
+                if (value === null || value === undefined) return [];
+                const numeric = Number(value);
+                return Number.isFinite(numeric) ? [numeric] : [];
+            });
+            if (values.length === 0) return null;
+            const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+            return mean.toFixed(digits);
+        };
 
         const showIndividual = document.getElementById('show-individual-wells').checked;
         const plotTraces = [];
@@ -180,13 +193,19 @@ async function plotReplicates() {
             traceGroupMeta[key] = { avgIdx: traceIdx, individualIdxs: [] };
             traceIdx++;
 
-            const validY = avg.y.filter(v => !isNaN(v));
+            const groupStationaryStats = replicateWellMap[key]
+                .map(id => stationaryStatMap[id])
+                .filter(Boolean);
             stats.push({
                 well: `${rep.label} (avg)`,
                 condition: groupTraces[0].condition,
                 antibiotic: groupTraces[0].antibiotic,
-                max_od: validY.length > 0 ? Math.max(...validY).toFixed(3) : '0',
-                final_od: validY.length > 0 ? validY[validY.length - 1].toFixed(3) : '0',
+                specific_growth_rate: meanStationaryStat(
+                    groupStationaryStats, 'specific_growth_rate', 4
+                ),
+                saturation_od: meanStationaryStat(
+                    groupStationaryStats, 'saturation_od', 3
+                ),
                 auc: trapezoidalAUC(avg.x, avg.y).toFixed(2)
             });
 

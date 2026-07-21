@@ -1,5 +1,45 @@
 _nan_to_null(v::Vector{Float64}) = Union{Float64,Nothing}[isnan(x) ? nothing : x for x in v]
 
+function _plot_stationary_stats(
+    time_numeric::Vector{Float64},
+    od_data::Vector{Float64},
+)
+    n = min(length(time_numeric), length(od_data))
+    valid = findall(i -> isfinite(time_numeric[i]) && isfinite(od_data[i]), 1:n)
+    isempty(valid) && return (specific_growth_rate=nothing, saturation_od=nothing)
+
+    data_mat = Matrix(transpose(hcat(time_numeric[valid], od_data[valid])))
+    opts = FitOptions()
+
+    try
+        # Use Kinbiont's standard detector: its reference mu is maximum(sgr),
+        # not an externally supplied log-linear estimate.
+        cutoff = Kinbiont._find_stationary_cutoff(data_mat, opts)
+        above_threshold = findall(data_mat[2, :] .> opts.stationary_thr_od)
+        isempty(above_threshold) &&
+            return (specific_growth_rate=nothing, saturation_od=nothing)
+
+        sgr = Kinbiont.specific_gr_evaluation(
+            data_mat[:, above_threshold],
+            opts.stationary_pt_smooth_derivative,
+        )
+        sgr_values = sgr isa Real ? [Float64(sgr)] : Float64.(sgr)
+        finite_sgr = filter(isfinite, sgr_values)
+        isempty(finite_sgr) &&
+            return (specific_growth_rate=nothing, saturation_od=nothing)
+
+        specific_growth_rate = maximum(finite_sgr)
+        saturation_od = Float64(data_mat[2, cutoff])
+        return (
+            specific_growth_rate=isfinite(specific_growth_rate) ? specific_growth_rate : nothing,
+            saturation_od=isfinite(saturation_od) ? saturation_od : nothing,
+        )
+    catch e
+        @debug "Unable to calculate stationary growth statistics" exception=(e, catch_backtrace())
+        return (specific_growth_rate=nothing, saturation_od=nothing)
+    end
+end
+
 @post "/api/plot-data" function(req::HTTP.Request)
     request_data = JSON3.read(String(req.body))
 
@@ -90,10 +130,8 @@ _nan_to_null(v::Vector{Float64}) = Union{Float64,Nothing}[isnan(x) ? nothing : x
 
                         condition = join(condition_parts, " | ")
 
-                        # Calculate statistics
-                        valid_od = filter(!isnan, od_data)
-                        max_od   = isempty(valid_od) ? 0.0 : maximum(valid_od)
-                        final_od = isempty(valid_od) ? 0.0 : last(valid_od)
+                        # Calculate stationary-phase statistics with Kinbiont.
+                        stationary_stats = _plot_stationary_stats(time_numeric, od_data)
 
                         # Calculate AUC
                         auc = 0.0
@@ -122,8 +160,10 @@ _nan_to_null(v::Vector{Float64}) = Union{Float64,Nothing}[isnan(x) ? nothing : x
                             "experiment" => experiment,
                             "condition"  => condition,
                             "antibiotic" => antibiotic,
-                            "max_od"     => round(max_od,   digits=3),
-                            "final_od"   => round(final_od, digits=3),
+                            "specific_growth_rate" => isnothing(stationary_stats.specific_growth_rate) ?
+                                nothing : round(stationary_stats.specific_growth_rate, digits=4),
+                            "saturation_od" => isnothing(stationary_stats.saturation_od) ?
+                                nothing : round(stationary_stats.saturation_od, digits=3),
                             "auc"        => round(auc,      digits=2)
                         ))
                     end
@@ -227,10 +267,8 @@ _nan_to_null(v::Vector{Float64}) = Union{Float64,Nothing}[isnan(x) ? nothing : x
 
                     condition = join(condition_parts, " | ")
 
-                    # Calculate statistics
-                    valid_od = filter(!isnan, od_data)
-                    max_od   = isempty(valid_od) ? 0.0 : maximum(valid_od)
-                    final_od = isempty(valid_od) ? 0.0 : last(valid_od)
+                    # Calculate stationary-phase statistics with Kinbiont.
+                    stationary_stats = _plot_stationary_stats(time_numeric, od_data)
 
                     # Calculate AUC using trapezoidal rule
                     auc = 0.0
@@ -255,8 +293,10 @@ _nan_to_null(v::Vector{Float64}) = Union{Float64,Nothing}[isnan(x) ? nothing : x
                         "well"       => well,
                         "condition"  => condition,
                         "antibiotic" => antibiotic,
-                        "max_od"     => round(max_od,   digits=3),
-                        "final_od"   => round(final_od, digits=3),
+                        "specific_growth_rate" => isnothing(stationary_stats.specific_growth_rate) ?
+                            nothing : round(stationary_stats.specific_growth_rate, digits=4),
+                        "saturation_od" => isnothing(stationary_stats.saturation_od) ?
+                            nothing : round(stationary_stats.saturation_od, digits=3),
                         "auc"        => round(auc,      digits=2)
                     ))
                 end

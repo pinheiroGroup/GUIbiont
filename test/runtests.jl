@@ -325,6 +325,15 @@ else
         @test length(t[:x]) == length(t[:y])
         @test Int(t[:channel]) == 1
         @test haskey(t, :well_name)
+        stats = body[:stats]
+        @test length(stats) == 1
+        s = first(stats)
+        @test haskey(s, :specific_growth_rate)
+        @test haskey(s, :saturation_od)
+        @test !haskey(s, :max_od)
+        @test !haskey(s, :final_od)
+        @test Float64(s[:specific_growth_rate]) > 0.0
+        @test Float64(s[:saturation_od]) > 0.0
     end
 
     @testset "POST /api/plot-data — multi channel" begin
