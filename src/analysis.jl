@@ -367,7 +367,6 @@ function _run_fit_attempt(
     optimizer::String,
     time_numeric::Vector{Float64},
     od_for_fit::Vector{Float64},
-    anchor::Float64,
     shift::Float64,
     subtract_blank::Bool,
     blank_value::Float64,
@@ -376,9 +375,11 @@ function _run_fit_attempt(
     model_names::Vector{String},
     maxiters::Int,
     abstol::Float64,
+    smooth::Bool,
+    smooth_window::Int,
 )
-    # All optimizers use the full unsmoothed curve. Kinbiont applies the same
-    # stationary-phase cutoff before fitting each attempt.
+    # All optimizers receive the same complete curve and preprocessing options.
+    # Kinbiont smooths when requested, then applies the stationary-phase cutoff.
     time_fit = time_numeric
     od_fit   = od_for_fit
 
@@ -416,7 +417,9 @@ function _run_fit_attempt(
 
     opts = FitOptions(
         scattering_correction           = false,
-        smooth                          = false,
+        smooth                          = smooth,
+        smooth_method                   = :boxcar,
+        boxcar_window                   = smooth_window,
         cut_stationary_phase            = true,
         stationary_percentile_thr       = 0.05,
         stationary_pt_smooth_derivative = 10,
@@ -428,34 +431,33 @@ function _run_fit_attempt(
 
     fit_results = kinbiont_fit(data, spec, opts)
     r = fit_results[1]
+    preprocessed_time = Float64.(fit_results.data.times)
+    preprocessed_od = Float64.(vec(fit_results.data.curves[1, :]))
 
     # Shift the fitted curve back to blank-subtracted display space if needed.
     fit_od_curve = subtract_blank && blank_value > 0.0 ?
         r.fitted_curve .- shift :
         r.fitted_curve
 
-    # Preserve the leading edge if a future preprocessing method shortens it.
-    fit_start_idx = argmin(abs.(time_fit .- r.times[1]))
-    if fit_start_idx > 1
-        pre_times    = time_fit[1:fit_start_idx - 1]
-        pre_fit_od   = fill(anchor, length(pre_times))
-        fit_time_out = vcat(pre_times, r.times)
-        fit_od_out   = vcat(pre_fit_od, fit_od_curve)
-    else
-        fit_time_out = collect(r.times)
-        fit_od_out   = collect(fit_od_curve)
-    end
+    fit_time_out = collect(r.times)
+    fit_od_out = collect(fit_od_curve)
 
     # Kinbiont returns the actual time grid retained by stationary-phase cutting.
     stationary_phase_start = Float64(last(r.times))
 
-    # Loss is computed in od_for_fit space (what the optimizer minimised), so
-    # un-shift fit_od_out back when blank subtraction shifted it down.
-    fit_for_loss = subtract_blank && blank_value > 0.0 ?
-        Float64.(fit_od_out) .+ shift :
-        Float64.(fit_od_out)
-    loss_rmse = _fit_loss_rmse(time_numeric, od_for_fit, Float64.(fit_time_out), fit_for_loss, stationary_phase_start)
+    # Compare attempts on the exact preprocessed observations fitted by every
+    # optimizer, including optional centered smoothing.
+    loss_rmse = _fit_loss_rmse(
+        preprocessed_time,
+        preprocessed_od,
+        Float64.(r.times),
+        Float64.(r.fitted_curve),
+        stationary_phase_start,
+    )
     loss_re   = r.loss
+
+    preprocessed_od_out = subtract_blank && blank_value > 0.0 ?
+        preprocessed_od .- shift : preprocessed_od
 
     return (
         best_params        = r.best_params,
@@ -466,6 +468,8 @@ function _run_fit_attempt(
         param_upper        = param_upper,
         fit_time_out       = fit_time_out,
         fit_od_out         = fit_od_out,
+        preprocessed_time  = preprocessed_time,
+        preprocessed_od    = preprocessed_od_out,
         stationary_phase_start = stationary_phase_start,
         aic                = r.best_aic,
         loss               = loss_rmse,
@@ -548,6 +552,8 @@ function fit_well_data(
     stochastic_runs::Int                    = 3,
     maxiters::Int = DEFAULT_FIT_MAXITERS,
     abstol::Float64 = 1e-15,
+    smooth::Bool = false,
+    smooth_window::Int = 3,
     # Optional log-linear sliding-window companion fit. When `compute_loglin`
     # is true, the result dict is enriched with `gr_loglin`, `gr_loglin_se`,
     # `gr_max_sliding`, `t_exp_start_loglin`, `t_exp_end_loglin`,
@@ -560,6 +566,10 @@ function fit_well_data(
     loglin_pt_min_size_of_win::Int = 7,
     loglin_threshold_of_exp::Float64 = 0.9,
 )
+    if smooth && (smooth_window < 3 || iseven(smooth_window))
+        throw(ArgumentError("smooth_window must be an odd integer greater than or equal to 3"))
+    end
+
     prepared = _prepare_fit_curve(
         time_numeric, od_raw, label;
         blank_value,
@@ -570,7 +580,6 @@ function fit_well_data(
     )
     od_for_fit = prepared.od_for_fit
     od_subtracted_display = prepared.od_subtracted_display
-    anchor = prepared.anchor
     shift = prepared.shift
 
     # Build the attempt list. Best-of-N mode wins if either list is populated.
@@ -597,9 +606,10 @@ function fit_well_data(
     for (opt, run_idx) in attempts
         try
             res = _run_fit_attempt(
-                opt, time_numeric, od_for_fit, anchor, shift,
+                opt, time_numeric, od_for_fit, shift,
                 subtract_blank, blank_value, label,
                 model_name, model_names, maxiters, abstol,
+                smooth, smooth_window,
             )
             push!(outcomes, (optimizer = opt, run = run_idx, status = "ok",
                               loss = res.loss_rmse, loss_rmse = res.loss_rmse,
@@ -657,7 +667,9 @@ function fit_well_data(
         "maxiters"               => maxiters,
         "abstol"                 => abstol,
         "preprocessing"          => Dict(
-            "smooth"                          => false,
+            "smooth"                          => smooth,
+            "smooth_method"                   => smooth ? "boxcar" : "none",
+            "smooth_window"                   => smooth_window,
             "cut_stationary_phase"            => true,
             "stationary_percentile_thr"       => 0.05,
             "stationary_pt_smooth_derivative" => 10,
@@ -684,6 +696,10 @@ function fit_well_data(
 
     if od_subtracted_display !== nothing
         result["experimental_od_subtracted"] = od_subtracted_display
+    end
+    if smooth
+        result["smoothed_time"] = win.preprocessed_time
+        result["smoothed_od"] = win.preprocessed_od
     end
 
     # ────────────────────────────────────────────────────────────────────

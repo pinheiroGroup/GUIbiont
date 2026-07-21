@@ -12,7 +12,12 @@ function buildFitOptionsPayload() {
         parseInt(document.getElementById('fit-maxiters')?.value || `${DEFAULT_FIT_MAXITERS}`, 10) || DEFAULT_FIT_MAXITERS
     );
     const abstol = parseFloat(document.getElementById('fit-abstol')?.value || DEFAULT_FIT_ABSTOL) || parseFloat(DEFAULT_FIT_ABSTOL);
-    return { maxiters, abstol };
+    const smooth = document.getElementById('fit-smoothing')?.checked || false;
+    const smoothWindow = Math.max(
+        3,
+        parseInt(document.getElementById('fit-smoothing-window')?.value || '3', 10) || 3
+    );
+    return { maxiters, abstol, smooth, smooth_window: smoothWindow };
 }
 
 function setFitMode(mode) {
@@ -669,6 +674,17 @@ function plotFittedCurve(fitData) {
             type: 'scatter',
             name: `${fitData.experiment}: ${fitData.well} (Blank-subtracted)`,
             marker: { color: 'black', size: 6 }
+        });
+    }
+
+    if (Array.isArray(fitData.smoothed_time) && Array.isArray(fitData.smoothed_od) && fitData.smoothed_time.length > 0) {
+        data.push({
+            x: fitData.smoothed_time,
+            y: fitData.smoothed_od,
+            mode: 'lines',
+            type: 'scatter',
+            name: `Centered average (${fitData.preprocessing?.smooth_window || 3} points)`,
+            line: { color: '#167d8d', width: 2 }
         });
     }
 

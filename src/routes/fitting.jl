@@ -15,11 +15,17 @@ const BATCH_JOBS_LOCK = ReentrantLock()
     sto_runs       = max(1, body.stochastic_runs)
     maxiters       = clamp(body.maxiters > 0 ? body.maxiters : DEFAULT_FIT_MAXITERS, 1, MAX_FIT_MAXITERS)
     abstol         = body.abstol > 0.0 ? body.abstol : 0.0
+    smooth         = body.smooth
+    smooth_window  = body.smooth_window
     compute_loglin = body.compute_loglin
     ll_pt_avg      = max(1, body.loglin_pt_avg)
     ll_pt_deriv    = max(2, body.loglin_pt_smoothing_derivative)
     ll_pt_min_win  = max(3, body.loglin_pt_min_size_of_win)
     ll_thr_exp     = clamp(body.loglin_threshold_of_exp, 0.0, 1.0)
+
+    if smooth && (smooth_window < 3 || iseven(smooth_window))
+        return json(Dict("error" => "Smoothing window must be an odd integer greater than or equal to 3"); status=400)
+    end
 
     data_file        = joinpath(CLEAN_DATA_PATH, experiment, "data_channel_1.csv")
     annotation_file  = joinpath(CLEAN_DATA_PATH, experiment, "annotation_clean.csv")
@@ -83,6 +89,8 @@ const BATCH_JOBS_LOCK = ReentrantLock()
             stochastic_runs                 = sto_runs,
             maxiters                        = maxiters,
             abstol                          = abstol,
+            smooth                          = smooth,
+            smooth_window                   = smooth_window,
             compute_loglin                  = compute_loglin,
             loglin_pt_avg                   = ll_pt_avg,
             loglin_pt_smoothing_derivative  = ll_pt_deriv,
@@ -106,7 +114,13 @@ end
     sto_runs         = max(1, body.stochastic_runs)
     maxiters         = clamp(body.maxiters > 0 ? body.maxiters : DEFAULT_FIT_MAXITERS, 1, MAX_FIT_MAXITERS)
     abstol           = body.abstol > 0.0 ? body.abstol : 0.0
+    smooth           = body.smooth
+    smooth_window    = body.smooth_window
     calibration_file = "./cal_curve_avg.csv"
+
+    if smooth && (smooth_window < 3 || iseven(smooth_window))
+        return json(Dict("error" => "Smoothing window must be an odd integer greater than or equal to 3"); status=400)
+    end
 
     if !haskey(MODEL_REGISTRY, model_name)
         return json(Dict("error" => "Unknown model: $model_name"); status=400)
@@ -162,6 +176,8 @@ end
             stochastic_runs          = sto_runs,
             maxiters                 = maxiters,
             abstol                   = abstol,
+            smooth                   = smooth,
+            smooth_window            = smooth_window,
         )
     catch e
                 return json(Dict("error" => "Replicate fitting failed: $e"); status=500)
@@ -304,11 +320,17 @@ end
     flat_thr        = max(0.0, body.skip_flat_threshold)
     maxiters        = clamp(body.maxiters > 0 ? body.maxiters : DEFAULT_FIT_MAXITERS, 1, MAX_FIT_MAXITERS)
     abstol          = body.abstol > 0.0 ? body.abstol : 0.0
+    smooth          = body.smooth
+    smooth_window   = body.smooth_window
     compute_loglin  = body.compute_loglin
     ll_pt_avg       = max(1, body.loglin_pt_avg)
     ll_pt_deriv     = max(2, body.loglin_pt_smoothing_derivative)
     ll_pt_min_win   = max(3, body.loglin_pt_min_size_of_win)
     ll_thr_exp      = clamp(body.loglin_threshold_of_exp, 0.0, 1.0)
+
+    if smooth && (smooth_window < 3 || iseven(smooth_window))
+        return json(Dict("error" => "Smoothing window must be an odd integer greater than or equal to 3"); status=400)
+    end
 
     if isempty(model_names_req)
         if !haskey(MODEL_REGISTRY, model_name)
@@ -351,6 +373,8 @@ end
             "model_names"  => isempty(model_names_req) ? [model_name] : model_names_req,
             "maxiters"     => maxiters,
             "abstol"       => abstol,
+            "smooth"       => smooth,
+            "smooth_window" => smooth_window,
             "blank_subtraction" => subtract_blank,
             "blank_method"      => blank_method,
             "blank_value"       => blank_value,
@@ -421,6 +445,8 @@ end
                                         stochastic_runs                 = sto_runs,
                                         maxiters                        = maxiters,
                                         abstol                          = abstol,
+                                        smooth                          = smooth,
+                                        smooth_window                   = smooth_window,
                                         compute_loglin                  = compute_loglin,
                                         loglin_pt_avg                   = ll_pt_avg,
                                         loglin_pt_smoothing_derivative  = ll_pt_deriv,
@@ -484,6 +510,8 @@ end
             resp["model_names"] = job["model_names"]
             resp["maxiters"]    = job["maxiters"]
             resp["abstol"]      = job["abstol"]
+            resp["smooth"]      = job["smooth"]
+            resp["smooth_window"] = job["smooth_window"]
             resp["blank_subtraction"] = job["blank_subtraction"]
             resp["blank_method"]      = job["blank_method"]
             resp["blank_value"]       = job["blank_value"]

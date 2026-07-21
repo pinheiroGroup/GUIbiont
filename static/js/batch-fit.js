@@ -245,6 +245,11 @@ async function runBatchFit() {
             const maxiters = Math.max(1, parseInt(document.getElementById('batch-fit-maxiters')?.value || '100000', 10) || 100000);
             const abstol = parseFloat(document.getElementById('batch-fit-abstol')?.value || DEFAULT_BATCH_FIT_ABSTOL) || parseFloat(DEFAULT_BATCH_FIT_ABSTOL);
             const alsoLoglin = document.getElementById('batch-fit-also-loglin')?.checked || false;
+            const smooth = document.getElementById('batch-fit-smoothing')?.checked || false;
+            const smoothWindow = Math.max(
+                3,
+                parseInt(document.getElementById('batch-fit-smoothing-window')?.value || '3', 10) || 3
+            );
             endpoint = '/api/batch-fit';
             requestPayload = {
                 experiment,
@@ -255,6 +260,8 @@ async function runBatchFit() {
                 ...buildOptimizerPayload('batch-fit'),
                 maxiters,
                 abstol,
+                smooth,
+                smooth_window: smoothWindow,
                 skip_flat_threshold: skipFlat,
                 ...(batchCalFile ? { calibration_file: batchCalFile } : {}),
                 ...(alsoLoglin ? {

@@ -37,6 +37,8 @@ Base.@kwdef mutable struct FitCurveRequest
     stochastic_runs::Int                    = 3
     maxiters::Int = DEFAULT_FIT_MAXITERS
     abstol::Float64 = 1e-15
+    smooth::Bool = false
+    smooth_window::Int = 3
     # Always-on log-linear companion fit. Provides a model-free μ_max next to
     # the parametric one for sanity checking. Set to false to skip.
     compute_loglin::Bool = true
@@ -63,6 +65,8 @@ Base.@kwdef mutable struct BatchFitRequest
     skip_flat_threshold::Float64 = 0.05
     maxiters::Int = DEFAULT_FIT_MAXITERS
     abstol::Float64 = 1e-15
+    smooth::Bool = false
+    smooth_window::Int = 3
     # Optional log-linear μ_max companion fit. When `compute_loglin` is true,
     # every well also gets a sliding-window log-linear fit (slope of log OD vs
     # time in the auto-detected exponential window) reported alongside the
@@ -100,6 +104,8 @@ Base.@kwdef mutable struct FitReplicateRequest
     stochastic_runs::Int                    = 3
     maxiters::Int = DEFAULT_FIT_MAXITERS
     abstol::Float64 = 1e-15
+    smooth::Bool = false
+    smooth_window::Int = 3
 end
 
 Base.@kwdef mutable struct BlankAnalysisRequest

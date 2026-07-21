@@ -141,6 +141,8 @@ export function generateFitCode(fitData, withComments) {
     // terminate earlier than the GUI does and land on a worse minimum.
     const maxiters = req.maxiters ?? fitData.maxiters ?? 100000;
     const abstol   = req.abstol   ?? fitData.abstol   ?? 1e-15;
+    const smooth = req.smooth ?? fitData.preprocessing?.smooth ?? false;
+    const smoothWindow = req.smooth_window ?? fitData.preprocessing?.smooth_window ?? 3;
     const optParams = abstol > 0
         ? `(maxiters = ${maxiters}, abstol = ${abstol})`
         : `(maxiters = ${maxiters},)`;
@@ -224,8 +226,10 @@ spec = ModelSpec(
 # Fitting options — these match exactly what GUIbiont used.
 # See FitOptions docs for all available fields.
 opts = FitOptions(
-    # Use the full unsmoothed curve for every optimizer
-    smooth                          = false,
+    # Optional centered moving average; the same preprocessing is used by every optimizer.
+    smooth                          = ${smooth},
+    smooth_method                   = :boxcar,
+    boxcar_window                   = ${smoothWindow},
     # Detect and truncate stationary phase before fitting, as in GUIbiont
     cut_stationary_phase            = true,
     stationary_percentile_thr       = 0.05,
@@ -270,6 +274,8 @@ export function generateBatchCode(batchData, withComments) {
     const maxiters = req.maxiters ?? batchData.maxiters ?? 100000;
     const abstol = req.abstol ?? batchData.abstol ?? 1e-15;
     const skipFlat = req.skip_flat_threshold ?? 0.05;
+    const smooth = req.smooth ?? batchData.smooth ?? false;
+    const smoothWindow = req.smooth_window ?? batchData.smooth_window ?? 3;
     const computeLoglin = !!req.compute_loglin || rawModels.includes('log_lin');
     const llPtAvg = req.loglin_pt_avg ?? 7;
     const llPtDeriv = req.loglin_pt_smoothing_derivative ?? 7;
@@ -307,6 +313,8 @@ const STOCHASTIC_RUNS = ${stochasticRuns}
 const MAXITERS = ${maxiters}
 const ABSTOL = ${abstol}
 const SKIP_FLAT_THRESHOLD = ${skipFlat}
+const SMOOTH = ${jb(smooth)}
+const SMOOTH_WINDOW = ${smoothWindow}
 const COMPUTE_LOGLIN = ${jb(computeLoglin)}
 const LOGLIN_PT_AVG = ${llPtAvg}
 const LOGLIN_PT_DERIV = ${llPtDeriv}
@@ -331,6 +339,8 @@ batch = kinbiont_batch_fit(
     maxiters=MAXITERS,
     abstol=ABSTOL,
     skip_flat_threshold=SKIP_FLAT_THRESHOLD,
+    smooth=SMOOTH,
+    smooth_window=SMOOTH_WINDOW,
     compute_loglin=COMPUTE_LOGLIN,
     loglin_pt_avg=LOGLIN_PT_AVG,
     loglin_pt_smoothing_derivative=LOGLIN_PT_DERIV,

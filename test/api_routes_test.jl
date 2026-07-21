@@ -163,6 +163,20 @@ end
     @test haskey(body, :parameters)
 end
 
+@testset "POST /api/fit-replicate — centered smoothing" begin
+    wells = [Dict("experiment" => SINGLE_CH_EXP, "well" => SINGLE_CH_WELL, "channel" => 1)]
+    status, body = post_json("/api/fit-replicate",
+                             Dict("well_selections" => wells,
+                                  "experiment" => SINGLE_CH_EXP,
+                                  "model_name" => "logistic",
+                                  "smooth" => true,
+                                  "smooth_window" => 3))
+    @test status == 200
+    @test body[:preprocessing][:smooth] == true
+    @test string(body[:preprocessing][:smooth_method]) == "boxcar"
+    @test length(body[:smoothed_time]) == length(body[:experimental_time])
+end
+
 @testset "POST /api/fit-replicate — multi-channel wells" begin
     wells = [Dict("experiment" => MULTI_CH_EXP, "well" => MULTI_CH_WELLS[1], "channel" => 1),
              Dict("experiment" => MULTI_CH_EXP, "well" => MULTI_CH_WELLS[2], "channel" => 2)]
