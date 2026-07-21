@@ -369,7 +369,7 @@ function displayBatchResults(data) {
     let headerHtml, rowsHtml;
     if (isLoglin) {
         const headers = ['Well', 'μ_max', '1σ', 'R²', 't_exp_start', 't_exp_end',
-                         'Doubling time', 'Lag (h)', 'N_max (q95)', 'Converged'];
+                         'Doubling time', 'Lag (h)', 'N_max (stationary cutoff)', 'Converged'];
         headerHtml = headers.map(h => `<th>${h}</th>`).join('');
         rowsHtml = results.map(r => `
             <tr>

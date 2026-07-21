@@ -820,6 +820,7 @@ const LOGLIN_FIELDS = ["gr_loglin", "gr_loglin_se", "gr_max_sliding",
     @test 0.0 <= gr <= 5.0       # bounded by physiology for any healthy E. coli
     @test 0.0 <= Float64(r[:R_squared_loglin]) <= 1.0
     @test Float64(r[:t_exp_start_loglin]) < Float64(r[:t_exp_end_loglin])
+    @test isfinite(Float64(r[:N_max_emp]))
     # μ_max from log-lin must NOT have the optimizer-specific keys
     @test !haskey(r, :parameters)
     @test !haskey(r, :aic)
@@ -884,6 +885,7 @@ end
     end
     @test r[:loglin_converged] == true
     @test isfinite(Float64(r[:gr_loglin]))
+    @test isfinite(Float64(r[:N_max_emp]))
 end
 
 @testset "POST /api/batch-fit — compute_loglin defaults to false (absent companion fields)" begin

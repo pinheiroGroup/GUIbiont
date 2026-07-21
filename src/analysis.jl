@@ -524,6 +524,16 @@ function _prepare_fit_curve(
     )
 end
 
+# Derive the log-linear empirical carrying capacity from Kinbiont's
+# stationary-phase detector. The legacy log-linear result at params[16] is a
+# q95 of the smoothed curve; GUIbiont deliberately leaves it untouched and
+# uses the fitted log-linear slope (params[7]) as the detector's mu_max.
+function _loglin_stationary_nmax(raw, pt_deriv::Int)::Float64
+    return Kinbiont.loglin_stationary_nmax(
+        raw; pt_smoothing_derivative=pt_deriv,
+    )
+end
+
 # Accepts already-validated, NaN-filtered time and raw OD vectors plus the
 # computed blank value. Returns a Dict ready to serialise as JSON.
 #
@@ -754,7 +764,7 @@ function fit_well_data(
                 #   [9] doubling_t  [10] dt − 2σ    [11] dt + 2σ     [12] intercept
                 #   [13] sigma_a    [14] rho (Pearson R, NOT R² — squared below)
                 #   [15] lag_loglin (Buchanan tangent-intercept lag)
-                #   [16] N_max_emp  (95th-percentile carrying capacity)
+                #   [16] legacy q95 N_max_emp (not used by GUIbiont)
                 params = raw[2]
                 if length(params) >= 14 && params[7] !== missing
                     loglin_fields["gr_loglin"]            = Float64(params[7])
@@ -764,12 +774,13 @@ function fit_well_data(
                     loglin_fields["t_exp_end_loglin"]     = Float64(params[4])
                     loglin_fields["doubling_time_loglin"] = Float64(params[9])
                     loglin_fields["R_squared_loglin"]     = Float64(params[14])^2
-                    if length(params) >= 16
+                    if length(params) >= 15
                         loglin_fields["lag_loglin"]  = params[15] === missing ?
                             NaN : Float64(params[15])
-                        loglin_fields["N_max_emp"]   = params[16] === missing ?
-                            NaN : Float64(params[16])
                     end
+                    loglin_fields["N_max_emp"] = _loglin_stationary_nmax(
+                        raw, loglin_pt_smoothing_derivative,
+                    )
                     loglin_fields["loglin_converged"]     = true
 
                     # Plottable fit segment over the detected exponential
@@ -877,15 +888,15 @@ function fit_well_loglin(
         result["t_exp_end_loglin"]      = Float64(params[4])
         result["doubling_time_loglin"]  = Float64(params[9])
         result["R_squared_loglin"]      = Float64(params[14])^2
-        if length(params) >= 16
+        if length(params) >= 15
             result["lag_loglin"] = params[15] === missing ?
                 NaN : Float64(params[15])
-            result["N_max_emp"]  = params[16] === missing ?
-                NaN : Float64(params[16])
         else
             result["lag_loglin"] = NaN
-            result["N_max_emp"]  = NaN
         end
+        result["N_max_emp"] = _loglin_stationary_nmax(
+            raw, pt_smoothing_derivative,
+        )
         result["loglin_converged"]      = true
     else
         result["gr_loglin"]             = NaN

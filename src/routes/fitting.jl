@@ -904,6 +904,9 @@ end
         fit_matrix   = raw[3]
         smoothed     = raw[4]
         ci_band      = raw[5]
+        lag_loglin   = length(params) >= 15 && params[15] !== missing ?
+            Float64(params[15]) : NaN
+        n_max_emp    = _loglin_stationary_nmax(raw, pt_deriv)
 
         # Guard against the "no exp window found" path where matrix is `missing`.
         fit_times    = ismissing(fit_matrix) ? Float64[] :
@@ -934,6 +937,8 @@ end
             "confidence_band_log"   => ci_vals,
             "param_names"           => param_names,
             "parameters"            => params,
+            "lag_loglin"            => lag_loglin,
+            "N_max_emp"             => n_max_emp,
             "blank_value"           => blank_value,
             "blank_subtraction"     => subtract_blank,
             "blank_method"          => blank_method,

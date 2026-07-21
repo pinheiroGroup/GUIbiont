@@ -143,6 +143,11 @@ export function generateFitCode(fitData, withComments) {
     const abstol   = req.abstol   ?? fitData.abstol   ?? 1e-15;
     const smooth = req.smooth ?? fitData.preprocessing?.smooth ?? false;
     const smoothWindow = req.smooth_window ?? fitData.preprocessing?.smooth_window ?? 3;
+    const computeLoglin = !!req.compute_loglin;
+    const llPtAvg = req.loglin_pt_avg ?? 7;
+    const llPtDeriv = req.loglin_pt_smoothing_derivative ?? 7;
+    const llPtMinWin = req.loglin_pt_min_size_of_win ?? 7;
+    const llThreshold = req.loglin_threshold_of_exp ?? 0.9;
     const optParams = abstol > 0
         ? `(maxiters = ${maxiters}, abstol = ${abstol})`
         : `(maxiters = ${maxiters},)`;
@@ -190,6 +195,23 @@ data_well = data[[${JSON.stringify(well)}]]`;
     const optimizerExpr = isBBO
         ? `OptimizationBBO.${optimizerName}()`
         : `OptimizationNLopt.NLopt.${optimizerName}`;
+
+    const loglinBlock = computeLoglin ? `
+# Optional log-linear companion. Kinbiont derives N_max from its fitted mu_max;
+# change the parameters below to explore a different exponential-window setup.
+loglin = kinbiont_fit_loglin(
+    data_well, opts;
+    experiment                 = "GUIbiont export",
+    pt_avg                     = ${llPtAvg},
+    pt_smoothing_derivative    = ${llPtDeriv},
+    pt_min_size_of_win         = ${llPtMinWin},
+    threshold_of_exp           = ${llThreshold},
+)
+
+println("Log-linear mu_max: ", loglin["gr_loglin"])
+println("Log-linear lag:    ", loglin["lag_loglin"])
+println("N_max (cutoff):    ", loglin["N_max_emp"])
+` : '';
 
     const code = `\
 # ================================================================
@@ -253,6 +275,7 @@ println("Model:       ", r.best_model.name)
 println("Param names: ", r.best_model.param_names)
 println("Parameters:  ", r.best_params)
 println("AICc:        ", r.best_aic)
+${loglinBlock}
 `;
 
     return withComments ? code : stripComments(code);

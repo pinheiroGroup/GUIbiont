@@ -600,7 +600,7 @@ function displayFittingResults(fitData) {
                 <span class="parameter-value">${fmt(fitData.lag_loglin, 3)} h</span>
             </div>
             <div class="parameter-row">
-                <span class="parameter-name">N<sub>max</sub> (empirical, q95):</span>
+                <span class="parameter-name">N<sub>max</sub> (stationary cutoff):</span>
                 <span class="parameter-value">${fmt(fitData.N_max_emp, 4)}</span>
             </div>
         `;
@@ -984,6 +984,14 @@ function displayLogLinResults(fitData) {
         <div class="parameter-row">
             <span class="parameter-name">R²:</span>
             <span class="parameter-value">${_fmt(r2, 5)}</span>
+        </div>
+        <div class="parameter-row">
+            <span class="parameter-name">Lag (tangent-intercept):</span>
+            <span class="parameter-value">${_fmt(fitData.lag_loglin, 3)} h</span>
+        </div>
+        <div class="parameter-row">
+            <span class="parameter-name">N<sub>max</sub> (stationary cutoff):</span>
+            <span class="parameter-value">${_fmt(fitData.N_max_emp, 4)}</span>
         </div>
     `;
 
