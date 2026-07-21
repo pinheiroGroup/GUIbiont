@@ -440,9 +440,8 @@ export function generateClusterCode(clusterData, withComments) {
     const tol           = req.tol ?? 1e-6;
     const nInit         = req.kmeans_n_init ?? 3;
     const blankSub      = req.subtract_blank ?? false;
+    const deriveBlanks  = req.derive_non_growing_blanks ?? false;
     const blankMethod   = req.blank_method ?? 'pointbypoint';
-    const blankRangeThr = req.blank_range_thr ?? 0.005;
-    const blankOdPct    = req.blank_od_percentile ?? 0.10;
     const interpolate   = req.interpolate ?? false;
     const interpN       = req.interp_n ?? 100;
     const interpQLo     = req.interp_quantile_lo ?? 0.05;
@@ -454,14 +453,17 @@ export function generateClusterCode(clusterData, withComments) {
     const trendTest     = req.trend_test_flat ?? false;
     const trendPThr     = req.trend_p_thr ?? 0.05;
     const normalize     = req.normalize ?? false;
-    const autoBlankDetection = !prescreen && !trendTest;
     // Algorithm-specific parameters (used by hclust / dbscan only)
     const hclustLinkage = req.hclust_linkage ?? 'ward';
     const dbscanEps     = req.dbscan_eps     ?? 1.0;
     const dbscanMinPts  = req.dbscan_min_pts ?? 3;
     const isFileMode    = req._mode === 'file';
     const smoothEnabled = smoothMethod !== 'none';
-    const prescreenApplied = clusterData.prescreen_applied ?? prescreen;
+    const prescreenApplied = deriveBlanks ? false : (clusterData.prescreen_applied ?? prescreen);
+    const trendApplied = deriveBlanks ? false : trendTest;
+    const costLabel = clusterMethod === 'kmedoids'
+        ? 'Distance-to-medoid cost'
+        : clusterMethod === 'dbscan' ? 'DBSCAN cost (not defined; stored as 0.0)' : 'WCSS';
     const experimentsLiteral = Array.isArray(req.experiments) && req.experiments.length
         ? JSON.stringify(req.experiments)
         : 'String[]';
@@ -509,18 +511,6 @@ ${nInitParam}    kmeans_max_iters       = ${maxiter},
     cluster_q_high             = ${prescreenQHi},`
         : `    cluster_prescreen_constant = false,`;
 
-    // Kinbiont's preprocess() skips the constant-curve pre-screen entirely when
-    // cluster_method = :dbscan (preprocessing.jl:380). If the user combined both
-    // in the GUI, the exported `cluster_prescreen_constant = true` line will be
-    // silently ignored at runtime — surface that explicitly so the reader isn't
-    // surprised by a mismatched cluster count.
-    const prescreenDbscanNote = (prescreenApplied && clusterMethod === 'dbscan')
-        ? `# NOTE: Kinbiont's preprocess() ignores cluster_prescreen_constant when
-#       cluster_method = :dbscan. The line below is kept for parity with the
-#       GUI request but will have no effect — DBSCAN reports outliers as the
-#       cluster label maximum(labels)+1 instead of using a reserved sentinel.
-`       : '';
-
     const normalizeNote = normalize
         ? `# Display normalisation was enabled in GUIbiont. Kinbiont already
 # z-scores curves internally for clustering, so the data are not transformed here.
@@ -537,15 +527,16 @@ ${nInitParam}    kmeans_max_iters       = ${maxiter},
 # the GUIbiont clustering route rather than FitOptions.blank_subtraction.
 `
         : '';
-    const autoBlankNote = autoBlankDetection
-        ? `# With prescreen and trend reassignment disabled, GUIbiont first removes
-# low, flat blank candidates from the clustering matrix.
+    const autoBlankNote = deriveBlanks
+        ? `# The enabled non-growing criteria identify blank curves on the selected
+# smoothed signal. Kinbiont removes that group, derives blanks per experiment
+# from the unsmoothed measurements, subtracts them, and returns the remaining data.
 `
         : '';
 
-    const trendNote = trendTest
-        ? `# The post-hoc trend test assigns curves without a significant OD trend
-# to the reserved non-growing label after clustering.
+    const trendNote = trendApplied
+        ? `# The trend test contributes to the non-growing group. Methods with a
+# predefined k separate that group before clustering; DBSCAN reassigns it post-hoc.
 `
         : '';
 
@@ -565,23 +556,45 @@ data = prepare_clustering_data(
     interp_n             = ${interpN},
     interp_quantile_lo   = ${interpQLo},
     interp_quantile_hi   = ${interpQHi},
-    auto_detect_blanks   = ${jb(autoBlankDetection)},
+    auto_detect_blanks   = false,
     subtract_blank       = ${jb(blankSub)},
     blank_method         = :${blankMethod},
-    blank_range_thr      = ${blankRangeThr},
-    blank_od_percentile  = ${blankOdPct},
+    derive_non_growing_blanks = ${jb(deriveBlanks)},
+    blank_prescreen_constant  = ${jb(prescreen)},
+    blank_trend_test          = ${jb(trendTest)},
+    blank_prescreen_tol       = ${prescreenTol},
+    blank_prescreen_q_low     = ${prescreenQLo},
+    blank_prescreen_q_high    = ${prescreenQHi},
+    blank_trend_p_threshold   = ${trendPThr},
+    detection_smooth          = ${jb(smoothEnabled)},
+    detection_smooth_method   = :${smoothMethod},
+    detection_lowess_frac     = ${lowessFrac},
+    detection_gaussian_h_mult = ${gaussianHmult},
 )`
-        : `# prepare_clustering_data reads the selected experiments from Clean_data,
-# excludes annotated blank/discard wells, and applies the same blank handling as GUIbiont.
+        : `# prepare_clustering_data reads the selected experiments from Clean_data.
+# It excludes discard wells and aligns each experiment's annotated blank wells
+# to that experiment's sample times before subtraction, matching GUIbiont.
 data = prepare_clustering_data(
     clean_data_path      = CLEAN_DATA_PATH,
     experiments          = ${experimentsLiteral},
-    interpolate          = false,
-    auto_detect_blanks   = ${jb(autoBlankDetection)},
+    interpolate          = ${jb(interpolate)},
+    interp_n             = ${interpN},
+    interp_quantile_lo   = ${interpQLo},
+    interp_quantile_hi   = ${interpQHi},
+    auto_detect_blanks   = false,
     subtract_blank       = ${jb(blankSub)},
     blank_method         = :${blankMethod},
-    blank_range_thr      = ${blankRangeThr},
-    blank_od_percentile  = ${blankOdPct},
+    derive_non_growing_blanks = ${jb(deriveBlanks)},
+    blank_prescreen_constant  = ${jb(prescreen)},
+    blank_trend_test          = ${jb(trendTest)},
+    blank_prescreen_tol       = ${prescreenTol},
+    blank_prescreen_q_low     = ${prescreenQLo},
+    blank_prescreen_q_high    = ${prescreenQHi},
+    blank_trend_p_threshold   = ${trendPThr},
+    detection_smooth          = ${jb(smoothEnabled)},
+    detection_smooth_method   = :${smoothMethod},
+    detection_lowess_frac     = ${lowessFrac},
+    detection_gaussian_h_mult = ${gaussianHmult},
 )`;
 
     const smoothBlock = smoothEnabled
@@ -608,7 +621,7 @@ cluster_data = data`;
 
 using Kinbiont
 
-${normalizeNote}${interpolationNote}${blankNote}${autoBlankNote}${trendNote}${prescreenDbscanNote}${dataPathBlock}
+${normalizeNote}${interpolationNote}${blankNote}${autoBlankNote}${trendNote}${dataPathBlock}
 ${dataLoadBlock}
 
 const N_REQUESTED_CLUSTERS = ${k}
@@ -628,7 +641,7 @@ cluster_opts = FitOptions(
     # Non-growing prescreen from GUIbiont Advanced options.
 ${prescreenParam}
     # Post-hoc flat/non-growing reassignment from GUIbiont Advanced options.
-    cluster_trend_test = ${jb(trendTest)},
+    cluster_trend_test = ${jb(trendApplied)},
     cluster_trend_p_thr = ${trendPThr},
 )
 
@@ -645,18 +658,19 @@ quality_summary = Dict(
 )
 
 cluster_counts_all = Dict(k => count(==(k), processed.clusters)
-                          for k in 1:N_CLUSTER_LABELS)
+                          for k in sort(unique(processed.clusters)))
+assignment_rows = collect(zip(cluster_data.labels, processed.clusters))
 
 # Optional diagnostics:
 #println("Cluster assignments: ", processed.clusters)
 println("Cluster counts:      ", cluster_counts_all)
-println("WCSS:                ", processed.wcss)
+println("${costLabel}: ", processed.wcss)
 println("Quality summary:     ", quality_summary)
 #println("Quality indices:     ", quality)
+#println("Label/cluster rows:  ", assignment_rows)
 
-# To find the optimal k, sweep over a range and plot WCSS (elbow method):
-# wcss_by_k = [preprocess(data, FitOptions(cluster=true, n_clusters=k)).wcss
-#              for k in 2:10]
+# For methods that use k, repeat preprocessing over candidate k values and plot
+# the method-specific cost stored in processed.wcss. DBSCAN has no k sweep.
 `;
 
     return withComments ? code : stripComments(code);

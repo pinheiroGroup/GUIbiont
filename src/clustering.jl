@@ -50,6 +50,29 @@ function _strip_nan_tail(t::Vector{Float64}, y::Vector{Float64})
     return t[1:last_valid], y[1:last_valid]
 end
 
+function _smooth_clustering_curves(
+    curves::Matrix{Float64},
+    times::Vector{Float64},
+    labels::Vector{String};
+    method::Symbol=:none,
+    lowess_frac::Float64=0.05,
+    gaussian_h_mult::Float64=2.0,
+)
+    method == :none && return curves, times
+    processed = preprocess(
+        GrowthData(curves, times, labels),
+        FitOptions(
+            smooth=true,
+            smooth_method=method,
+            lowess_frac=lowess_frac,
+            gaussian_h_mult=gaussian_h_mult,
+            cluster=false,
+        ),
+    )
+    n_time = min(size(processed.curves, 2), length(processed.times))
+    return processed.curves[:, 1:n_time], processed.times[1:n_time]
+end
+
 # Pairwise Euclidean distance matrix (n × n) for a matrix with rows = observations.
 function _pairwise_euclidean(X::Matrix{Float64})::Matrix{Float64}
     n = size(X, 1)
@@ -103,127 +126,6 @@ function _cluster_centroids(X::Matrix{Float64}, ids::Vector{Int})::Matrix{Float6
         any(mask) && (C[c, :] = mean(X[mask, :], dims=1))
     end
     return C
-end
-
-# Auto-detect blank curve indices from a curves matrix (rows = series, cols = time).
-# Returns indices of rows that are flat AND have low mean OD.
-# A curve is considered flat if EITHER:
-#   - slope t-test p >= flat_p_thr (statistically no trend), OR
-#   - OD range (max-min) < flat_range_thr (instrument noise only — robust against
-#     high n making the t-test reject even negligible slopes)
-function _detect_blank_indices(
-    curves::Matrix{Float64},
-    times::Vector{Float64};
-    flat_p_thr::Float64     = 0.05,
-    flat_range_thr::Float64 = 0.005,
-    od_percentile::Float64  = 0.10,
-)::Vector{Int}
-    n = length(times)
-    n < 3 && return Int[]
-
-    t_c = times .- mean(times)
-
-    mean_ods   = Float64[]
-    flat_flags = Bool[]
-
-    for i in axes(curves, 1)
-        y = curves[i, :]
-        finite_mask = isfinite.(y)
-        nf = sum(finite_mask)
-        if nf < 3
-            push!(mean_ods, NaN); push!(flat_flags, false); continue
-        end
-        yf  = y[finite_mask]
-        tcf = t_c[finite_mask]
-        push!(mean_ods, mean(yf))
-
-        # Range-based flatness: always passes if OD barely changes
-        od_range = maximum(yf) - minimum(yf)
-        if od_range < flat_range_thr
-            push!(flat_flags, true); continue
-        end
-
-        sst2 = sum(tcf .^ 2)
-        if sst2 < 1e-12
-            push!(flat_flags, true); continue
-        end
-        slope  = sum(tcf .* yf) / sst2
-        yhat   = mean(yf) .+ slope .* tcf
-        s2     = sum((yf .- yhat) .^ 2) / (nf - 2)
-        se     = sqrt(max(s2, 0.0) / sst2)
-        t_stat = se < 1e-12 ? Inf : abs(slope / se)
-        p = 2 * (1 - cdf(Normal(), t_stat))
-        push!(flat_flags, p >= flat_p_thr)
-    end
-
-    finite_means = filter(isfinite, mean_ods)
-    isempty(finite_means) && return Int[]
-    od_thr = quantile(finite_means, od_percentile)
-
-    return [i for i in axes(curves, 1)
-            if flat_flags[i] && isfinite(mean_ods[i]) && mean_ods[i] <= od_thr]
-end
-
-# Mirror KinBiont's constant/non-growing pre-screen on the curves that are
-# about to be clustered (i.e. post-smoothing and post-blank-subtraction). Used
-# as a cheap preflight so we only enable Kinbiont's `cluster_prescreen_constant`
-# (which reserves a sentinel cluster) when at least one curve would actually be
-# assigned to it.
-#
-# Reaches into Kinbiont's private API (`_prescreen_constant` is underscore-
-# prefixed → not part of the public contract). The check below fails fast the
-# first time the helper is actually called if the symbol disappears in a
-# future Kinbiont release; bump the Kinbiont pin and revisit this helper when
-# that happens. The check lives inside the function rather than at top-level
-# because clustering.jl is also loaded by the test runner without Kinbiont.
-function _prescreen_constant_mask(
-    curves::Matrix{Float64};
-    tol_const::Float64 = 1.5,
-    q_low::Float64 = 0.05,
-    q_high::Float64 = 0.95,
-)::BitVector
-    isdefined(@__MODULE__, :Kinbiont) && isdefined(Kinbiont, :_prescreen_constant) || error(
-        "Kinbiont._prescreen_constant is not available. " *
-        "Either Kinbiont was not loaded (server context expected) or the " *
-        "private symbol has been removed upstream — pin Kinbiont to a " *
-        "compatible version or update the mirror.")
-    opts = Kinbiont.FitOptions(
-        cluster_tol_const = tol_const,
-        cluster_q_low     = q_low,
-        cluster_q_high    = q_high,
-    )
-    return Kinbiont._prescreen_constant(curves, opts)
-end
-
-# Apply blank subtraction to a curves matrix using the given blank timeseries.
-# method: "pointbypoint" | "shift" | "clip"
-function _apply_blank_subtraction_matrix(
-    curves::Matrix{Float64},
-    blank_ts::Vector{Float64},
-    method::String,
-)::Matrix{Float64}
-    out = copy(curves)
-    n_tp = size(curves, 2)
-    ts   = blank_ts[1:n_tp]   # guard against length mismatch
-
-    if method == "pointbypoint"
-        for i in axes(out, 1)
-            out[i, :] = out[i, :] .- ts
-        end
-    elseif method == "shift"
-        blank_mean = mean(filter(isfinite, ts))
-        for i in axes(out, 1)
-            corrected = out[i, :] .- blank_mean
-            shift = min(0.0, minimum(filter(isfinite, corrected)))
-            out[i, :] = corrected .- shift
-        end
-    else  # clip
-        blank_mean = mean(filter(isfinite, ts))
-        for i in axes(out, 1)
-            out[i, :] = max.(out[i, :] .- blank_mean, 0.0)
-        end
-    end
-    return out
 end
 
 # Auto-detect likely blank wells when no annotation is available.

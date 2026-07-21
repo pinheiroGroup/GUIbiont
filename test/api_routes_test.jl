@@ -231,6 +231,19 @@ end
     @test string(body[:cluster_method]) == "kmeans"
 end
 
+@testset "POST /api/cluster - experiment-local annotated blank subtraction" begin
+    status, body = post_json("/api/cluster",
+        Dict("experiments" => [SINGLE_CH_EXP], "k" => 2,
+             "smooth_method" => "none", "subtract_blank" => true,
+             "blank_method" => "pointbypoint"))
+    @test status == 200
+    @test body[:blank_subtracted] == true
+    @test string(body[:blank_source]) == "annotated"
+    used = string.(body[:blank_wells_used])
+    @test any(label -> endswith(label, "/A1"), used)
+    @test !any(label -> endswith(label, "/A2"), used)
+end
+
 @testset "POST /api/cluster — kmedoids method" begin
     status, body = post_json("/api/cluster",
                              Dict("csv" => CLUSTER_CSV, "k" => 2,
@@ -280,6 +293,7 @@ end
                              Dict("csv" => CLUSTER_CSV, "k_max" => 4))
     @test status == 200
     @test haskey(body, :sweep)
+    @test string(body[:cost_metric]) == "wcss"
     sweep = body[:sweep]
     @test !isempty(sweep)
     # k=1 is included as the WCSS/elbow baseline; cluster-quality metrics that
@@ -291,6 +305,8 @@ end
     for s in sweep
         @test haskey(s, :k)
         @test haskey(s, :wcss)
+        @test haskey(s, :cost)
+        @test string(s[:cost_metric]) == "wcss"
         @test haskey(s, :silhouette_mean)
         @test haskey(s, :dunn)
         @test haskey(s, :davies_bouldin)
@@ -305,6 +321,35 @@ end
 @testset "POST /api/cluster-sweep — via experiment" begin
     status, body = post_json("/api/cluster-sweep",
                              Dict("experiments" => [SINGLE_CH_EXP], "k_max" => 3))
+    @test status == 200
+    @test !isempty(body[:sweep])
+end
+
+@testset "POST /api/cluster-sweep - reports distance-to-medoid cost" begin
+    status, body = post_json("/api/cluster-sweep",
+                             Dict("csv" => CLUSTER_CSV, "k_max" => 4,
+                                  "smooth_method" => "none",
+                                  "cluster_method" => "kmedoids"))
+    @test status == 200
+    @test string(body[:cost_metric]) == "distance_to_medoid"
+    @test !isempty(body[:sweep])
+    @test all(r -> string(r[:cost_metric]) == "distance_to_medoid", body[:sweep])
+    @test all(r -> Float64(r[:cost]) == Float64(r[:wcss]), body[:sweep])
+end
+
+@testset "POST /api/cluster-sweep - rejects DBSCAN" begin
+    status, body = post_json("/api/cluster-sweep",
+                             Dict("csv" => CLUSTER_CSV, "k_max" => 4,
+                                  "cluster_method" => "dbscan"))
+    @test status == 400
+    @test occursin("does not use k", string(body[:error]))
+end
+
+@testset "POST /api/cluster-sweep - uses blank preprocessing controls" begin
+    status, body = post_json("/api/cluster-sweep",
+        Dict("experiments" => [SINGLE_CH_EXP], "k_max" => 3,
+             "smooth_method" => "none", "subtract_blank" => true,
+             "blank_method" => "pointbypoint"))
     @test status == 200
     @test !isempty(body[:sweep])
 end
@@ -588,6 +633,33 @@ const PRESCREEN_ALL_GROWING_CSV = """Time,G1,G2,G3,G4,G5,G6
     @test all(==(3), flat_ids)
     # Growing curves should NOT be in the sentinel cluster
     @test all(!=(3), grow_ids)
+    sentinel_cluster = only(filter(c -> Int(c[:id]) == 3, body[:clusters]))
+    @test sentinel_cluster[:is_non_growing] == true
+end
+
+@testset "POST /api/cluster - derives per-group blanks from non-growing cluster" begin
+    status, body = post_json("/api/cluster",
+                             Dict("csv" => PRESCREEN_CSV, "k" => 2,
+                                  "smooth_method" => "none",
+                                  "subtract_blank" => true,
+                                  "derive_non_growing_blanks" => true,
+                                  "prescreen_constant" => true,
+                                  "prescreen_tol_const" => 1.5))
+    @test status == 200
+    @test body[:derived_non_growing_blanks] == true
+    @test body[:blank_subtracted] == true
+    @test string(body[:blank_source]) == "derived"
+    @test Set(String.(body[:blank_wells_used])) == Set(["F1", "F2"])
+    @test Set(String.(body[:series_labels])) == Set(["G1", "G2", "G3", "G4"])
+    @test all(c -> c[:is_non_growing] == false, body[:clusters])
+end
+
+@testset "POST /api/cluster - blank derivation requires a detector" begin
+    status, body = post_json("/api/cluster",
+                             Dict("csv" => PRESCREEN_CSV, "k" => 2,
+                                  "derive_non_growing_blanks" => true))
+    @test status == 400
+    @test occursin("requires", lowercase(string(body[:error])))
 end
 
 @testset "POST /api/cluster — trend_test_flat reassigns flat curves" begin
@@ -670,7 +742,7 @@ end
 
 @testset "POST /api/cluster-sweep — invalid prescreen quantiles return 4xx or are clamped" begin
     # qlo >= qhi should not crash the server. The schema accepts the floats as-is;
-    # _prescreen_constant_mask handles the actual computation. We assert no 500.
+    # Kinbiont handles the actual computation. We assert no 500.
     status, body = post_json("/api/cluster-sweep",
                              Dict("csv" => PRESCREEN_CSV, "k_max" => 3,
                                   "smooth_method" => "none",

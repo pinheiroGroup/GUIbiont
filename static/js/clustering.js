@@ -292,15 +292,38 @@ function setClusteringMode(mode) {
 function renderClusterBlankNotice(data) {
     const notice = document.getElementById('cluster-blank-notice');
     if (!data.blank_subtracted) { notice.style.display = 'none'; return; }
-    const src   = data.blank_source === 'auto' ? 'Auto-detected' : 'Annotated';
+    const src = data.blank_source === 'derived' ? 'Derived' :
+        data.blank_source === 'annotated+derived' ? 'Annotated and derived' : 'Annotated';
     const wells = (data.blank_wells_used || []).join(', ') || '—';
     notice.textContent = `🧪 Blank subtraction applied — ${src} blank wells: ${wells}`;
     notice.style.display = 'block';
+    const uncorrected = data.blank_uncorrected_experiments || [];
+    if (uncorrected.length) {
+        notice.textContent += `; no same-experiment blank for: ${uncorrected.join(', ')}`;
+    }
 }
 
 function onClusterBlankChange() {
     const checked = document.getElementById('cluster-subtract-blank').checked;
+    if (!checked) document.getElementById('cluster-derive-blank').checked = false;
     document.getElementById('cluster-blank-method-row').style.display = checked ? 'flex' : 'none';
+}
+
+function onClusterDerivedBlankChange() {
+    const derive = document.getElementById('cluster-derive-blank').checked;
+    if (derive) document.getElementById('cluster-subtract-blank').checked = true;
+    onClusterBlankChange();
+}
+
+async function deriveBlanksFromNonGrowingCluster() {
+    const deriveInput = document.getElementById('cluster-derive-blank');
+    deriveInput.checked = true;
+    onClusterDerivedBlankChange();
+    if (document.getElementById('cluster-method').value !== 'dbscan') {
+        const kInput = document.getElementById('clustering-k');
+        kInput.value = Math.max(1, (parseInt(kInput.value, 10) || 1) - 1);
+    }
+    await runClustering();
 }
 
 function onClusterInterpolateChange() {
@@ -333,7 +356,12 @@ function updateClusteringRunBtn() {
            !!document.getElementById('cluster-server-path').value.trim())
         : document.querySelectorAll('.clustering-exp-checkbox:checked').length > 0;
     document.getElementById('clustering-run-btn').disabled  = !hasData;
-    document.getElementById('cluster-sweep-btn').disabled   = !hasData;
+    const sweepBtn = document.getElementById('cluster-sweep-btn');
+    const isDbscan = document.getElementById('cluster-method').value === 'dbscan';
+    sweepBtn.disabled = !hasData || isDbscan;
+    sweepBtn.title = isDbscan
+        ? 'Cluster-number sweep is unavailable for DBSCAN because DBSCAN does not use k'
+        : 'Evaluate clustering across candidate values of k';
 }
 
 function selectAllClusteringExperiments() {
@@ -396,6 +424,7 @@ function onClusterMethodChange() {
     document.getElementById('cluster-dbscan-params').style.display = isDbscan ? 'flex' : 'none';
     document.getElementById('cluster-iter-params').style.display   = needsIter ? 'flex' : 'none';
     document.getElementById('cluster-n-init-param').style.display   = method === 'kmeans' ? 'flex' : 'none';
+    updateClusteringRunBtn();
 }
 
 // Store last cluster data for export
@@ -414,6 +443,13 @@ async function runClustering() {
     const hLinkage   = document.getElementById('cluster-hclust-linkage').value;
     const dbscanEps  = parseFloat(document.getElementById('cluster-dbscan-eps').value);
     const dbscanMin  = parseInt(document.getElementById('cluster-dbscan-minpts').value);
+    const deriveBlanks = document.getElementById('cluster-derive-blank').checked;
+    const usePrescreen = document.getElementById('cluster-prescreen').checked;
+    const useTrendTest = document.getElementById('cluster-trend-test').checked;
+    if (deriveBlanks && !usePrescreen && !useTrendTest) {
+        alert('Enable the non-growing pre-screen, the trend test, or both before deriving blanks.');
+        return;
+    }
     let sourceInfo    = {};
     let body;
 
@@ -450,18 +486,17 @@ async function runClustering() {
         dbscan_eps: dbscanEps,
         dbscan_min_pts: dbscanMin,
         subtract_blank:       document.getElementById('cluster-subtract-blank').checked,
+        derive_non_growing_blanks: deriveBlanks,
         blank_method:         document.getElementById('cluster-blank-method').value,
-        blank_range_thr:      parseFloat(document.getElementById('cluster-blank-range-thr').value),
-        blank_od_percentile:  parseFloat(document.getElementById('cluster-blank-od-pct').value),
         interpolate:           doInterpolate,
         interp_n:              parseInt(document.getElementById('cluster-interp-n').value) || 100,
         interp_quantile_lo:    interpQLo,
         interp_quantile_hi:    interpQHi,
-        prescreen_constant:    document.getElementById('cluster-prescreen').checked,
+        prescreen_constant:    usePrescreen,
         prescreen_tol_const:   parseFloat(document.getElementById('cluster-prescreen-tol').value) || 1.5,
         prescreen_q_low:       preQLo,
         prescreen_q_high:      preQHi,
-        trend_test_flat:       document.getElementById('cluster-trend-test').checked,
+        trend_test_flat:       useTrendTest,
         trend_p_thr:           parseFloat(document.getElementById('cluster-trend-p').value) || 0.05,
     });
 
@@ -496,18 +531,17 @@ async function runClustering() {
             dbscan_eps:     dbscanEps,
             dbscan_min_pts: dbscanMin,
             subtract_blank: document.getElementById('cluster-subtract-blank').checked,
+            derive_non_growing_blanks: deriveBlanks,
             blank_method:   document.getElementById('cluster-blank-method').value,
-            blank_range_thr:     parseFloat(document.getElementById('cluster-blank-range-thr').value),
-            blank_od_percentile: parseFloat(document.getElementById('cluster-blank-od-pct').value),
             interpolate:         doInterpolate,
             interp_n:            parseInt(document.getElementById('cluster-interp-n').value) || 100,
             interp_quantile_lo:  interpQLo,
             interp_quantile_hi:  interpQHi,
-            prescreen_constant:  document.getElementById('cluster-prescreen').checked,
+            prescreen_constant:  usePrescreen,
             prescreen_tol_const: parseFloat(document.getElementById('cluster-prescreen-tol').value) || 1.5,
             prescreen_q_low:     preQLo,
             prescreen_q_high:    preQHi,
-            trend_test_flat:     document.getElementById('cluster-trend-test').checked,
+            trend_test_flat:     useTrendTest,
             trend_p_thr:         parseFloat(document.getElementById('cluster-trend-p').value) || 0.05,
         };
         state._lastClusterData = data;
@@ -562,6 +596,15 @@ function renderClusterGrid(data) {
             ? `Cluster ${clusterLabel}  (${total} series, showing ${shown})`
             : `Cluster ${clusterLabel}  (${total} series)`;
         title.appendChild(titleText);
+
+        if (cluster.is_non_growing) {
+            const deriveBtn = document.createElement('button');
+            deriveBtn.className = 'cluster-btn';
+            deriveBtn.textContent = 'Derive blanks';
+            deriveBtn.title = 'Use these non-growing curves as experiment-specific blanks and rerun clustering';
+            deriveBtn.addEventListener('click', deriveBlanksFromNonGrowingCluster);
+            title.appendChild(deriveBtn);
+        }
 
         const seriesBtn = document.createElement('button');
         seriesBtn.className = 'cluster-btn';
@@ -1066,10 +1109,10 @@ function renderQualityPanel(data) {
 
 const SWEEP_METRICS = [
     {
-        key: 'wcss',
+        key: 'cost',
         divId: 'cluster-sweep-plot-wcss',
         titleId: 'cluster-sweep-title-wcss',
-        label: 'WCSS',
+        label: 'Clustering cost',
         direction: '\u2193',
         color: '#2c7bb6',
     },
@@ -1119,6 +1162,10 @@ async function runClusterSweep() {
     const kMax    = parseInt(document.getElementById('cluster-sweep-kmax').value) || 10;
     const smooth  = document.getElementById('cluster-smooth-method').value;
     const method  = document.getElementById('cluster-method').value;
+    if (method === 'dbscan') {
+        alert('Cluster-number sweep is unavailable for DBSCAN because DBSCAN does not use k.');
+        return;
+    }
     const lowess  = parseFloat(document.getElementById('cluster-lowess-frac').value);
     const gHmult  = parseFloat(document.getElementById('cluster-gaussian-hmult').value);
     const maxiter = parseInt(document.getElementById('cluster-maxiter').value) || 300;
@@ -1126,6 +1173,13 @@ async function runClusterSweep() {
     const nInit   = Math.min(100, Math.max(1, parseInt(document.getElementById('cluster-n-init').value, 10) || 3));
     document.getElementById('cluster-n-init').value = nInit;
     const hLink   = document.getElementById('cluster-hclust-linkage').value;
+    const deriveBlanks = document.getElementById('cluster-derive-blank').checked;
+    const usePrescreen = document.getElementById('cluster-prescreen').checked;
+    const useTrendTest = document.getElementById('cluster-trend-test').checked;
+    if (deriveBlanks && !usePrescreen && !useTrendTest) {
+        alert('Enable the non-growing pre-screen, the trend test, or both before deriving blanks.');
+        return;
+    }
     let body;
 
     if (state.currentClusteringMode === 'file') {
@@ -1148,15 +1202,18 @@ async function runClusterSweep() {
     Object.assign(body, {
         smooth_method: smooth, lowess_frac: lowess, gaussian_h_mult: gHmult,
         cluster_method: method, maxiter, tol, kmeans_n_init: nInit, hclust_linkage: hLink,
+        subtract_blank:      document.getElementById('cluster-subtract-blank').checked,
+        derive_non_growing_blanks: deriveBlanks,
+        blank_method:        document.getElementById('cluster-blank-method').value,
         interpolate:         doInterpolate,
         interp_n:            parseInt(document.getElementById('cluster-interp-n').value) || 100,
         interp_quantile_lo:  interpQLo,
         interp_quantile_hi:  interpQHi,
-        prescreen_constant:  document.getElementById('cluster-prescreen').checked,
+        prescreen_constant:  usePrescreen,
         prescreen_tol_const: parseFloat(document.getElementById('cluster-prescreen-tol').value) || 1.5,
         prescreen_q_low:     preQLo,
         prescreen_q_high:    preQHi,
-        trend_test_flat:     document.getElementById('cluster-trend-test').checked,
+        trend_test_flat:     useTrendTest,
         trend_p_thr:         parseFloat(document.getElementById('cluster-trend-p').value) || 0.05,
     });
 
@@ -1169,6 +1226,7 @@ async function runClusterSweep() {
         if (!res.ok) { alert('Sweep failed: ' + (await res.json()).error); return; }
         const data = await res.json();
         state._lastClusterSweep = data.sweep || [];
+        state._lastClusterSweepCostMetric = data.cost_metric || 'wcss';
         renderSweepPanel(state._lastClusterSweep);
     } catch (e) {
         alert('Sweep failed: ' + e.message);
@@ -1177,12 +1235,12 @@ async function runClusterSweep() {
     }
 }
 
-// Return the k at which the second derivative of WCSS is maximised (elbow).
-function _detectElbow(ks, wcss) {
-    if (wcss.length < 3) return ks[0];
+// Return the k at which the second derivative of clustering cost is maximised.
+function _detectElbow(ks, costs) {
+    if (costs.length < 3) return ks[0];
     let maxD2 = -Infinity, elbowIdx = 1;
-    for (let i = 1; i < wcss.length - 1; i++) {
-        const d2 = wcss[i - 1] - 2 * wcss[i] + wcss[i + 1];
+    for (let i = 1; i < costs.length - 1; i++) {
+        const d2 = costs[i - 1] - 2 * costs[i] + costs[i + 1];
         if (d2 > maxD2) { maxD2 = d2; elbowIdx = i; }
     }
     return ks[elbowIdx];
@@ -1222,20 +1280,24 @@ function renderSweepPanel(sweep) {
     document.getElementById('cluster-sweep-panel').style.display = 'block';
     _bindSweepDownloadButtons();
 
-    const ks   = sweep.map(r => r.k);
-    const wcss = sweep.map(r => r.wcss);
+    const ks = sweep.map(r => r.k);
+    const costs = sweep.map(r => Number.isFinite(r.cost) ? r.cost : r.wcss);
+    const costMetric = sweep[0]?.cost_metric || state._lastClusterSweepCostMetric || 'wcss';
+    const costLabel = costMetric === 'distance_to_medoid'
+        ? 'Distance-to-medoid cost'
+        : 'WCSS';
 
-    // --- WCSS elbow plot ---
-    const elbowK = _detectElbow(ks, wcss);
-    const elbowY = wcss[ks.indexOf(elbowK)];
-    _setSweepTitle('wcss', `WCSS (elbow: k=${elbowK}) \u2193`);
+    // --- Method-specific clustering-cost elbow plot ---
+    const elbowK = _detectElbow(ks, costs);
+    const elbowY = costs[ks.indexOf(elbowK)];
+    _setSweepTitle('cost', `${costLabel} (elbow: k=${elbowK}) \u2193`);
     Plotly.newPlot(document.getElementById('cluster-sweep-plot-wcss'), [
         {
             type: 'scatter', mode: 'lines+markers',
-            x: ks, y: wcss, name: 'WCSS',
+            x: ks, y: costs, name: costLabel,
             marker: { size: 7, color: '#2c7bb6' },
             line:   { color: '#2c7bb6' },
-            hovertemplate: 'k=%{x}  WCSS=%{y:.2f}<extra></extra>',
+            hovertemplate: `k=%{x}  ${costLabel}=%{y:.2f}<extra></extra>`,
         },
         {
             type: 'scatter', mode: 'markers', name: `Elbow (k=${elbowK})`,
@@ -1246,7 +1308,7 @@ function renderSweepPanel(sweep) {
     ], {
         margin: { t: 8, b: 36, l: 52, r: 10 },
         xaxis:  { title: 'N clusters', dtick: 1, tickfont: { size: 11 } },
-        yaxis:  { title: 'WCSS', tickfont: { size: 11 } },
+        yaxis:  { title: costLabel, tickfont: { size: 11 } },
         title:  { text: '', font: { size: 12 } },
         showlegend: false,
     }, { responsive: true, displayModeBar: false });
@@ -1447,7 +1509,7 @@ export {
     setClusteringMode, populateClusteringExperiments,
     selectAllClusteringExperiments, clearAllClusteringExperiments,
     onClusteringFileChange, onClusterNormalizeChange, updateClusteringRunBtn, toggleClusteringAdvanced,
-    onClusterSmoothChange, onClusterMethodChange, onClusterBlankChange, onClusterInterpolateChange,
+    onClusterSmoothChange, onClusterMethodChange, onClusterBlankChange, onClusterDerivedBlankChange, onClusterInterpolateChange,
     renderClusterBlankNotice, runClustering, renderClusterGrid,
     exportClusterCSV, exportAllClustersCSV, exportClusterCentroidsCSV, exportAllClustersPNG,
     renderQualityPanel, runClusterSweep, renderSweepPanel,

@@ -13,17 +13,27 @@
     dbscan_minpts  = Int(body.dbscan_min_pts)
     hclust_linkage = Symbol(body.hclust_linkage)
     subtract_blank = Bool(body.subtract_blank)
+    derive_non_growing_blanks = Bool(body.derive_non_growing_blanks)
     blank_method   = string(body.blank_method)
-    blank_range_thr = Float64(body.blank_range_thr)
-    blank_od_pct   = Float64(body.blank_od_percentile)
+
+    if derive_non_growing_blanks &&
+       !Bool(body.prescreen_constant) && !Bool(body.trend_test_flat)
+        return json(Dict("error" =>
+            "Blank derivation requires the non-growing pre-screen, the trend test, or both"); status=400)
+    end
 
     times_all        = Vector{Vector{Float64}}()
     curves_all       = Vector{Vector{Float64}}()
     labels_all       = Vector{String}()
+    sample_groups    = Vector{String}()
     # For experiment mode: store blank curves separately for subtraction
     blank_curves_all  = Vector{Vector{Float64}}()
+    blank_times_all   = Vector{Vector{Float64}}()
+    blank_groups_all  = Vector{String}()
     blank_labels_used = Vector{String}()
     blank_source      = "none"   # "annotated" | "auto" | "none"
+    blank_subtraction_applied = false
+    blank_uncorrected_groups = String[]
 
     if !isempty(body.csv) || !isempty(body.csv_path)
         df = if !isempty(body.csv_path)
@@ -35,6 +45,7 @@
         end
         ta, ca, la = _load_csv_curves(df)
         append!(times_all, ta); append!(curves_all, ca); append!(labels_all, la)
+        append!(sample_groups, fill("uploaded_matrix", length(la)))
     else
         for exp_name in body.experiments
             data_file       = joinpath(CLEAN_DATA_PATH, exp_name, "data_channel_1.csv")
@@ -42,11 +53,13 @@
             isfile(data_file) || continue
             try
                 gd_raw      = CSV.read(data_file, DataFrame, header=1, silencewarnings=true)
+                excluded_wells = Set{String}()
                 annotated_blanks = Set{String}()
                 if isfile(annotation_file)
                     ann = CSV.read(annotation_file, DataFrame, header=false,
                                   silencewarnings=true, stringtype=String)
-                    annotated_blanks = get_blank_wells(ann)
+                    excluded_wells = get_blank_wells(ann)
+                    annotated_blanks = Set(get_blank_well_names(ann))
                 end
                 time_data = gd_raw[!, names(gd_raw)[1]]
                 time_numeric = if eltype(time_data) <: AbstractString
@@ -60,13 +73,18 @@
                     for val in gd_raw[!, well]
                         try push!(od, parse(Float64, string(val))) catch _ push!(od, NaN) end
                     end
-                    if well in annotated_blanks
-                        push!(blank_curves_all, od)
-                        push!(blank_labels_used, "$exp_name/$well")
+                    if well in excluded_wells
+                        if well in annotated_blanks
+                            push!(blank_curves_all, od)
+                            push!(blank_times_all, time_numeric)
+                            push!(blank_groups_all, exp_name)
+                            push!(blank_labels_used, "$exp_name/$well")
+                        end
                     else
                         push!(times_all,  time_numeric)
                         push!(curves_all, od)
                         push!(labels_all, "$exp_name/$well")
+                        push!(sample_groups, exp_name)
                     end
                 end
                 if !isempty(annotated_blanks)
@@ -79,6 +97,19 @@
     end
 
     isempty(curves_all) && return json(Dict("error" => "No data loaded"); status=400)
+
+    # Pair annotated blanks with samples from the same experiment and align the
+    # blank traces to each sample's real time grid before any global resampling.
+    annotated_blanks = !isempty(blank_curves_all)
+    if subtract_blank && annotated_blanks && !derive_non_growing_blanks
+        curves_all, corrected_mask = Kinbiont.apply_grouped_blank_subtraction(
+            curves_all, times_all, sample_groups,
+            blank_curves_all, blank_times_all, blank_groups_all;
+            method=Symbol(blank_method),
+        )
+        blank_subtraction_applied = any(corrected_mask)
+        blank_uncorrected_groups = sort(unique(sample_groups[.!corrected_mask]))
+    end
 
     # ------------------------------------------------------------------
     # Build common time grid
@@ -96,11 +127,12 @@
     time_normalized = false
 
     if do_interp
-        grid = _build_interp_grid(times_all, interp_n, q_lo, q_hi)
+        grid = Kinbiont.common_time_grid(times_all;
+            n_grid=interp_n, q_low=q_lo, q_high=q_hi)
         if isempty(grid)
             return json(Dict("error" => "Could not build interpolation grid"); status=400)
         end
-        curves_interp = _interpolate_to_grid(curves_all, times_all, grid)
+        curves_interp = Kinbiont.interpolate_curves_to_grid(curves_all, times_all, grid)
         times    = grid
         n_series = size(curves_interp, 1)
         curves   = curves_interp
@@ -111,12 +143,14 @@
         clean_times  = Vector{Vector{Float64}}()
         clean_curves = Vector{Vector{Float64}}()
         valid_labels = Vector{String}()
+        valid_groups = Vector{String}()
         for i in eachindex(curves_all)
             ct, cy = _strip_nan_tail(times_all[i], curves_all[i])
             length(ct) < 2 && continue
             push!(clean_times,  ct)
             push!(clean_curves, cy)
             push!(valid_labels, labels_all[i])
+            push!(valid_groups, sample_groups[i])
         end
         isempty(clean_curves) &&
             return json(Dict("error" => "No valid curves after NaN removal"); status=400)
@@ -125,7 +159,7 @@
         n_series     = size(igd.curves, 1)
         curves       = igd.curves
         labels_all   = valid_labels
-        blank_curves_all = Vector{Vector{Float64}}()   # blanks not supported on this path
+        sample_groups = valid_groups
         time_normalized  = true
 
     else
@@ -139,43 +173,51 @@
     end
 
     # ------------------------------------------------------------------
-    # Blank detection and subtraction
-    # Annotated blanks are always excluded from clustering (already separated
-    # during data loading above).  Auto-detected blanks are also always removed
-    # from the clustering matrix once found — consistent with annotated behaviour.
-    # Signal subtraction only happens when subtract_blank=true.
+    # Annotated blanks are excluded during loading. Optional derived blanks are
+    # selected below by the same non-growing controls used by clustering.
     # ------------------------------------------------------------------
-    if isempty(blank_curves_all) && !Bool(body.prescreen_constant) && !Bool(body.trend_test_flat)
-        blank_idxs = _detect_blank_indices(curves, times;
-            flat_range_thr = blank_range_thr,
-            od_percentile  = blank_od_pct)
-        if !isempty(blank_idxs)
-            blank_curves_all  = [curves[i, :] for i in blank_idxs]
-            blank_labels_used = labels_all[blank_idxs]
-            blank_source      = "auto"
-            keep       = setdiff(1:n_series, blank_idxs)
-            curves     = curves[keep, :]
-            labels_all = labels_all[keep]
-            n_series   = length(keep)
-            times_all  = times_all[keep]
-        end
-    end
-
-    if subtract_blank && !isempty(blank_curves_all)
-        ncols     = size(curves, 2)
-        blen      = min(ncols, minimum(length.(blank_curves_all)))
-        blank_mat = Matrix{Float64}(undef, length(blank_curves_all), blen)
-        for (i, bc) in enumerate(blank_curves_all)
-            blank_mat[i, :] = bc[1:blen]
-        end
-        blank_ts      = [mean(filter(isfinite, blank_mat[:, t])) for t in 1:blen]
-        blank_ts_full = length(blank_ts) >= ncols ? blank_ts[1:ncols] :
-                        vcat(blank_ts, fill(blank_ts[end], ncols - length(blank_ts)))
-        curves = _apply_blank_subtraction_matrix(curves, blank_ts_full, blank_method)
-    end
-
     # Replace NaN/Inf with column means before smoothing and clustering
-    curves = _fill_nan_colmean(curves)
+    curves = Kinbiont.fill_nonfinite_colmean(curves)
+
+    # Detect on the selected clustering signal, but derive and subtract each
+    # experiment's blank trace from the unsmoothed aligned measurements.
+    if derive_non_growing_blanks
+        detector_curves, detector_times = _smooth_clustering_curves(
+            curves, times, labels_all;
+            method=smooth_method,
+            lowess_frac=lowess_frac,
+            gaussian_h_mult=gaussian_hmult,
+        )
+        derived = Kinbiont.derive_blank_from_non_growing(
+            curves, times, labels_all, sample_groups,
+            detector_curves, detector_times;
+            annotated_blank_curves=blank_curves_all,
+            annotated_blank_times=blank_times_all,
+            annotated_blank_groups=blank_groups_all,
+            annotated_blank_labels=blank_labels_used,
+            prescreen_constant=Bool(body.prescreen_constant),
+            trend_test=Bool(body.trend_test_flat),
+            prescreen_tol=Float64(body.prescreen_tol_const),
+            prescreen_q_low=prescreen_qlo,
+            prescreen_q_high=prescreen_qhi,
+            trend_p_threshold=Float64(body.trend_p_thr),
+            blank_method=Symbol(blank_method),
+        )
+        isempty(derived.derived_indices) && return json(Dict(
+            "error" => "No non-growing curves were detected for blank derivation"
+        ); status=400)
+        isempty(derived.labels) && return json(Dict(
+            "error" => "No sample curves remain after blank derivation"
+        ); status=400)
+        curves = Kinbiont.fill_nonfinite_colmean(derived.curves)
+        labels_all = derived.labels
+        sample_groups = derived.groups
+        blank_labels_used = derived.blank_labels
+        blank_source = annotated_blanks ? "annotated+derived" : "derived"
+        blank_subtraction_applied = any(derived.corrected_mask)
+        blank_uncorrected_groups = sort(unique(sample_groups[.!derived.corrected_mask]))
+        n_series = size(curves, 1)
+    end
 
     # ------------------------------------------------------------------
     # Smoothing via KinBiont preprocess
@@ -202,18 +244,22 @@
         curves_for_cluster = curves
     end
 
-    # Preflight: mirror Kinbiont's constant-curve detector on the curves we are
-    # about to send in. Only forward `cluster_prescreen_constant=true` if at
-    # least one curve actually matches — otherwise Kinbiont reserves a sentinel
-    # cluster nobody fills, which (in the sweep) inflates WCSS at small k and
-    # produces misleading elbows.
-    prescreen_mask = Bool(body.prescreen_constant) ?
-        _prescreen_constant_mask(curves_for_cluster;
-            tol_const = Float64(body.prescreen_tol_const),
-            q_low     = prescreen_qlo,
-            q_high    = prescreen_qhi) :
-        nothing
-    do_prescreen = prescreen_mask !== nothing && any(prescreen_mask)
+    # Record the same union Kinbiont uses so the response can identify the
+    # non-growing cluster and offer the second-pass blank derivation action.
+    non_growing_indices = derive_non_growing_blanks ? Int[] :
+        Kinbiont.detect_non_growing_indices(
+            curves_for_cluster, times;
+            prescreen_constant=Bool(body.prescreen_constant),
+            trend_test=Bool(body.trend_test_flat),
+            prescreen_tol=Float64(body.prescreen_tol_const),
+            prescreen_q_low=prescreen_qlo,
+            prescreen_q_high=prescreen_qhi,
+            trend_p_threshold=Float64(body.trend_p_thr),
+        )
+    non_growing_mask = falses(n_series)
+    non_growing_mask[non_growing_indices] .= true
+    do_prescreen = !derive_non_growing_blanks && Bool(body.prescreen_constant) &&
+                   !isempty(non_growing_indices)
 
     # ------------------------------------------------------------------
     # Clustering — delegate entirely to KinBiont preprocess
@@ -223,9 +269,9 @@
         cluster                    = true,
         n_clusters                 = k_eff,
         cluster_method             = Symbol(cluster_method),
-        cluster_trend_test         = Bool(body.trend_test_flat),
+        cluster_trend_test         = !derive_non_growing_blanks && Bool(body.trend_test_flat),
         cluster_trend_p_thr        = Float64(body.trend_p_thr),
-        cluster_prescreen_constant = do_prescreen,
+        cluster_prescreen_constant = !derive_non_growing_blanks && Bool(body.prescreen_constant),
         cluster_tol_const          = Float64(body.prescreen_tol_const),
         cluster_q_low              = prescreen_qlo,
         cluster_q_high             = prescreen_qhi,
@@ -269,6 +315,7 @@
         push!(clusters, Dict(
             "id"                     => c,
             "label"                  => label,
+            "is_non_growing"         => !derive_non_growing_blanks && all(non_growing_mask[mask]),
             "series_labels"          => labels_all[mask],
             "series_data_raw"        => [raw_curves[i, :] for i in mask],
             "series_data_normalized" => [normalized_curves[i, :] for i in mask],
@@ -326,9 +373,11 @@
         "assignments"      => cluster_ids,
         "series_labels"    => labels_all,
         "prescreen_applied" => do_prescreen,
-        "blank_subtracted" => subtract_blank && !isempty(blank_curves_all),
+        "derived_non_growing_blanks" => derive_non_growing_blanks,
+        "blank_subtracted" => blank_subtraction_applied,
         "blank_source"     => blank_source,
         "blank_wells_used" => blank_labels_used,
+        "blank_uncorrected_experiments" => blank_uncorrected_groups,
     )
 end
 
@@ -343,15 +392,31 @@ end
     lowess_frac    = Float64(body.lowess_frac)
     gaussian_hmult = Float64(body.gaussian_h_mult)
     cluster_method = string(body.cluster_method)
+    cluster_method == "dbscan" && return json(Dict(
+        "error" => "Cluster-number sweep is unavailable for DBSCAN because DBSCAN does not use k"
+    ); status=400)
     maxiter        = Int(body.maxiter)
     tol            = Float64(body.tol)
     kmeans_n_init  = clamp(Int(body.kmeans_n_init), 1, 100)
     hclust_linkage = Symbol(body.hclust_linkage)
+    subtract_blank = Bool(body.subtract_blank)
+    derive_non_growing_blanks = Bool(body.derive_non_growing_blanks)
+    blank_method   = string(body.blank_method)
+    if derive_non_growing_blanks &&
+       !Bool(body.prescreen_constant) && !Bool(body.trend_test_flat)
+        return json(Dict("error" =>
+            "Blank derivation requires the non-growing pre-screen, the trend test, or both"); status=400)
+    end
 
     # Re-use the same data-loading logic as /api/cluster
     times_all  = Vector{Vector{Float64}}()
     curves_all = Vector{Vector{Float64}}()
     labels_all = Vector{String}()
+    sample_groups = Vector{String}()
+    blank_curves_all = Vector{Vector{Float64}}()
+    blank_times_all = Vector{Vector{Float64}}()
+    blank_groups_all = Vector{String}()
+    blank_labels_all = Vector{String}()
 
     if !isempty(body.csv) || !isempty(body.csv_path)
         df = if !isempty(body.csv_path)
@@ -363,6 +428,7 @@ end
         end
         ta, ca, la = _load_csv_curves(df)
         append!(times_all, ta); append!(curves_all, ca); append!(labels_all, la)
+        append!(sample_groups, fill("uploaded_matrix", length(la)))
     else
         for exp_name in body.experiments
             data_file       = joinpath(CLEAN_DATA_PATH, exp_name, "data_channel_1.csv")
@@ -370,11 +436,13 @@ end
             isfile(data_file) || continue
             try
                 gd_raw      = CSV.read(data_file, DataFrame, header=1, silencewarnings=true)
+                excluded_wells = Set{String}()
                 blank_wells = Set{String}()
                 if isfile(annotation_file)
                     ann = CSV.read(annotation_file, DataFrame, header=false,
                                   silencewarnings=true, stringtype=String)
-                    blank_wells = get_blank_wells(ann)
+                    excluded_wells = get_blank_wells(ann)
+                    blank_wells = Set(get_blank_well_names(ann))
                 end
                 time_data    = gd_raw[!, names(gd_raw)[1]]
                 time_numeric = if eltype(time_data) <: AbstractString
@@ -384,14 +452,23 @@ end
                     Float64.(time_data)
                 end
                 for well in names(gd_raw)[2:end]
-                    well in blank_wells && continue
                     od = Float64[]
                     for val in gd_raw[!, well]
                         try push!(od, parse(Float64, string(val))) catch _ push!(od, NaN) end
                     end
-                    push!(times_all,  time_numeric)
-                    push!(curves_all, od)
-                    push!(labels_all, "$exp_name/$well")
+                    if well in excluded_wells
+                        if well in blank_wells
+                            push!(blank_curves_all, od)
+                            push!(blank_times_all, time_numeric)
+                            push!(blank_groups_all, exp_name)
+                            push!(blank_labels_all, "$exp_name/$well")
+                        end
+                    else
+                        push!(times_all,  time_numeric)
+                        push!(curves_all, od)
+                        push!(labels_all, "$exp_name/$well")
+                        push!(sample_groups, exp_name)
+                    end
                 end
             catch e
                 @warn "Error loading $exp_name for sweep: $e"
@@ -400,6 +477,15 @@ end
     end
 
     isempty(curves_all) && return json(Dict("error" => "No data loaded"); status=400)
+
+    annotated_blanks = !isempty(blank_curves_all)
+    if subtract_blank && annotated_blanks && !derive_non_growing_blanks
+        curves_all, _ = Kinbiont.apply_grouped_blank_subtraction(
+            curves_all, times_all, sample_groups,
+            blank_curves_all, blank_times_all, blank_groups_all;
+            method=Symbol(blank_method),
+        )
+    end
 
     do_interp     = Bool(body.interpolate)
     interp_n      = max(10, Int(body.interp_n))
@@ -410,9 +496,10 @@ end
     has_irregular = any(c -> any(isnan, c), curves_all)
 
     if do_interp
-        grid = _build_interp_grid(times_all, interp_n, q_lo, q_hi)
+        grid = Kinbiont.common_time_grid(times_all;
+            n_grid=interp_n, q_low=q_lo, q_high=q_hi)
         isempty(grid) && return json(Dict("error" => "Could not build interpolation grid"); status=400)
-        curves   = _interpolate_to_grid(curves_all, times_all, grid)
+        curves   = Kinbiont.interpolate_curves_to_grid(curves_all, times_all, grid)
         times    = grid
         n_series = size(curves, 1)
 
@@ -420,12 +507,14 @@ end
         clean_times  = Vector{Vector{Float64}}()
         clean_curves = Vector{Vector{Float64}}()
         valid_labels = Vector{String}()
+        valid_groups = Vector{String}()
         for i in eachindex(curves_all)
             ct, cy = _strip_nan_tail(times_all[i], curves_all[i])
             length(ct) < 2 && continue
             push!(clean_times,  ct)
             push!(clean_curves, cy)
             push!(valid_labels, labels_all[i])
+            push!(valid_groups, sample_groups[i])
         end
         isempty(clean_curves) &&
             return json(Dict("error" => "No valid curves after NaN removal"); status=400)
@@ -434,6 +523,7 @@ end
         n_series   = size(igd.curves, 1)
         curves     = igd.curves
         labels_all = valid_labels
+        sample_groups = valid_groups
 
     else
         min_len  = minimum(length.(curves_all))
@@ -449,7 +539,42 @@ end
     # (ml.jl:175). Without this, any NaN cell makes every per-k preprocess() call
     # throw inside the `try ... continue` below, and the response silently
     # collapses to {"sweep": []} with no error message.
-    curves = _fill_nan_colmean(curves)
+    # Blank derivation below uses the same experiment-local policy as /api/cluster.
+    curves = Kinbiont.fill_nonfinite_colmean(curves)
+
+    if derive_non_growing_blanks
+        detector_curves, detector_times = _smooth_clustering_curves(
+            curves, times, labels_all;
+            method=smooth_method,
+            lowess_frac=lowess_frac,
+            gaussian_h_mult=gaussian_hmult,
+        )
+        derived = Kinbiont.derive_blank_from_non_growing(
+            curves, times, labels_all, sample_groups,
+            detector_curves, detector_times;
+            annotated_blank_curves=blank_curves_all,
+            annotated_blank_times=blank_times_all,
+            annotated_blank_groups=blank_groups_all,
+            annotated_blank_labels=blank_labels_all,
+            prescreen_constant=Bool(body.prescreen_constant),
+            trend_test=Bool(body.trend_test_flat),
+            prescreen_tol=Float64(body.prescreen_tol_const),
+            prescreen_q_low=prescreen_qlo,
+            prescreen_q_high=prescreen_qhi,
+            trend_p_threshold=Float64(body.trend_p_thr),
+            blank_method=Symbol(blank_method),
+        )
+        isempty(derived.derived_indices) && return json(Dict(
+            "error" => "No non-growing curves were detected for blank derivation"
+        ); status=400)
+        isempty(derived.labels) && return json(Dict(
+            "error" => "No sample curves remain after blank derivation"
+        ); status=400)
+        curves = Kinbiont.fill_nonfinite_colmean(derived.curves)
+        labels_all = derived.labels
+        sample_groups = derived.groups
+        n_series = size(curves, 1)
+    end
 
     # Smooth once, then sweep over k. Match /api/cluster: when the smoother
     # shortens the series (rolling_avg drops smooth_pt_avg-1 points), update
@@ -467,24 +592,16 @@ end
     else
         curves_for = curves
     end
-    # Same preflight as /api/cluster: only ask Kinbiont to reserve a sentinel
-    # cluster when there is actually something to put in it.
-    prescreen_mask = Bool(body.prescreen_constant) ?
-        _prescreen_constant_mask(curves_for;
-            tol_const = Float64(body.prescreen_tol_const),
-            q_low     = prescreen_qlo,
-            q_high    = prescreen_qhi) :
-        nothing
-    do_prescreen = prescreen_mask !== nothing && any(prescreen_mask)
     sweep_results = []
     for k in 1:min(k_max, n_series)
-        prescreen_for_k = k > 1 && do_prescreen
+        prescreen_for_k = !derive_non_growing_blanks && k > 1 &&
+                          Bool(body.prescreen_constant)
         gd_sw   = GrowthData(curves_for, times, labels_all)
         sw_opts = FitOptions(
             cluster                    = true,
             n_clusters                 = k,
             cluster_method             = Symbol(cluster_method),
-            cluster_trend_test         = Bool(body.trend_test_flat),
+            cluster_trend_test         = !derive_non_growing_blanks && Bool(body.trend_test_flat),
             cluster_trend_p_thr        = Float64(body.trend_p_thr),
             cluster_prescreen_constant = prescreen_for_k,
             cluster_tol_const          = Float64(body.prescreen_tol_const),
@@ -502,14 +619,15 @@ end
             continue
         end
         ids   = gd_result.clusters
-        wcss  = something(gd_result.wcss, 0.0)
+        cluster_cost = something(gd_result.wcss, 0.0)
+        cost_metric = cluster_method == "kmedoids" ? "distance_to_medoid" : "wcss"
 
         # At k=1 every quality index is undefined (silhouette, Dunn, Davies-Bouldin,
         # Calinski-Harabasz and Xie-Beni all need ≥ 2 clusters). Skip the call so
         # we don't pay for the n×n pairwise-distance allocation that
         # `_cluster_quality_indices` does internally before short-circuiting.
-        # WCSS is still emitted (computed above) — that is what the elbow uses
-        # at k=1 as its baseline.
+        # The method-specific clustering cost is still emitted as the k=1
+        # baseline used by the elbow diagnostic.
         q = if k < 2
             Dict{String,Any}(
                 "silhouette_mean"   => nothing,
@@ -525,7 +643,9 @@ end
         end
         push!(sweep_results, Dict(
             "k"                 => k,
-            "wcss"              => wcss,
+            "cost"              => cluster_cost,
+            "cost_metric"       => cost_metric,
+            "wcss"              => cluster_cost, # backwards-compatible key
             "silhouette_mean"   => q["silhouette_mean"],
             "dunn"              => q["dunn"],
             "davies_bouldin"    => q["davies_bouldin"],
@@ -534,7 +654,11 @@ end
         ))
     end
 
-    return sanitize_for_json(Dict("sweep" => sweep_results))
+    cost_metric = cluster_method == "kmedoids" ? "distance_to_medoid" : "wcss"
+    return sanitize_for_json(Dict(
+        "sweep" => sweep_results,
+        "cost_metric" => cost_metric,
+    ))
 end
 
 # ------------------------------------------------------------------

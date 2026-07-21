@@ -165,6 +165,7 @@ Base.@kwdef mutable struct ClusterRequest
     dbscan_min_pts::Int = 3
     hclust_linkage::String = "ward"
     subtract_blank::Bool = false
+    derive_non_growing_blanks::Bool = false
     blank_method::String = "pointbypoint"
     blank_range_thr::Float64 = 0.005
     blank_od_percentile::Float64 = 0.10
@@ -193,6 +194,11 @@ Base.@kwdef mutable struct ClusterSweepRequest
     tol::Float64 = 1e-15
     kmeans_n_init::Int = 3
     hclust_linkage::String = "ward"
+    subtract_blank::Bool = false
+    derive_non_growing_blanks::Bool = false
+    blank_method::String = "pointbypoint"
+    blank_range_thr::Float64 = 0.005
+    blank_od_percentile::Float64 = 0.10
     interpolate::Bool = false
     interp_n::Int = 100
     interp_quantile_lo::Float64 = 0.05
