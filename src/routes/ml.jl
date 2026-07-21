@@ -145,33 +145,28 @@
     # from the clustering matrix once found — consistent with annotated behaviour.
     # Signal subtraction only happens when subtract_blank=true.
     # ------------------------------------------------------------------
-    if isempty(blank_curves_all) && !Bool(body.prescreen_constant) && !Bool(body.trend_test_flat)
-        blank_idxs = _detect_blank_indices(curves, times;
-            flat_range_thr = blank_range_thr,
-            od_percentile  = blank_od_pct)
-        if !isempty(blank_idxs)
-            blank_curves_all  = [curves[i, :] for i in blank_idxs]
-            blank_labels_used = labels_all[blank_idxs]
-            blank_source      = "auto"
-            keep       = setdiff(1:n_series, blank_idxs)
-            curves     = curves[keep, :]
-            labels_all = labels_all[keep]
-            n_series   = length(keep)
-            times_all  = times_all[keep]
+    csv_mode = !isempty(body.csv) || !isempty(body.csv_path)
+
+    # Auto blank detection is an explicit, user-requested step (auto_detect_blanks).
+    # It runs only when no annotated blanks were supplied, and — unlike before — is
+    # NOT silently suppressed by prescreen/trend: if the user requests it, it runs.
+    # Detected blanks are removed from the clustering matrix (they never cluster),
+    # matching annotated-blank behaviour.
+    if Bool(body.auto_detect_blanks) && isempty(blank_curves_all)
+        curves, labels_all, blank_curves_all, blank_labels_used, found =
+            _auto_detect_and_split_blanks(curves, times, labels_all;
+                range_thr = blank_range_thr, od_pct = blank_od_pct)
+        if found
+            blank_source = "auto"
+            n_series     = length(labels_all)
         end
     end
 
+    # Blank correction is performed separately within each loaded experiment: each
+    # experiment's wells are corrected using only that experiment's own blanks.
     if subtract_blank && !isempty(blank_curves_all)
-        ncols     = size(curves, 2)
-        blen      = min(ncols, minimum(length.(blank_curves_all)))
-        blank_mat = Matrix{Float64}(undef, length(blank_curves_all), blen)
-        for (i, bc) in enumerate(blank_curves_all)
-            blank_mat[i, :] = bc[1:blen]
-        end
-        blank_ts      = [mean(filter(isfinite, blank_mat[:, t])) for t in 1:blen]
-        blank_ts_full = length(blank_ts) >= ncols ? blank_ts[1:ncols] :
-                        vcat(blank_ts, fill(blank_ts[end], ncols - length(blank_ts)))
-        curves = _apply_blank_subtraction_matrix(curves, blank_ts_full, blank_method)
+        curves = _subtract_blanks_per_experiment(curves, labels_all,
+            blank_curves_all, blank_labels_used, blank_method, csv_mode)
     end
 
     # Replace NaN/Inf with column means before smoothing and clustering
@@ -348,10 +343,23 @@ end
     kmeans_n_init  = clamp(Int(body.kmeans_n_init), 1, 100)
     hclust_linkage = Symbol(body.hclust_linkage)
 
+    # The sweep varies k, but DBSCAN has no k parameter — it is unavailable here.
+    cluster_method == "dbscan" && return json(
+        Dict("error" => "Cluster-sweep is unavailable for DBSCAN (it has no k parameter to sweep over)."); status=400)
+
+    subtract_blank  = Bool(body.subtract_blank)
+    blank_method    = string(body.blank_method)
+    blank_range_thr = Float64(body.blank_range_thr)
+    blank_od_pct    = Float64(body.blank_od_percentile)
+
     # Re-use the same data-loading logic as /api/cluster
     times_all  = Vector{Vector{Float64}}()
     curves_all = Vector{Vector{Float64}}()
     labels_all = Vector{String}()
+    # Annotated blanks are separated during loading (as in /api/cluster) so the
+    # selected blank correction can be applied consistently during the sweep.
+    blank_curves_all  = Vector{Vector{Float64}}()
+    blank_labels_used = Vector{String}()
 
     if !isempty(body.csv) || !isempty(body.csv_path)
         df = if !isempty(body.csv_path)
@@ -384,14 +392,18 @@ end
                     Float64.(time_data)
                 end
                 for well in names(gd_raw)[2:end]
-                    well in blank_wells && continue
                     od = Float64[]
                     for val in gd_raw[!, well]
                         try push!(od, parse(Float64, string(val))) catch _ push!(od, NaN) end
                     end
-                    push!(times_all,  time_numeric)
-                    push!(curves_all, od)
-                    push!(labels_all, "$exp_name/$well")
+                    if well in blank_wells
+                        push!(blank_curves_all,  od)
+                        push!(blank_labels_used, "$exp_name/$well")
+                    else
+                        push!(times_all,  time_numeric)
+                        push!(curves_all, od)
+                        push!(labels_all, "$exp_name/$well")
+                    end
                 end
             catch e
                 @warn "Error loading $exp_name for sweep: $e"
@@ -445,10 +457,26 @@ end
         end
     end
 
-    # Replace NaN/Inf with column means before smoothing — matches /api/cluster
-    # (ml.jl:175). Without this, any NaN cell makes every per-k preprocess() call
-    # throw inside the `try ... continue` below, and the response silently
-    # collapses to {"sweep": []} with no error message.
+    # Blank handling — applied consistently with /api/cluster so the selected
+    # correction is honoured during the sweep. Auto-detect (when requested and no
+    # annotated blanks) removes blanks from the matrix; per-experiment subtraction
+    # corrects each experiment's wells with that experiment's own blanks.
+    csv_mode = !isempty(body.csv) || !isempty(body.csv_path)
+    if Bool(body.auto_detect_blanks) && isempty(blank_curves_all)
+        curves, labels_all, blank_curves_all, blank_labels_used, found =
+            _auto_detect_and_split_blanks(curves, times, labels_all;
+                range_thr = blank_range_thr, od_pct = blank_od_pct)
+        found && (n_series = length(labels_all))
+    end
+    if subtract_blank && !isempty(blank_curves_all)
+        curves = _subtract_blanks_per_experiment(curves, labels_all,
+            blank_curves_all, blank_labels_used, blank_method, csv_mode)
+    end
+
+    # Replace NaN/Inf with column means before smoothing — matches /api/cluster.
+    # Without this, any NaN cell makes every per-k preprocess() call throw inside
+    # the `try ... continue` below, and the response silently collapses to
+    # {"sweep": []} with no error message.
     curves = _fill_nan_colmean(curves)
 
     # Smooth once, then sweep over k. Match /api/cluster: when the smoother

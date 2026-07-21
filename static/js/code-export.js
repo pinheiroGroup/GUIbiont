@@ -438,7 +438,9 @@ export function generateClusterCode(clusterData, withComments) {
     const trendTest     = req.trend_test_flat ?? false;
     const trendPThr     = req.trend_p_thr ?? 0.05;
     const normalize     = req.normalize ?? false;
-    const autoBlankDetection = !prescreen && !trendTest;
+    // Auto blank detection is now an explicit, user-requested flag (default on),
+    // no longer implicitly gated on prescreen/trend being off.
+    const autoBlankDetection = req.auto_detect_blanks ?? true;
     // Algorithm-specific parameters (used by hclust / dbscan only)
     const hclustLinkage = req.hclust_linkage ?? 'ward';
     const dbscanEps     = req.dbscan_eps     ?? 1.0;
@@ -522,8 +524,9 @@ ${nInitParam}    kmeans_max_iters       = ${maxiter},
 `
         : '';
     const autoBlankNote = autoBlankDetection
-        ? `# With prescreen and trend reassignment disabled, GUIbiont first removes
-# low, flat blank candidates from the clustering matrix.
+        ? `# Auto blank detection was requested: when no annotated blanks exist,
+# GUIbiont removes low, flat blank candidates from the clustering matrix.
+# Blank correction is applied separately within each loaded experiment.
 `
         : '';
 

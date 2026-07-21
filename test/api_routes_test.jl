@@ -306,6 +306,26 @@ end
     @test !isempty(body[:sweep])
 end
 
+@testset "POST /api/cluster-sweep — DBSCAN is unavailable (returns 400)" begin
+    # DBSCAN has no k parameter, so the k-sweep is rejected rather than run.
+    status, body = post_json("/api/cluster-sweep",
+                             Dict("csv" => CLUSTER_CSV, "k_max" => 4,
+                                  "cluster_method" => "dbscan"))
+    @test status == 400
+    @test haskey(body, :error)
+    @test occursin("DBSCAN", body[:error])
+end
+
+@testset "POST /api/cluster-sweep — blank subtraction is honoured during the sweep" begin
+    # The sweep accepts the same blank-correction options as /api/cluster.
+    status, body = post_json("/api/cluster-sweep",
+                             Dict("csv" => CLUSTER_CSV, "k_max" => 3,
+                                  "subtract_blank" => true,
+                                  "auto_detect_blanks" => true))
+    @test status == 200
+    @test !isempty(body[:sweep])
+end
+
 @testset "POST /api/cluster-sweep — WCSS decreases as k increases" begin
     status, body = post_json("/api/cluster-sweep",
                              Dict("csv" => CLUSTER_CSV, "k_max" => 5))

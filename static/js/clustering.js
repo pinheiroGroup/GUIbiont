@@ -333,7 +333,9 @@ function updateClusteringRunBtn() {
            !!document.getElementById('cluster-server-path').value.trim())
         : document.querySelectorAll('.clustering-exp-checkbox:checked').length > 0;
     document.getElementById('clustering-run-btn').disabled  = !hasData;
-    document.getElementById('cluster-sweep-btn').disabled   = !hasData;
+    // Sweep also requires a k parameter, so it stays disabled for DBSCAN.
+    const isDbscan = document.getElementById('cluster-method').value === 'dbscan';
+    document.getElementById('cluster-sweep-btn').disabled   = !hasData || isDbscan;
 }
 
 function selectAllClusteringExperiments() {
@@ -396,6 +398,15 @@ function onClusterMethodChange() {
     document.getElementById('cluster-dbscan-params').style.display = isDbscan ? 'flex' : 'none';
     document.getElementById('cluster-iter-params').style.display   = needsIter ? 'flex' : 'none';
     document.getElementById('cluster-n-init-param').style.display   = method === 'kmeans' ? 'flex' : 'none';
+    // The k-sweep varies the number of clusters, which DBSCAN does not have —
+    // disable it so the sweep is unavailable for DBSCAN.
+    const sweepBtn = document.getElementById('cluster-sweep-btn');
+    if (sweepBtn) {
+        sweepBtn.disabled = isDbscan;
+        sweepBtn.title = isDbscan
+            ? 'Cluster-sweep is unavailable for DBSCAN (no k parameter to sweep over)'
+            : '';
+    }
 }
 
 // Store last cluster data for export
@@ -453,6 +464,7 @@ async function runClustering() {
         blank_method:         document.getElementById('cluster-blank-method').value,
         blank_range_thr:      parseFloat(document.getElementById('cluster-blank-range-thr').value),
         blank_od_percentile:  parseFloat(document.getElementById('cluster-blank-od-pct').value),
+        auto_detect_blanks:   document.getElementById('cluster-auto-detect-blanks').checked,
         interpolate:           doInterpolate,
         interp_n:              parseInt(document.getElementById('cluster-interp-n').value) || 100,
         interp_quantile_lo:    interpQLo,
@@ -499,6 +511,7 @@ async function runClustering() {
             blank_method:   document.getElementById('cluster-blank-method').value,
             blank_range_thr:     parseFloat(document.getElementById('cluster-blank-range-thr').value),
             blank_od_percentile: parseFloat(document.getElementById('cluster-blank-od-pct').value),
+            auto_detect_blanks:  document.getElementById('cluster-auto-detect-blanks').checked,
             interpolate:         doInterpolate,
             interp_n:            parseInt(document.getElementById('cluster-interp-n').value) || 100,
             interp_quantile_lo:  interpQLo,
@@ -1128,6 +1141,12 @@ async function runClusterSweep() {
     const hLink   = document.getElementById('cluster-hclust-linkage').value;
     let body;
 
+    // DBSCAN has no k parameter, so the k-sweep is unavailable for it.
+    if (method === 'dbscan') {
+        alert('Cluster-sweep is unavailable for DBSCAN (it has no k parameter to sweep over).');
+        return;
+    }
+
     if (state.currentClusteringMode === 'file') {
         const serverPath = document.getElementById('cluster-server-path').value.trim();
         const file = document.getElementById('clustering-file').files[0];
@@ -1148,6 +1167,11 @@ async function runClusterSweep() {
     Object.assign(body, {
         smooth_method: smooth, lowess_frac: lowess, gaussian_h_mult: gHmult,
         cluster_method: method, maxiter, tol, kmeans_n_init: nInit, hclust_linkage: hLink,
+        subtract_blank:      document.getElementById('cluster-subtract-blank').checked,
+        blank_method:        document.getElementById('cluster-blank-method').value,
+        blank_range_thr:     parseFloat(document.getElementById('cluster-blank-range-thr').value),
+        blank_od_percentile: parseFloat(document.getElementById('cluster-blank-od-pct').value),
+        auto_detect_blanks:  document.getElementById('cluster-auto-detect-blanks').checked,
         interpolate:         doInterpolate,
         interp_n:            parseInt(document.getElementById('cluster-interp-n').value) || 100,
         interp_quantile_lo:  interpQLo,

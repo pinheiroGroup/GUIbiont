@@ -427,6 +427,11 @@
                                         <input type="checkbox" id="cluster-subtract-blank" onchange="onClusterBlankChange()">
                                         Subtract blank
                                     </label>
+                                    <label style="display:flex; align-items:center; gap:6px; cursor:pointer;"
+                                           title="When no annotated blank wells are supplied, automatically detect flat low-OD wells and exclude them from clustering (correction applied separately within each experiment). Uncheck to disable.">
+                                        <input type="checkbox" id="cluster-auto-detect-blanks" checked>
+                                        Auto-detect blanks (when none annotated)
+                                    </label>
                                     <div id="cluster-blank-method-row" style="display:none; flex-direction:column; gap:8px;">
                                         <div style="display:flex; flex-direction:column; gap:4px;">
                                             <label>Method</label>

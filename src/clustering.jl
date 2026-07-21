@@ -226,6 +226,75 @@ function _apply_blank_subtraction_matrix(
     return out
 end
 
+# Experiment key for a series label. Blank correction is performed separately
+# within each loaded experiment, so we need to know which experiment a series
+# belongs to. In experiment mode series are labelled "<exp>/<well>", so the key
+# is the substring before the first '/'. In single-CSV mode there is no
+# experiment grouping — every series shares one key, which makes per-experiment
+# subtraction collapse to the pooled behaviour for that one dataset.
+function _experiment_key(label::AbstractString, csv_mode::Bool)::String
+    csv_mode && return "__all__"
+    idx = findfirst('/', label)
+    return idx === nothing ? String(label) : String(label[1:prevind(label, idx)])
+end
+
+# Per-experiment pooled blank subtraction: each experiment's wells are corrected
+# using ONLY the blank series from that same experiment (a per-experiment mean
+# blank timeseries). Series whose experiment contributes no blanks are returned
+# unchanged. Returns a new curves matrix (never mutates the input).
+function _subtract_blanks_per_experiment(
+    curves::Matrix{Float64},
+    labels::Vector{String},
+    blank_curves::Vector{Vector{Float64}},
+    blank_labels::Vector{String},
+    method::String,
+    csv_mode::Bool,
+)::Matrix{Float64}
+    out   = copy(curves)
+    ncols = size(curves, 2)
+    isempty(blank_curves) && return out
+    blank_exps = [_experiment_key(l, csv_mode) for l in blank_labels]
+    curve_exps = [_experiment_key(l, csv_mode) for l in labels]
+    for exp in unique(blank_exps)
+        bidx = findall(==(exp), blank_exps)
+        (isempty(bidx)) && continue
+        rows = findall(==(exp), curve_exps)
+        isempty(rows) && continue
+        blen = min(ncols, minimum(length.(blank_curves[bidx])))
+        blen < 1 && continue
+        bmat = Matrix{Float64}(undef, length(bidx), blen)
+        for (i, bi) in enumerate(bidx)
+            bmat[i, :] = blank_curves[bi][1:blen]
+        end
+        blank_ts      = [mean(filter(isfinite, bmat[:, t])) for t in 1:blen]
+        blank_ts_full = length(blank_ts) >= ncols ? blank_ts[1:ncols] :
+                        vcat(blank_ts, fill(blank_ts[end], ncols - length(blank_ts)))
+        out[rows, :] = _apply_blank_subtraction_matrix(out[rows, :], blank_ts_full, method)
+    end
+    return out
+end
+
+# Auto-detect blank series from the clustering matrix and split them out. Returns
+# (curves, labels, blank_curves, blank_labels, found). When found, the returned
+# curves/labels exclude the detected blanks (auto blanks never cluster, matching
+# annotated-blank behaviour), and the blanks are returned for optional subtraction.
+function _auto_detect_and_split_blanks(
+    curves::Matrix{Float64},
+    times::Vector{Float64},
+    labels::Vector{String};
+    range_thr::Float64,
+    od_pct::Float64,
+)
+    blank_idxs = _detect_blank_indices(curves, times;
+        flat_range_thr = range_thr, od_percentile = od_pct)
+    isempty(blank_idxs) &&
+        return curves, labels, Vector{Vector{Float64}}(), String[], false
+    blank_curves = [curves[i, :] for i in blank_idxs]
+    blank_labels = labels[blank_idxs]
+    keep = setdiff(1:size(curves, 1), blank_idxs)
+    return curves[keep, :], labels[keep], blank_curves, blank_labels, true
+end
+
 # Auto-detect likely blank wells when no annotation is available.
 # A well is a blank candidate if:
 #   1. Its growth curve is statistically flat (slope t-test p >= flat_p_thr), AND

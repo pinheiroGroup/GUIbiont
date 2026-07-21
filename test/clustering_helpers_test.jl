@@ -78,3 +78,47 @@ end
     @test grid ≈ collect(range(0.0, 10.0; length=6)) atol=1e-10
 end
 
+@testset "_experiment_key — csv vs experiment mode" begin
+    @test _experiment_key("LG166/A1", false) == "LG166"
+    @test _experiment_key("A1", false)       == "A1"        # no '/' → whole label
+    @test _experiment_key("LG166/A1", true)  == "__all__"   # csv mode → single group
+end
+
+@testset "_subtract_blanks_per_experiment — each experiment uses its own blank" begin
+    # exp1 well corrected by exp1 blank (0.5); exp2 well by exp2 blank (0.1).
+    # A pooled mean blank (0.3) would give 0.7 / 1.7 instead — this checks that
+    # correction is done separately within each experiment.
+    curves       = [1.0 1.0 1.0; 2.0 2.0 2.0]
+    labels       = ["exp1/A", "exp2/A"]
+    blank_curves = [[0.5, 0.5, 0.5], [0.1, 0.1, 0.1]]
+    blank_labels = ["exp1/b", "exp2/b"]
+    out = _subtract_blanks_per_experiment(curves, labels, blank_curves, blank_labels,
+                                          "pointbypoint", false)
+    @test out[1, :] ≈ [0.5, 0.5, 0.5] atol=1e-10
+    @test out[2, :] ≈ [1.9, 1.9, 1.9] atol=1e-10
+end
+
+@testset "_subtract_blanks_per_experiment — experiment without blanks is unchanged" begin
+    curves       = [1.0 1.0; 2.0 2.0; 5.0 5.0]
+    labels       = ["exp1/A", "exp2/A", "exp3/A"]   # exp3 has no blank
+    blank_curves = [[0.5, 0.5], [0.1, 0.1]]
+    blank_labels = ["exp1/b", "exp2/b"]
+    out = _subtract_blanks_per_experiment(curves, labels, blank_curves, blank_labels,
+                                          "pointbypoint", false)
+    @test out[1, :] ≈ [0.5, 0.5] atol=1e-10
+    @test out[2, :] ≈ [1.9, 1.9] atol=1e-10
+    @test out[3, :] ≈ [5.0, 5.0] atol=1e-10        # untouched
+end
+
+@testset "_subtract_blanks_per_experiment — csv mode pools all blanks" begin
+    # csv_mode=true → every series is one group, so blanks pool (mean of 0.2, 0.4 = 0.3).
+    curves       = [1.0 1.0; 2.0 2.0]
+    labels       = ["A", "B"]
+    blank_curves = [[0.2, 0.2], [0.4, 0.4]]
+    blank_labels = ["b1", "b2"]
+    out = _subtract_blanks_per_experiment(curves, labels, blank_curves, blank_labels,
+                                          "pointbypoint", true)
+    @test out[1, :] ≈ [0.7, 0.7] atol=1e-10
+    @test out[2, :] ≈ [1.7, 1.7] atol=1e-10
+end
+
