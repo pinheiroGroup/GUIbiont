@@ -438,9 +438,10 @@ export function generateClusterCode(clusterData, withComments) {
     const trendTest     = req.trend_test_flat ?? false;
     const trendPThr     = req.trend_p_thr ?? 0.05;
     const normalize     = req.normalize ?? false;
-    // Auto blank detection is now an explicit, user-requested flag (default on),
-    // no longer implicitly gated on prescreen/trend being off.
-    const autoBlankDetection = req.auto_detect_blanks ?? true;
+    // Auto blank detection is a user-controllable flag (default on), but pre-screen
+    // and the trend test provide their own non-growing-curve handling, so it only
+    // applies when neither of those is active — matching the /api/cluster route.
+    const autoBlankDetection = (req.auto_detect_blanks ?? true) && !prescreen && !trendTest;
     // Algorithm-specific parameters (used by hclust / dbscan only)
     const hclustLinkage = req.hclust_linkage ?? 'ward';
     const dbscanEps     = req.dbscan_eps     ?? 1.0;

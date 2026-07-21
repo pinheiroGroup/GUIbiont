@@ -147,12 +147,14 @@
     # ------------------------------------------------------------------
     csv_mode = !isempty(body.csv) || !isempty(body.csv_path)
 
-    # Auto blank detection is an explicit, user-requested step (auto_detect_blanks).
-    # It runs only when no annotated blanks were supplied, and — unlike before — is
-    # NOT silently suppressed by prescreen/trend: if the user requests it, it runs.
-    # Detected blanks are removed from the clustering matrix (they never cluster),
-    # matching annotated-blank behaviour.
-    if Bool(body.auto_detect_blanks) && isempty(blank_curves_all)
+    # Automatic blank detection is a user-controllable option (auto_detect_blanks,
+    # default on, exposed as a UI checkbox). It runs only when no annotated blanks
+    # were supplied AND neither pre-screening nor the trend test is active — those
+    # provide their own non-growing-curve handling (a reserved sentinel cluster),
+    # so auto-detected blank removal would double-handle the same curves. Detected
+    # blanks are removed from the clustering matrix, matching annotated behaviour.
+    if Bool(body.auto_detect_blanks) && isempty(blank_curves_all) &&
+       !Bool(body.prescreen_constant) && !Bool(body.trend_test_flat)
         curves, labels_all, blank_curves_all, blank_labels_used, found =
             _auto_detect_and_split_blanks(curves, times, labels_all;
                 range_thr = blank_range_thr, od_pct = blank_od_pct)
@@ -458,11 +460,13 @@ end
     end
 
     # Blank handling — applied consistently with /api/cluster so the selected
-    # correction is honoured during the sweep. Auto-detect (when requested and no
-    # annotated blanks) removes blanks from the matrix; per-experiment subtraction
-    # corrects each experiment's wells with that experiment's own blanks.
+    # correction is honoured during the sweep. Auto-detect (when requested, no
+    # annotated blanks, and neither pre-screen nor trend test active) removes
+    # blanks from the matrix; per-experiment subtraction corrects each
+    # experiment's wells with that experiment's own blanks.
     csv_mode = !isempty(body.csv) || !isempty(body.csv_path)
-    if Bool(body.auto_detect_blanks) && isempty(blank_curves_all)
+    if Bool(body.auto_detect_blanks) && isempty(blank_curves_all) &&
+       !Bool(body.prescreen_constant) && !Bool(body.trend_test_flat)
         curves, labels_all, blank_curves_all, blank_labels_used, found =
             _auto_detect_and_split_blanks(curves, times, labels_all;
                 range_thr = blank_range_thr, od_pct = blank_od_pct)
