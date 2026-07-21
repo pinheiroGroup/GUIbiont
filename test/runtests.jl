@@ -396,6 +396,22 @@ else
         @test haskey(body, :param_names)
         @test length(body[:param_names]) == 2   # logistic has gr, N_max
         @test length(body[:parameters]) == 2
+        @test haskey(body, :blank_timeseries)
+        @test haskey(body, :blank_applied)
+        @test body[:preprocessing][:smooth] == false
+        @test body[:preprocessing][:cut_stationary_phase] == true
+        @test Float64(body[:stationary_phase_start]) ≈ Float64(last(body[:fit_time]))
+    end
+
+    @testset "POST /api/fit-curve — preprocessing is optimizer-independent" begin
+        status, body = post_json("/api/fit-curve",
+                                 Dict("experiment" => SINGLE_CH_EXP, "well" => SINGLE_CH_WELL,
+                                      "model_name" => "logistic", "optimizer" => "LN_COBYLA"))
+        @test status == 200
+        @test string(body[:optimizer_used]) == "LN_COBYLA"
+        @test body[:preprocessing][:smooth] == false
+        @test body[:preprocessing][:cut_stationary_phase] == true
+        @test Float64(body[:stationary_phase_start]) ≈ Float64(last(body[:fit_time]))
     end
 
     @testset "POST /api/fit-curve — unknown model returns 400" begin

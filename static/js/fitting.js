@@ -72,18 +72,19 @@ async function fitReplicateAverage() {
         state.lastReplicateTraces = plotData.traces || [];
 
         const fitCalFile = (document.getElementById('fit-calibration-file')?.value || '').trim();
+        const requestPayload = {
+            well_selections: replicateWells,
+            label,
+            experiment,
+            model_name: document.getElementById('fitting-model').value || 'aHPM',
+            ...buildOptimizerPayload('fit'),
+            ...buildFitOptionsPayload(),
+            ...(fitCalFile ? { calibration_file: fitCalFile } : {}),
+        };
         const fitResponse = await fetch(`${API_BASE}/api/fit-replicate`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                well_selections: replicateWells,
-                label: label,
-                experiment: experiment,
-                model_name: document.getElementById('fitting-model').value || 'aHPM',
-                ...buildOptimizerPayload('fit'),
-                ...buildFitOptionsPayload(),
-                ...(fitCalFile ? { calibration_file: fitCalFile } : {}),
-            })
+            body: JSON.stringify(requestPayload)
         });
 
         if (!fitResponse.ok) {
@@ -92,6 +93,7 @@ async function fitReplicateAverage() {
         }
 
         const fitData = await fitResponse.json();
+        fitData._request = requestPayload;
         state.lastFitData = fitData;
         displayFittingResults(fitData);
         updateFitPlot(fitData);
@@ -447,22 +449,23 @@ async function fitGrowthCurve() {
     
     try {
         const calFile = (document.getElementById('fit-calibration-file')?.value || '').trim();
+        const requestPayload = {
+            experiment,
+            well,
+            blank_subtraction: document.getElementById('fit-blank-subtraction').checked,
+            blank_method: document.getElementById('fit-blank-method').value,
+            model_name: document.getElementById('fitting-model').value || 'aHPM',
+            ...buildOptimizerPayload('fit'),
+            ...buildFitOptionsPayload(),
+            ...buildLogLinCompanionPayload(),
+            ...(calFile ? { calibration_file: calFile } : {}),
+        };
         const response = await fetch(`${API_BASE}/api/fit-curve`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({
-                experiment: experiment,
-                well: well,
-                blank_subtraction: document.getElementById('fit-blank-subtraction').checked,
-                blank_method: document.getElementById('fit-blank-method').value,
-                model_name: document.getElementById('fitting-model').value || 'aHPM',
-                ...buildOptimizerPayload('fit'),
-                ...buildFitOptionsPayload(),
-                ...buildLogLinCompanionPayload(),
-                ...(calFile ? { calibration_file: calFile } : {}),
-            })
+            body: JSON.stringify(requestPayload)
         });
 
         if (!response.ok) {
@@ -471,10 +474,9 @@ async function fitGrowthCurve() {
         }
 
         const fitData = await response.json();
+        fitData._request = requestPayload;
 
-        // Stash for the code-export modal, exactly as fitReplicateAverage
-        // does. Without this, openFitCodeExport() short-circuits on the
-        // !state.lastFitData guard and the export modal silently no-ops.
+        // Preserve both the result and the exact submitted settings for export.
         state.lastFitData = fitData;
         displayFittingResults(fitData);
         plotFittedCurve(fitData);

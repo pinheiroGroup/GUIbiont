@@ -351,6 +351,10 @@ end
             "model_names"  => isempty(model_names_req) ? [model_name] : model_names_req,
             "maxiters"     => maxiters,
             "abstol"       => abstol,
+            "blank_subtraction" => subtract_blank,
+            "blank_method"      => blank_method,
+            "blank_value"       => blank_value,
+            "blank_timeseries"  => blank_ts,
             "total"        => length(wells_to_fit),
             "completed"    => 0,
             "current_well" => "",
@@ -480,6 +484,10 @@ end
             resp["model_names"] = job["model_names"]
             resp["maxiters"]    = job["maxiters"]
             resp["abstol"]      = job["abstol"]
+            resp["blank_subtraction"] = job["blank_subtraction"]
+            resp["blank_method"]      = job["blank_method"]
+            resp["blank_value"]       = job["blank_value"]
+            resp["blank_timeseries"]  = job["blank_timeseries"]
             resp["results"]     = job["results"]
             resp["skipped"]     = job["skipped"]
             resp["summary"]     = job["summary"]
@@ -546,6 +554,10 @@ end
             "model_names"  => ["log_lin"],
             "maxiters"     => 0,
             "abstol"       => 0.0,
+            "blank_subtraction" => subtract_blank,
+            "blank_method"      => blank_method,
+            "blank_value"       => blank_value,
+            "blank_timeseries"  => blank_ts,
             "total"        => length(wells_to_fit),
             "completed"    => 0,
             "current_well" => "",
@@ -828,23 +840,17 @@ end
         t = time_numeric[valid]
         od = od_raw[valid]
 
-        # Blank handling: log-lin needs strictly positive OD. Use the "clip"
-        # method (or shift when the blank pulls OD negative) so log() is safe.
-        od_subtracted_display = nothing
-        if subtract_blank && blank_value > 0.0
-            blank_ts_valid = isempty(blank_timeseries) ? Float64[] : blank_timeseries[valid]
-            corrected = (blank_method == "pointbypoint" && length(blank_ts_valid) == length(od)) ?
-                od .- blank_ts_valid : od .- blank_value
-            od_subtracted_display = max.(corrected, 0.0)
-            if blank_method == "clip"
-                od_for_fit = max.(corrected, 1e-4)
-            else
-                shift = max(-minimum(corrected), 0.0) + 1e-4
-                od_for_fit = corrected .+ shift
-            end
-        else
-            od_for_fit = max.(od, 1e-4)
-        end
+        blank_ts_valid = isempty(blank_timeseries) ? Float64[] : blank_timeseries[valid]
+        prepared = _prepare_fit_curve(
+            t, od, well;
+            blank_value,
+            subtract_blank,
+            blank_method,
+            blank_timeseries=blank_ts_valid,
+            unblanked_floor=1e-4,
+        )
+        od_for_fit = prepared.od_for_fit
+        od_subtracted_display = prepared.od_subtracted_display
 
         data_mat = Matrix(transpose(hcat(t, od_for_fit)))
 

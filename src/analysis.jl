@@ -337,19 +337,18 @@ function _linear_interp(x::Float64, xs::AbstractVector{<:Real}, ys::AbstractVect
     return Float64(ys[end])
 end
 
-# RMSE between a candidate fit and the experimental OD over [t_min, t_peak].
-# All attempts get scored on the SAME window in the SAME (od_for_fit) space so
-# RMSEs are directly comparable across optimizers regardless of conditioning.
+# RMSE between a candidate fit and the experimental OD through the stationary
+# cutoff. Every optimizer receives the same input and is scored on that window.
 function _fit_loss_rmse(
     time_exp::Vector{Float64},
     od_for_fit::Vector{Float64},
     fit_time::Vector{Float64},
     fit_od_in_for_fit_space::Vector{Float64},
-    t_peak::Float64,
+    score_end::Float64,
 )
     isempty(fit_time) && return Inf
     t_min = max(first(fit_time), time_exp[1])
-    t_max = min(t_peak, last(fit_time))
+    t_max = min(score_end, last(fit_time))
     ss = 0.0
     n  = 0
     for (i, t) in enumerate(time_exp)
@@ -368,7 +367,6 @@ function _run_fit_attempt(
     optimizer::String,
     time_numeric::Vector{Float64},
     od_for_fit::Vector{Float64},
-    t_peak::Float64,
     anchor::Float64,
     shift::Float64,
     subtract_blank::Bool,
@@ -379,23 +377,10 @@ function _run_fit_attempt(
     maxiters::Int,
     abstol::Float64,
 )
-    # Per-optimizer data conditioning:
-    #   - BOBYQA uses a quadratic local model and gets stuck in spurious minima
-    #     created by raw noise → needs smoothed full curve (KinBiont smooths and
-    #     cuts stationary phase internally).
-    #   - COBYLA (linear local), BBO (stochastic global), and others perform best
-    #     on the pre-cut growth-only curve with no smoothing — sharper loss
-    #     surface, cleaner convergence.
-    needs_smoothing = uppercase(optimizer) in ("BOBYQA", "LN_BOBYQA")
-
-    if needs_smoothing
-        time_fit = time_numeric
-        od_fit   = od_for_fit
-    else
-        cut_idx  = argmax(od_for_fit)
-        time_fit = time_numeric[1:cut_idx]
-        od_fit   = od_for_fit[1:cut_idx]
-    end
+    # All optimizers use the full unsmoothed curve. Kinbiont applies the same
+    # stationary-phase cutoff before fitting each attempt.
+    time_fit = time_numeric
+    od_fit   = od_for_fit
 
     data = GrowthData(reshape(od_fit, 1, :), time_fit, [label])
 
@@ -429,28 +414,17 @@ function _run_fit_attempt(
 
     opt_params = abstol > 0.0 ? (maxiters = maxiters, abstol = abstol) : (maxiters = maxiters,)
 
-    opts = needs_smoothing ?
-        FitOptions(
-            scattering_correction           = false,
-            smooth                          = true,
-            smooth_method                   = :rolling_avg,
-            smooth_pt_avg                   = 14,
-            cut_stationary_phase            = true,
-            stationary_percentile_thr       = 0.05,
-            stationary_pt_smooth_derivative = 10,
-            stationary_win_size             = 5,
-            loss                            = "RE",
-            optimizer                       = resolve_optimizer(optimizer),
-            opt_params                      = opt_params,
-        ) :
-        FitOptions(
-            scattering_correction           = false,
-            smooth                          = false,
-            cut_stationary_phase            = false,
-            loss                            = "RE",
-            optimizer                       = resolve_optimizer(optimizer),
-            opt_params                      = opt_params,
-        )
+    opts = FitOptions(
+        scattering_correction           = false,
+        smooth                          = false,
+        cut_stationary_phase            = true,
+        stationary_percentile_thr       = 0.05,
+        stationary_pt_smooth_derivative = 10,
+        stationary_win_size             = 5,
+        loss                            = "RE",
+        optimizer                       = resolve_optimizer(optimizer),
+        opt_params                      = opt_params,
+    )
 
     fit_results = kinbiont_fit(data, spec, opts)
     r = fit_results[1]
@@ -460,9 +434,7 @@ function _run_fit_attempt(
         r.fitted_curve .- shift :
         r.fitted_curve
 
-    # The rolling-average smoother drops the first (pt_avg-1) time points, so
-    # r.times[1] > time_numeric[1].  Prepend a flat segment anchored to the
-    # first experimental OD so the fit line starts at the same time as the data.
+    # Preserve the leading edge if a future preprocessing method shortens it.
     fit_start_idx = argmin(abs.(time_fit .- r.times[1]))
     if fit_start_idx > 1
         pre_times    = time_fit[1:fit_start_idx - 1]
@@ -474,20 +446,15 @@ function _run_fit_attempt(
         fit_od_out   = collect(fit_od_curve)
     end
 
-    # Crop the fit display at the OD peak — the fit may extend past the peak
-    # if KinBiont's internal stationary phase detector overshoots.
-    crop_idx = findlast(t -> t <= t_peak, fit_time_out)
-    if crop_idx !== nothing && crop_idx < length(fit_time_out)
-        fit_time_out = fit_time_out[1:crop_idx]
-        fit_od_out   = fit_od_out[1:crop_idx]
-    end
+    # Kinbiont returns the actual time grid retained by stationary-phase cutting.
+    stationary_phase_start = Float64(last(r.times))
 
     # Loss is computed in od_for_fit space (what the optimizer minimised), so
     # un-shift fit_od_out back when blank subtraction shifted it down.
     fit_for_loss = subtract_blank && blank_value > 0.0 ?
         Float64.(fit_od_out) .+ shift :
         Float64.(fit_od_out)
-    loss_rmse = _fit_loss_rmse(time_numeric, od_for_fit, Float64.(fit_time_out), fit_for_loss, t_peak)
+    loss_rmse = _fit_loss_rmse(time_numeric, od_for_fit, Float64.(fit_time_out), fit_for_loss, stationary_phase_start)
     loss_re   = r.loss
 
     return (
@@ -499,10 +466,57 @@ function _run_fit_attempt(
         param_upper        = param_upper,
         fit_time_out       = fit_time_out,
         fit_od_out         = fit_od_out,
+        stationary_phase_start = stationary_phase_start,
         aic                = r.best_aic,
         loss               = loss_rmse,
         loss_rmse          = loss_rmse,
         loss_re            = loss_re,
+    )
+end
+
+function _prepare_fit_curve(
+    time_numeric::Vector{Float64},
+    od_raw::Vector{Float64},
+    label::String;
+    blank_value::Float64=0.0,
+    subtract_blank::Bool=false,
+    blank_method::String="pointbypoint",
+    blank_timeseries::Vector{Float64}=Float64[],
+    unblanked_floor::Float64=0.01,
+)
+    blank_enabled = subtract_blank && blank_value > 0.0
+    pointwise = blank_method == "pointbypoint" && length(blank_timeseries) == length(od_raw)
+    effective_method = pointwise ? :pointbypoint : blank_method == "clip" ? :clip : :shift
+    opts = FitOptions(
+        blank_subtraction=blank_enabled,
+        blank_method=effective_method,
+        blank_value=blank_value,
+        blank_timeseries=pointwise ? blank_timeseries : nothing,
+        blank_floor=1e-4,
+        correct_negatives=!blank_enabled,
+        negative_method=:thr_correction,
+        negative_threshold=unblanked_floor,
+    )
+    processed = preprocess(GrowthData(reshape(od_raw, 1, :), time_numeric, [label]), opts)
+    od_for_fit = vec(processed.curves[1, :])
+
+    if !blank_enabled
+        return (
+            od_for_fit=od_for_fit,
+            od_subtracted_display=nothing,
+            anchor=od_raw[1],
+            shift=0.0,
+            blank_applied=false,
+        )
+    end
+
+    corrected = pointwise ? od_raw .- blank_timeseries : od_raw .- blank_value
+    return (
+        od_for_fit=od_for_fit,
+        od_subtracted_display=max.(corrected, 0.0),
+        anchor=max(corrected[1], 0.0),
+        shift=effective_method == :clip ? 0.0 : od_for_fit[1] - corrected[1],
+        blank_applied=true,
     )
 end
 
@@ -512,7 +526,7 @@ end
 # Best-of-N mode: pass non-empty `deterministic_optimizers` and/or
 # `stochastic_optimizers`. Each deterministic optimizer runs once; each
 # stochastic optimizer runs `stochastic_runs` times with different seeds.
-# The attempt with the lowest RMSE (against raw OD over [t_min, t_peak])
+# The attempt with the lowest RMSE through Kinbiont's stationary cutoff
 # wins, and its parameters are returned. The legacy `optimizer` argument is
 # used only when both lists are empty.
 function fit_well_data(
@@ -546,30 +560,18 @@ function fit_well_data(
     loglin_pt_min_size_of_win::Int = 7,
     loglin_threshold_of_exp::Float64 = 0.9,
 )
-    if subtract_blank && blank_value > 0.0
-        if blank_method == "pointbypoint" && length(blank_timeseries) == length(od_raw)
-            od_corrected = od_raw .- blank_timeseries
-        else
-            od_corrected = od_raw .- blank_value
-        end
-        od_subtracted_display = max.(od_corrected, 0.0)
-        anchor = od_subtracted_display[1]
-
-        if blank_method == "clip"
-            od_for_fit = max.(od_corrected, 1e-4)
-            shift = 0.0
-        else
-            shift = max(-minimum(od_corrected), 0.0) + 1e-4
-            od_for_fit = od_corrected .+ shift
-        end
-    else
-        od_subtracted_display = nothing
-        od_for_fit = max.(od_raw, 0.01)
-        anchor = od_raw[1]
-        shift = 0.0
-    end
-
-    t_peak = time_numeric[argmax(od_for_fit)]
+    prepared = _prepare_fit_curve(
+        time_numeric, od_raw, label;
+        blank_value,
+        subtract_blank,
+        blank_method,
+        blank_timeseries,
+        unblanked_floor=0.01,
+    )
+    od_for_fit = prepared.od_for_fit
+    od_subtracted_display = prepared.od_subtracted_display
+    anchor = prepared.anchor
+    shift = prepared.shift
 
     # Build the attempt list. Best-of-N mode wins if either list is populated.
     # Each entry is (optimizer_name, run_index) — run_index lets the response
@@ -595,7 +597,7 @@ function fit_well_data(
     for (opt, run_idx) in attempts
         try
             res = _run_fit_attempt(
-                opt, time_numeric, od_for_fit, t_peak, anchor, shift,
+                opt, time_numeric, od_for_fit, anchor, shift,
                 subtract_blank, blank_value, label,
                 model_name, model_names, maxiters, abstol,
             )
@@ -647,9 +649,20 @@ function fit_well_data(
         "param_upper"            => win.param_upper,
         "blank_value"            => blank_value,
         "blank_subtraction"      => subtract_blank,
+        "blank_applied"          => prepared.blank_applied,
         "blank_method"           => blank_method,
+        "blank_timeseries"       => blank_timeseries,
         "blank_wells"            => blank_well_names,
-        "stationary_phase_start" => t_peak,
+        "stationary_phase_start" => win.stationary_phase_start,
+        "maxiters"               => maxiters,
+        "abstol"                 => abstol,
+        "preprocessing"          => Dict(
+            "smooth"                          => false,
+            "cut_stationary_phase"            => true,
+            "stationary_percentile_thr"       => 0.05,
+            "stationary_pt_smooth_derivative" => 10,
+            "stationary_win_size"             => 5,
+        ),
         "aic"                    => win.aic,
         "loss"                   => win.loss,
         "loss_rmse"              => win.loss_rmse,
@@ -803,23 +816,16 @@ function fit_well_loglin(
               * "($(length(od_raw)) < $(max(10, min_pts)))")
     end
 
-    # Blank handling — log-lin needs strictly positive OD for log().
-    # Mirrors the single-curve /api/fit-loglin endpoint exactly.
-    od_subtracted_display = nothing
-    if subtract_blank && blank_value > 0.0
-        corrected = (blank_method == "pointbypoint" &&
-                     length(blank_timeseries) == length(od_raw)) ?
-            od_raw .- blank_timeseries : od_raw .- blank_value
-        od_subtracted_display = max.(corrected, 0.0)
-        if blank_method == "clip"
-            od_for_fit = max.(corrected, 1e-4)
-        else
-            shift = max(-minimum(corrected), 0.0) + 1e-4
-            od_for_fit = corrected .+ shift
-        end
-    else
-        od_for_fit = max.(od_raw, 1e-4)
-    end
+    prepared = _prepare_fit_curve(
+        time_numeric, od_raw, label;
+        blank_value,
+        subtract_blank,
+        blank_method,
+        blank_timeseries,
+        unblanked_floor=1e-4,
+    )
+    od_for_fit = prepared.od_for_fit
+    od_subtracted_display = prepared.od_subtracted_display
 
     data_mat = Matrix(transpose(hcat(time_numeric, od_for_fit)))
     raw = Kinbiont.fitting_one_well_Log_Lin(

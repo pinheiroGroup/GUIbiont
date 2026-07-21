@@ -124,9 +124,18 @@ export function generateFitCode(fitData, withComments) {
     const req        = fitData._request || {};
     const well       = req.well        || fitData.well  || 'B2';
     const model      = req.model_name  || fitData.model || 'aHPM';
-    const blankSub   = req.blank_subtraction || false;
-    const blankMethod= req.blank_method      || 'pointbypoint';
+    const isReplicate = Array.isArray(req.well_selections);
+    const blankSub   = fitData.blank_applied ?? (isReplicate
+        ? (fitData.blank_subtraction ?? false)
+        : (req.blank_subtraction ?? fitData.blank_subtraction ?? false));
+    const blankMethod= req.blank_method      ?? fitData.blank_method      ?? 'pointbypoint';
     const blankValue = typeof fitData.blank_value === 'number' ? fitData.blank_value : 0.0;
+    const blankTimeseries = Array.isArray(fitData.blank_timeseries)
+        ? fitData.blank_timeseries.map(value => {
+            const numeric = Number(value);
+            return Number.isFinite(numeric) ? numeric : 0.0;
+        })
+        : [];
     // Same defaults the form uses (see fitting.js buildFitOptionsPayload).
     // Without these the optimizer falls back to Kinbiont's defaults which
     // terminate earlier than the GUI does and land on a worse minimum.
@@ -135,11 +144,30 @@ export function generateFitCode(fitData, withComments) {
     const optParams = abstol > 0
         ? `(maxiters = ${maxiters}, abstol = ${abstol})`
         : `(maxiters = ${maxiters},)`;
-    const blankLines = blankSub
-        ? `    blank_subtraction               = true,
-    # blank_value is the mean OD of blank wells in this experiment
-    blank_value                     = ${blankValue.toFixed(6)},  # method: "${blankMethod}"`
-        : `    blank_subtraction               = false,`;
+    const blankLiteral = `Float64[${blankTimeseries.map(juliaFloatLiteral).join(', ')}]`;
+    const exportedBlankMethod = ['pointbypoint', 'shift', 'clip'].includes(blankMethod)
+        ? blankMethod
+        : 'global';
+    const blankLines = `    blank_subtraction               = ${blankSub},
+    blank_method                    = :${exportedBlankMethod},
+    blank_value                     = ${juliaFloatLiteral(blankValue)},
+    blank_timeseries                = ${blankLiteral},
+    blank_floor                     = 1e-4,
+    # Without blank subtraction GUIbiont floors raw OD to 0.01.
+    correct_negatives               = ${!blankSub},
+    negative_method                 = :thr_correction,
+    negative_threshold              = 0.01,`;
+    const experimentalTime = Array.isArray(fitData.experimental_time) ? fitData.experimental_time : [];
+    const experimentalOd = Array.isArray(fitData.experimental_od) ? fitData.experimental_od : [];
+    const hasEmbeddedCurve = experimentalTime.length > 0 && experimentalTime.length === experimentalOd.length;
+    const dataBlock = hasEmbeddedCurve
+        ? `# Exact experimental input retained by GUIbiont for this fit.
+fit_times = Float64[${experimentalTime.map(juliaFloatLiteral).join(', ')}]
+fit_od = Float64[${experimentalOd.map(juliaFloatLiteral).join(', ')}]
+data_well = GrowthData(reshape(fit_od, 1, :), fit_times, [${JSON.stringify(well)}])`
+        : `# CSV format: first column = time points, remaining columns = wells.
+data = GrowthData("your_data.csv")
+data_well = data[[${JSON.stringify(well)}]]`;
 
     const p0        = fitData.initial_parameters?.[0];
     // Bare list — the surrounding spec block wraps it in [...] so the
@@ -172,18 +200,7 @@ using Kinbiont
 import OptimizationNLopt
 import OptimizationBBO
 
-# CSV format: first column = time points, remaining columns = wells.
-# Column headers become the well labels used throughout.
-data = GrowthData("your_data.csv")
-
-# Select well "${well}" for fitting.
-# Pass multiple labels to fit several at once: data[["A1", "B2"]]
-data_well = data[["${well}"]]
-
-# GUIbiont clips OD to a minimum floor (0.01 OD units) before fitting so
-# that the relative-error loss does not blow up on near-zero baseline
-# readings. Mirror that here so the script reproduces the GUI fit.
-data_well = GrowthData(max.(data_well.curves, 0.01), data_well.times, data_well.labels)
+${dataBlock}
 
 # Growth model: "${model}".
 # List all available models: collect(keys(MODEL_REGISTRY))
@@ -207,12 +224,9 @@ spec = ModelSpec(
 # Fitting options — these match exactly what GUIbiont used.
 # See FitOptions docs for all available fields.
 opts = FitOptions(
-    # Smooth the raw curve before fitting to reduce noise
-    smooth                          = true,
-    smooth_method                   = :rolling_avg,
-    # Rolling-average window size (number of time points)
-    smooth_pt_avg                   = 14,
-    # Detect and truncate stationary phase before fitting
+    # Use the full unsmoothed curve for every optimizer
+    smooth                          = false,
+    # Detect and truncate stationary phase before fitting, as in GUIbiont
     cut_stationary_phase            = true,
     stationary_percentile_thr       = 0.05,
     stationary_pt_smooth_derivative = 10,
@@ -261,10 +275,12 @@ export function generateBatchCode(batchData, withComments) {
     const llPtDeriv = req.loglin_pt_smoothing_derivative ?? 7;
     const llPtMinWin = req.loglin_pt_min_size_of_win ?? 7;
     const llThrExp = req.loglin_threshold_of_exp ?? 0.9;
-    const blankSub = !!req.blank_subtraction;
-    const blankMethod = req.blank_method || 'pointbypoint';
+    const blankSub = req.blank_subtraction ?? batchData.blank_subtraction ?? false;
+    const blankMethod = req.blank_method || batchData.blank_method || 'pointbypoint';
     const firstResult = Array.isArray(batchData.results) ? batchData.results.find(r => typeof r.blank_value === 'number') : null;
-    const blankValue = firstResult ? firstResult.blank_value : 0.0;
+    const blankValue = batchData.blank_value ?? (firstResult ? firstResult.blank_value : 0.0);
+    const blankTimeseries = Array.isArray(batchData.blank_timeseries) ? batchData.blank_timeseries : [];
+    const blankTimeseriesLiteral = `Float64[${blankTimeseries.map(juliaFloatLiteral).join(', ')}]`;
     const outPrefix = `${experiment}_batch_fit`;
     const strArray = xs => `String[${xs.map(x => `"${x}"`).join(', ')}]`;
     const jb = x => x ? 'true' : 'false';
@@ -298,10 +314,8 @@ const LOGLIN_PT_MIN_WIN = ${llPtMinWin}
 const LOGLIN_THR_EXP = ${llThrExp}
 const BLANK_SUBTRACTION = ${jb(blankSub)}
 const BLANK_METHOD = "${blankMethod}"
-# Generic exported CSVs do not carry annotation metadata. If reproducing a GUI
-# run with blank wells, set these to the values used by GUIbiont.
 const BLANK_VALUE = ${juliaFloatLiteral(blankValue)}
-const BLANK_TIMESERIES = Float64[]
+const BLANK_TIMESERIES = ${blankTimeseriesLiteral}
 
 data = GrowthData(DATA_FILE)
 batch = kinbiont_batch_fit(
@@ -346,14 +360,16 @@ export function generateBatchLogLinKinbiontCode(batchData, withComments) {
     const ptMinWin = req.pt_min_size_of_win ?? 7;
     const thrExp = req.threshold_of_exp ?? 0.9;
     const flatThr = req.skip_flat_threshold ?? 0.05;
-    const blankSub = !!req.blank_subtraction;
-    const blankMethod = req.blank_method || 'pointbypoint';
+    const blankSub = req.blank_subtraction ?? batchData.blank_subtraction ?? false;
+    const blankMethod = req.blank_method || batchData.blank_method || 'pointbypoint';
     const smoothing = req.type_of_smoothing || 'rolling_avg';
     const winType = req.type_of_win || 'maximum';
     const startThr = req.start_exp_win_thr ?? 0.05;
     const thrLowess = req.thr_lowess ?? 0.05;
     const firstResult = Array.isArray(batchData.results) ? batchData.results.find(r => typeof r.blank_value === 'number') : null;
-    const blankValue = firstResult ? firstResult.blank_value : 0.0;
+    const blankValue = batchData.blank_value ?? (firstResult ? firstResult.blank_value : 0.0);
+    const blankTimeseries = Array.isArray(batchData.blank_timeseries) ? batchData.blank_timeseries : [];
+    const blankTimeseriesLiteral = `Float64[${blankTimeseries.map(juliaFloatLiteral).join(', ')}]`;
     const outPrefix = `${experiment}_batch_fit_loglin`;
     const strArray = xs => `String[${xs.map(x => `"${x}"`).join(', ')}]`;
     const jb = x => x ? 'true' : 'false';
@@ -374,7 +390,7 @@ const WELLS = ${strArray(wells)}
 const BLANK_SUBTRACTION = ${jb(blankSub)}
 const BLANK_METHOD = "${blankMethod}"
 const BLANK_VALUE = ${juliaFloatLiteral(blankValue)}
-const BLANK_TIMESERIES = Float64[]
+const BLANK_TIMESERIES = ${blankTimeseriesLiteral}
 const TYPE_OF_SMOOTHING = "${smoothing}"
 const PT_AVG = ${ptAvg}
 const PT_SMOOTHING_DERIVATIVE = ${ptDeriv}

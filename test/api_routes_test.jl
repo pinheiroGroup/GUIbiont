@@ -149,6 +149,9 @@ end
     @test haskey(body, :experimental_od)
     @test !isempty(body[:fit_od])
     @test string(body[:model]) == "logistic"
+    @test body[:preprocessing][:smooth] == false
+    @test body[:preprocessing][:cut_stationary_phase] == true
+    @test Float64(body[:stationary_phase_start]) ≈ Float64(last(body[:fit_time]))
 end
 
 @testset "POST /api/fit-replicate — single well" begin
