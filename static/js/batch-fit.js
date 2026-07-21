@@ -227,7 +227,7 @@ async function runBatchFit() {
 
     try {
         const batchCalFile = (document.getElementById('batch-fit-calibration-file')?.value || '').trim();
-        const skipFlat = Math.max(0, parseFloat(document.getElementById('batch-fit-skip-flat')?.value || '0.05') || 0);
+        const skipFlat = Math.max(0, parseFloat(document.getElementById('batch-fit-skip-flat')?.value || '0.02') || 0);
 
         let endpoint, requestPayload;
         if (method === 'loglin') {

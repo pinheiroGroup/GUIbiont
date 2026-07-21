@@ -106,6 +106,7 @@
             curves_all, times_all, sample_groups,
             blank_curves_all, blank_times_all, blank_groups_all;
             method=Symbol(blank_method),
+            floor=1e-4,
         )
         blank_subtraction_applied = any(corrected_mask)
         blank_uncorrected_groups = sort(unique(sample_groups[.!corrected_mask]))
@@ -202,6 +203,7 @@
             prescreen_q_high=prescreen_qhi,
             trend_p_threshold=Float64(body.trend_p_thr),
             blank_method=Symbol(blank_method),
+            blank_floor=1e-4,
         )
         isempty(derived.derived_indices) && return json(Dict(
             "error" => "No non-growing curves were detected for blank derivation"
@@ -484,6 +486,7 @@ end
             curves_all, times_all, sample_groups,
             blank_curves_all, blank_times_all, blank_groups_all;
             method=Symbol(blank_method),
+            floor=1e-4,
         )
     end
 
@@ -563,6 +566,7 @@ end
             prescreen_q_high=prescreen_qhi,
             trend_p_threshold=Float64(body.trend_p_thr),
             blank_method=Symbol(blank_method),
+            blank_floor=1e-4,
         )
         isempty(derived.derived_indices) && return json(Dict(
             "error" => "No non-growing curves were detected for blank derivation"

@@ -637,8 +637,8 @@ function fit_well_data(
         # blank/non-grower with no signal, and the cryptic "all attempts
         # failed" hides the actual cause.
         amplitude = maximum(od_for_fit) - minimum(od_for_fit)
-        if amplitude < 0.05
-            error("Curve appears flat (amplitude $(round(amplitude, digits=4)) < 0.05) — looks like a blank or non-grower, no growth signal to fit")
+        if amplitude < 0.02
+            error("Curve appears flat (amplitude $(round(amplitude, digits=4)) < 0.02) — looks like a blank or non-grower, no growth signal to fit")
         end
         # Otherwise surface the first attempt's status so the user sees a real
         # optimizer error, not just "all attempts failed".
