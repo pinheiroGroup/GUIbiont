@@ -587,7 +587,8 @@
             <div class="plot-container" id="plot-growth-container" style="display: none;">
                 <div class="plot-controls" style="padding: 15px; background: #f8f9fa; border-bottom: 1px solid #dee2e6; display: flex; justify-content: space-between; align-items: center;">
                     <h3 style="margin: 0; color: #495057;">📈 Growth Curves</h3>
-                    <div class="plot-buttons" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                    <div class="plot-buttons plot-toolbar-stack">
+                        <div class="plot-options-row">
                         <label style="font-size: 13px; color: #495057; white-space: nowrap;">Legend:</label>
                         <select class="legend-font-select" onchange="setLegendFontSize(this.value)" style="padding: 4px 8px; font-size: 13px; border: 1px solid #ced4da; border-radius: 6px; width: auto;">
                             <option value="10">10</option>
@@ -624,10 +625,23 @@
                             <option value="16">16</option>
                             <option value="18">18</option>
                         </select>
+                        <div id="growth-group-controls" class="growth-group-controls" style="display:none;">
+                            <label for="growth-group-size">Curves</label>
+                            <input id="growth-group-size" class="growth-group-size-input" type="number" min="1" step="1" value="20" oninput="resizeGrowthNumericInput(this)" onchange="onGrowthGroupSizeChange(this.value)" onkeydown="if(event.key === 'Enter') onGrowthGroupSizeChange(this.value)">
+                            <button class="plot-nav-btn plot-all-btn" id="growth-group-all" onclick="onGrowthGroupSizeChange('all')" title="Show all curves">All</button>
+                            <button class="plot-nav-btn" id="growth-group-prev" onclick="previousGrowthGroup()" title="Previous group">&lt;</button>
+                            <input id="growth-group-page" type="text" inputmode="numeric" pattern="[0-9]*" value="1" oninput="resizeGrowthNumericInput(this)" onchange="goToGrowthGroup(this.value)" onkeydown="if(event.key === 'Enter') goToGrowthGroup(this.value)">
+                            <span id="growth-group-total-pages">/ 1</span>
+                            <button class="plot-nav-btn" id="growth-group-next" onclick="nextGrowthGroup()" title="Next group">&gt;</button>
+                            <span id="growth-group-curve-range">0-0 / 0</span>
+                        </div>
                         <button class="btn" id="split-channels-btn" onclick="toggleSplitChannels()" style="display:none;">📊 Split by Channel</button>
+                        </div>
+                        <div class="plot-actions-row">
                         <button class="btn" onclick="toggleFullscreen('plot-growth')" id="fullscreen-growth-btn">🔍 Fullscreen</button>
-                        <button class="btn" onclick="exportPlot('plot-growth')">💾 Export PNG</button>
-                        <button class="btn" onclick="exportPlotSVG('plot-growth')">📊 Export SVG</button>
+                            <button class="btn" onclick="exportPlot('plot-growth')">💾 Save PNG</button>
+                            <button class="btn" onclick="exportPlotSVG('plot-growth')">📊 Save SVG</button>
+                        </div>
                     </div>
                 </div>
                 <div id="plot-growth" style="width: 100%; height: 700px;"></div>

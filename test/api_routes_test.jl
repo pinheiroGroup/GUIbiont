@@ -668,6 +668,21 @@ end
     @test all(c -> c[:is_non_growing] == false, body[:clusters])
 end
 
+@testset "POST /api/cluster-sweep - reuses derived per-group blanks" begin
+    status, body = post_json("/api/cluster-sweep",
+                             Dict("csv" => PRESCREEN_CSV, "k_max" => 6,
+                                  "smooth_method" => "none",
+                                  "subtract_blank" => true,
+                                  "derive_non_growing_blanks" => true,
+                                  "prescreen_constant" => true,
+                                  "prescreen_tol_const" => 1.5))
+    @test status == 200
+    @test !isempty(body[:sweep])
+    # F1/F2 are removed as the derived blank group before the diagnostic
+    # sweep, so only the four growing curves remain available to k.
+    @test maximum(Int(row[:k]) for row in body[:sweep]) == 4
+end
+
 @testset "POST /api/cluster - blank derivation requires a detector" begin
     status, body = post_json("/api/cluster",
                              Dict("csv" => PRESCREEN_CSV, "k" => 2,

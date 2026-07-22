@@ -1,6 +1,8 @@
 import { state, API_BASE } from './state.js';
-import { buildMultiChannelLayout, channelToYAxis, displayStats } from './plot.js';
-import { hidePlotAndStats } from './ui.js';
+import { buildMultiChannelLayout, channelToYAxis, displayStats,
+         installGrowthHover, detachGrowthHover, setGrowthPlotHeight,
+         installGrowthLegend, detachGrowthLegend } from './plot.js';
+import { showLoading, hideLoading, showError, hidePlotAndStats } from './ui.js';
 
 function buildReplicateList(wells) {
     state.allReplicates = {};
@@ -183,12 +185,14 @@ async function plotReplicates() {
 
             const avg = computeReplicateAverage(groupTraces);
             plotTraces.push({
+                type: 'scattergl',
                 x: avg.x, y: avg.y,
                 mode: 'lines+markers',
                 name: `${rep.label} (avg, n=${groupTraces.length})`,
                 yaxis: yax,
                 line: { width: 3, color },
-                marker: { size: 5, color }
+                marker: { size: 5, color },
+                hoverinfo: 'skip'
             });
             traceGroupMeta[key] = { avgIdx: traceIdx, individualIdxs: [] };
             traceIdx++;
@@ -196,6 +200,7 @@ async function plotReplicates() {
             const groupStationaryStats = replicateWellMap[key]
                 .map(id => stationaryStatMap[id])
                 .filter(Boolean);
+            const validY = avg.y.filter(value => Number.isFinite(Number(value)));
             stats.push({
                 well: `${rep.label} (avg)`,
                 condition: groupTraces[0].condition,
@@ -206,18 +211,22 @@ async function plotReplicates() {
                 saturation_od: meanStationaryStat(
                     groupStationaryStats, 'saturation_od', 3
                 ),
+                max_od: validY.length > 0 ? Math.max(...validY).toFixed(3) : null,
+                final_od: validY.length > 0 ? Number(validY[validY.length - 1]).toFixed(3) : null,
                 auc: trapezoidalAUC(avg.x, avg.y).toFixed(2)
             });
 
             if (showIndividual) {
                 groupTraces.forEach(trace => {
                     plotTraces.push({
+                        type: 'scattergl',
                         x: trace.x, y: trace.y,
                         mode: 'lines',
                         name: trace.well,
                         yaxis: yax,
                         line: { width: 1, color, dash: 'dot' },
-                        opacity: 0.5
+                        opacity: 0.5,
+                        hoverinfo: 'skip'
                     });
                     traceGroupMeta[key].individualIdxs.push(traceIdx);
                     traceIdx++;
@@ -226,13 +235,19 @@ async function plotReplicates() {
         });
 
         const layout = buildMultiChannelLayout(repChannelList, 'Growth Curves — Replicates');
+        layout.hovermode = false;
         const config = { responsive: true, displayModeBar: true, modeBarButtonsToRemove: ['lasso2d', 'select2d'] };
 
         document.getElementById('plot-growth-container').style.display = 'block';
         document.getElementById('stats-container').style.display = 'block';
         const plotDiv = document.getElementById('plot-growth');
+        detachGrowthLegend(plotDiv);
+        detachGrowthHover(plotDiv);
         Plotly.purge(plotDiv);
+        setGrowthPlotHeight(plotDiv);
         await Plotly.newPlot(plotDiv, plotTraces, layout, config);
+        installGrowthLegend(plotDiv);
+        installGrowthHover(plotDiv);
         displayStats(stats);
 
         // Recalculate the group average whenever an individual trace is shown/hidden via the legend

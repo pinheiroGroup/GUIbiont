@@ -330,10 +330,12 @@ else
         s = first(stats)
         @test haskey(s, :specific_growth_rate)
         @test haskey(s, :saturation_od)
-        @test !haskey(s, :max_od)
-        @test !haskey(s, :final_od)
+        @test haskey(s, :max_od)
+        @test haskey(s, :final_od)
         @test Float64(s[:specific_growth_rate]) > 0.0
         @test Float64(s[:saturation_od]) > 0.0
+        @test Float64(s[:max_od]) > 0.0
+        @test Float64(s[:final_od]) > 0.0
     end
 
     @testset "POST /api/plot-data — multi channel" begin
