@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GUIbiont</title>
-    <link rel="stylesheet" href="/static/css/main.css">
+    <link rel="stylesheet" href="/static/css/main.css?v=20260722-5">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
     <script src="/static/vendor/plotly-2.29.1.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
@@ -21,8 +21,8 @@
         <div class="tab-navigation">
             <button class="tab-button active" onclick="switchTab('clean-data')">🧹 Clean Data</button>
             <button class="tab-button" onclick="switchTab('plot-growth')">📊 Plot Growth</button>
-            <button class="tab-button" onclick="switchTab('fit-curve')">🧮 Fit Curve</button>
             <button class="tab-button" onclick="switchTab('clustering')">🔵 Clustering</button>
+            <button class="tab-button" onclick="switchTab('fit-curve')">🧮 Fit Curve</button>
             <button class="tab-button" onclick="switchTab('batch-fit')">⚡ Batch Fit</button>
             <button class="tab-button" onclick="switchTab('ml-analysis')">🔬 ML Analysis</button>
         </div>
@@ -184,8 +184,8 @@
                                 Also run Log-Lin companion fit
                             </label>
                             <button class="btn" style="padding: 4px 10px; font-size: 0.85em;" onclick="toggleLogLinOptions()">⚙ Log-Lin options</button>
-                            <div id="loglin-options" style="display:none; margin-top: 8px; padding: 10px; background:#f8f9fa; border:1px solid #dee2e6; border-radius:4px;">
-                                <div style="display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end; font-size:0.85em;">
+                            <div id="loglin-options" class="fit-settings-panel" style="display:none;">
+                                <div class="fit-parameter-grid">
                                     <div style="display:flex; flex-direction:column; gap:4px;">
                                         <label>Smoothing</label>
                                         <select id="loglin-smoothing" style="padding:3px 6px;">
@@ -233,8 +233,8 @@
                             </select>
                         </div>
                         <div id="model-info-card" class="model-info-card"></div>
-                        <div style="margin-top: 6px; font-size: 0.9em;">
-                            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                        <div class="fit-settings-panel fit-optimizer-panel">
+                            <div class="fit-control-row">
                                 <label style="white-space: nowrap;">Optimizer:</label>
                                 <select id="fit-optimizer-mode" onchange="onFitOptimizerModeChange()" style="font-size: 0.9em; padding: 2px 6px;">
                                     <option value="single" selected>Single</option>
@@ -269,24 +269,26 @@
                             </div>
                             <div id="fit-optimizer-best-panel" style="display: none; margin-top: 6px; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; font-size: 0.85em;">
                                 <div style="color: #6c757d; margin-bottom: 6px;">Each deterministic optimizer runs once; each stochastic runs N times. The fit with lowest RMSE wins.</div>
-                                <div style="margin-bottom: 4px;"><b>Deterministic:</b> <span id="fit-det-optimizers"></span></div>
-                                <div style="margin-bottom: 4px;"><b>Stochastic:</b> <span id="fit-sto-optimizers"></span></div>
+                                <div style="margin-bottom: 4px;"><b>Deterministic:</b> <span id="fit-det-optimizers"><label class="optimizer-choice"><input type="checkbox" data-optimizer="GN_DIRECT_L" data-type="deterministic">GN DIRECT-L</label><label class="optimizer-choice"><input type="checkbox" data-optimizer="LN_BOBYQA" data-type="deterministic">BOBYQA</label><label class="optimizer-choice"><input type="checkbox" data-optimizer="LN_COBYLA" data-type="deterministic" checked>COBYLA</label></span></div>
+                                <div style="margin-bottom: 4px;"><b>Stochastic:</b> <span id="fit-sto-optimizers"><label class="optimizer-choice"><input type="checkbox" data-optimizer="BBO_adaptive_de_rand_1_bin_radiuslimited" data-type="stochastic" checked>BBO Adaptive DE</label><label class="optimizer-choice"><input type="checkbox" data-optimizer="GN_ISRES" data-type="stochastic">GN ISRES</label></span></div>
                                 <label style="display: inline-flex; align-items: center; gap: 6px;">Runs per stochastic: <input type="number" id="fit-sto-runs" value="3" min="1" max="20" style="font-size: 0.85em; padding: 2px 6px; width: 50px; border: 1px solid #ced4da; border-radius: 4px;"></label>
                             </div>
                         </div>
 
-                        <div style="margin-top: 8px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 0.9em;">
+                        <div class="fit-control-strip">
                             <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer;">
                                 <input type="checkbox" id="fit-smoothing" onchange="document.getElementById('fit-smoothing-window').disabled = !this.checked">
-                                Smooth parametric fit
+                                Smooth curve before fitting
                             </label>
-                            <label for="fit-smoothing-window" style="white-space: nowrap;">Centered-average window:</label>
-                            <input type="number" id="fit-smoothing-window" value="3" min="3" max="99" step="2" disabled style="font-size: 0.9em; padding: 2px 6px; border: 1px solid #ced4da; border-radius: 4px; width: 64px; color: #495057;">
-                            <span style="color:#6c757d;">points</span>
+                            <span class="fit-window-control">
+                                <label for="fit-smoothing-window" title="Centered-average window">Window:</label>
+                                <input type="number" id="fit-smoothing-window" value="3" min="3" max="99" step="2" disabled>
+                                <span class="fit-window-unit">points</span>
+                            </span>
                         </div>
 
-                        <div style="margin-top: 8px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
-                            <label style="display: flex; align-items: center; gap: 8px; font-size: 0.9em; cursor: pointer;">
+                        <div class="fit-control-strip">
+                            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                                 <input type="checkbox" id="fit-blank-subtraction" onchange="onBlankSubtractionChange()">
                                 Blank subtraction
                             </label>
@@ -307,7 +309,7 @@
                                 </span>
                             </div>
                         </div>
-                        <div style="margin-top: 6px; display: flex; align-items: center; gap: 8px; font-size: 0.85em; color: #6c757d;">
+                        <div class="fit-control-strip fit-control-strip--muted">
                             <label for="fit-calibration-file" style="white-space: nowrap;">Custom calibration file:</label>
                             <input type="text" id="fit-calibration-file" placeholder="auto-detected (leave blank)" style="font-size: 0.9em; padding: 2px 6px; border: 1px solid #ced4da; border-radius: 4px; width: 280px; color: #495057;">
                         </div>
@@ -374,31 +376,40 @@
                         </div>
 
                         <!-- Advanced options -->
-                        <div id="clustering-advanced" style="display:none; margin-top:12px; padding:12px; background:#f8f9fa; border-radius:6px; font-size:0.875em;">
-                            <div style="display:flex; flex-wrap:wrap; gap:16px; align-items:flex-end;">
+                        <div id="clustering-advanced" class="cluster-advanced-panel" style="display:none;">
+                            <div class="cluster-advanced-grid">
 
                                 <!-- Smoothing -->
-                                <div style="display:flex; flex-direction:column; gap:4px;">
-                                    <label style="font-weight:600;">Smoothing</label>
-                                    <select id="cluster-smooth-method" style="padding:4px 8px;" onchange="onClusterSmoothChange()">
-                                        <option value="lowess" selected>LOWESS</option>
-                                        <option value="gaussian">Gaussian</option>
-                                        <option value="rolling_avg">Rolling average</option>
-                                        <option value="none">None</option>
-                                    </select>
-                                </div>
-                                <div id="cluster-lowess-param" style="display:flex; flex-direction:column; gap:4px;">
-                                    <label>Bandwidth fraction</label>
-                                    <input type="number" id="cluster-lowess-frac" value="0.05" min="0.01" max="1" step="0.01" style="width:90px; padding:4px 6px;">
-                                </div>
-                                <div id="cluster-gaussian-param" style="display:none; flex-direction:column; gap:4px;">
-                                    <label>Bandwidth multiplier</label>
-                                    <input type="number" id="cluster-gaussian-hmult" value="2.0" min="0.1" max="20" step="0.1" style="width:90px; padding:4px 6px;">
+                                <div class="cluster-settings-card">
+                                    <div class="settings-card-title">Signal smoothing</div>
+                                    <div class="cluster-card-fields">
+                                        <div class="settings-field">
+                                            <label for="cluster-smooth-method">Method</label>
+                                            <select id="cluster-smooth-method" onchange="onClusterSmoothChange()">
+                                                <option value="lowess" selected>LOWESS</option>
+                                                <option value="gaussian">Gaussian</option>
+                                                <option value="rolling_avg">Rolling average</option>
+                                                <option value="none">None</option>
+                                            </select>
+                                        </div>
+                                        <div class="cluster-smoothing-param-slot">
+                                            <div id="cluster-lowess-param" class="settings-field" style="display:flex;">
+                                                <label for="cluster-lowess-frac">Bandwidth fraction</label>
+                                                <input type="number" id="cluster-lowess-frac" value="0.05" min="0.01" max="1" step="0.01">
+                                            </div>
+                                            <div id="cluster-gaussian-param" class="settings-field" style="display:none;">
+                                                <label for="cluster-gaussian-hmult">Bandwidth multiplier</label>
+                                                <input type="number" id="cluster-gaussian-hmult" value="2.0" min="0.1" max="20" step="0.1">
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
 
                                 <!-- Clustering method -->
-                                <div style="display:flex; flex-direction:column; gap:4px;">
-                                    <label style="font-weight:600;">Cluster method</label>
+                                <div class="cluster-settings-card">
+                                    <div class="settings-card-title">Clustering algorithm</div>
+                                <div class="settings-field">
+                                    <label for="cluster-method">Method</label>
                                     <select id="cluster-method" style="padding:4px 8px;" onchange="onClusterMethodChange()">
                                         <option value="kmeans" selected>K-means</option>
                                         <option value="kmedoids">K-medoids</option>
@@ -408,8 +419,8 @@
                                 </div>
 
                                 <!-- hclust linkage -->
-                                <div id="cluster-hclust-params" style="display:none; flex-direction:column; gap:4px;">
-                                    <label>Linkage</label>
+                                <div id="cluster-hclust-params" class="settings-field" style="display:none;">
+                                    <label for="cluster-hclust-linkage">Linkage</label>
                                     <select id="cluster-hclust-linkage" style="padding:4px 8px;">
                                         <option value="ward" selected>Ward</option>
                                         <option value="average">Average</option>
@@ -419,7 +430,7 @@
                                 </div>
 
                                 <!-- DBSCAN params -->
-                                <div id="cluster-dbscan-params" style="display:none; flex-wrap:wrap; gap:12px; align-items:flex-end;">
+                                <div id="cluster-dbscan-params" class="cluster-inline-fields" style="display:none;">
                                     <div style="display:flex; flex-direction:column; gap:4px;">
                                         <label>ε (radius)</label>
                                         <input type="number" id="cluster-dbscan-eps" value="1.0" min="0.01" step="0.1" style="width:80px; padding:4px 6px;">
@@ -430,9 +441,29 @@
                                     </div>
                                 </div>
 
+                                <!-- k-means / k-medoids optimizer controls -->
+                                <div id="cluster-iter-params" class="cluster-card-subsection cluster-inline-fields" style="display:flex;">
+                                    <div class="cluster-subsection-title">Algorithm tuning</div>
+                                    <div style="display:flex; flex-direction:column; gap:4px;">
+                                        <label>Max iterations</label>
+                                        <input type="number" id="cluster-maxiter" value="300" min="1" style="width:90px; padding:4px 6px;">
+                                    </div>
+                                    <div style="display:flex; flex-direction:column; gap:4px;">
+                                        <label>Tolerance</label>
+                                        <input type="number" id="cluster-tol" value="1e-6" min="0" step="1e-7" style="width:90px; padding:4px 6px;">
+                                    </div>
+                                    <div id="cluster-n-init-param" style="display:flex; flex-direction:column; gap:4px;">
+                                        <label title="Number of k-means random starts. The best WCSS run is kept.">Initializations</label>
+                                        <input type="number" id="cluster-n-init" value="3" min="1" max="100" step="1"
+                                               title="Number of k-means random starts, clamped to 1-100."
+                                               style="width:90px; padding:4px 6px;">
+                                    </div>
+                                </div>
+                                </div>
+
                                 <!-- Blank subtraction -->
-                                <div style="display:flex; flex-direction:column; gap:6px; border-left:2px solid #dee2e6; padding-left:12px;">
-                                    <label style="font-weight:600;">Blank subtraction</label>
+                                <div class="cluster-settings-card">
+                                    <div class="settings-card-title">Blank subtraction</div>
                                     <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
                                         <input type="checkbox" id="cluster-subtract-blank" onchange="onClusterBlankChange()">
                                         Subtract blank
@@ -465,8 +496,8 @@
                                 </div>
 
                                 <!-- Interpolation (CSV file mode only) -->
-                                <div id="cluster-interp-block" style="display:flex; flex-direction:column; gap:6px; border-left:2px solid #dee2e6; padding-left:12px;">
-                                    <label style="font-weight:600;">Unequal lengths</label>
+                                <div id="cluster-interp-block" class="cluster-settings-card" style="display:flex;">
+                                    <div class="settings-card-title">Unequal lengths</div>
                                     <label style="display:flex; align-items:center; gap:6px; cursor:pointer;"
                                            title="Interpolate all curves to a common time grid before clustering. Recommended when curves have different numbers of time points.">
                                         <input type="checkbox" id="cluster-interpolate" onchange="onClusterInterpolateChange()">
@@ -493,27 +524,9 @@
                                     </div>
                                 </div>
 
-                                <!-- k-means / k-medoids optimizer controls -->
-                                <div id="cluster-iter-params" style="display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end; border-left:2px solid #dee2e6; padding-left:12px;">
-                                    <div style="display:flex; flex-direction:column; gap:4px;">
-                                        <label style="font-weight:600;">Max iterations</label>
-                                        <input type="number" id="cluster-maxiter" value="300" min="1" style="width:90px; padding:4px 6px;">
-                                    </div>
-                                    <div style="display:flex; flex-direction:column; gap:4px;">
-                                        <label style="font-weight:600;">Tolerance</label>
-                                        <input type="number" id="cluster-tol" value="1e-6" min="0" step="1e-7" style="width:90px; padding:4px 6px;">
-                                    </div>
-                                    <div id="cluster-n-init-param" style="display:flex; flex-direction:column; gap:4px;">
-                                        <label style="font-weight:600;" title="Number of k-means random starts. The best WCSS run is kept.">Initializations</label>
-                                        <input type="number" id="cluster-n-init" value="3" min="1" max="100" step="1"
-                                               title="Number of k-means random starts, clamped to 1-100."
-                                               style="width:90px; padding:4px 6px;">
-                                    </div>
-                                </div>
-
                                 <!-- Batch replicate averaging -->
-                                <div style="display:flex; flex-direction:column; gap:6px; border-left:2px solid #dee2e6; padding-left:12px;">
-                                    <label style="font-weight:600;">Replicate averaging</label>
+                                <div class="cluster-settings-card cluster-settings-card--wide">
+                                    <div class="settings-card-title">Replicate averaging</div>
                                     <p style="font-size:0.82em; color:#6c757d; margin:0;">
                                         Group series by a label row and compute the pointwise mean — use this to collapse per-gene replicates before clustering or batch fitting.
                                     </p>
@@ -534,45 +547,39 @@
                                     </div>
                                 </div>
 
-                                <!-- Constant pre-screening -->
-                                <div style="display:flex; flex-direction:column; gap:6px; border-left:2px solid #dee2e6; padding-left:12px;">
-                                    <label style="font-weight:600;">Non-growing pre-screen</label>
-                                    <p style="font-size:0.82em; color:#6c757d; margin:0;">
-                                        Test: <code>q-high &lt;= &tau; &times; q-low</code>. Wider quantiles (q05/q95) reduce the chance a weak grower is mis-flagged as non-growing; narrow the window (e.g. q10/q90) to be more aggressive about pre-screening.
-                                    </p>
-                                    <p style="font-size:0.82em; color:#6c757d; margin:0;">
-                                        Before k-means, flag non-growing curves via a quantile-ratio test and assign them to a dedicated sentinel cluster. k-means then runs on the remaining dynamic curves using k−1 clusters.
-                                    </p>
-                                    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-                                        <label style="display:flex; align-items:center; gap:4px; font-size:0.85em;">
-                                            <input type="checkbox" id="cluster-prescreen"> Enable
-                                        </label>
-                                        <label style="font-size:0.85em;">τ (tolerance)</label>
-                                        <input type="number" id="cluster-prescreen-tol" value="1.5" min="1.0" max="10.0" step="0.1"
-                                               style="width:70px; padding:4px 6px; font-size:0.85em; border:1px solid #ced4da; border-radius:4px;">
-                                        <label style="font-size:0.85em;">q-low</label>
-                                        <input type="number" id="cluster-prescreen-qlo" value="0.05" min="0" max="0.99" step="0.01"
-                                               style="width:70px; padding:4px 6px; font-size:0.85em; border:1px solid #ced4da; border-radius:4px;">
-                                        <label style="font-size:0.85em;">q-high</label>
-                                        <input type="number" id="cluster-prescreen-qhi" value="0.95" min="0.01" max="1.0" step="0.01"
-                                               style="width:70px; padding:4px 6px; font-size:0.85em; border:1px solid #ced4da; border-radius:4px;">
-                                    </div>
-                                </div>
-
-                                <!-- Post-hoc trend-test flat reassignment -->
-                                <div style="display:flex; flex-direction:column; gap:6px; border-left:2px solid #dee2e6; padding-left:12px;">
-                                    <label style="font-weight:600;">Post-hoc trend test</label>
-                                    <p style="font-size:0.82em; color:#6c757d; margin:0;">
-                                        After clustering, reassign curves with no significant OD vs time slope (t-test p ≥ threshold) to a flat cluster. Works with any clustering method; useful when blank annotation is unavailable.
-                                    </p>
-                                    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-                                        <label style="display:flex; align-items:center; gap:4px; font-size:0.85em;">
-                                            <input type="checkbox" id="cluster-trend-test"> Enable
-                                        </label>
-                                        <label style="font-size:0.85em;">p threshold</label>
-                                        <input type="number" id="cluster-trend-p" value="0.05" min="0.001" max="0.5" step="0.005"
-                                               style="width:70px; padding:4px 6px; font-size:0.85em; border:1px solid #ced4da; border-radius:4px;">
-                                    </div>
+                                <!-- Non-growing detection -->
+                                <div class="cluster-settings-card cluster-settings-card--wide cluster-non-growing-card">
+                                    <div class="settings-card-title">Non-growing detection</div>
+                                    <section class="cluster-detection-section">
+                                        <div class="cluster-detection-heading">Quantile pre-screen</div>
+                                        <p>
+                                            Before clustering, flag non-growing curves with <code>q-high &lt;= &tau; &times; q-low</code> and assign them to a dedicated sentinel cluster. Wider quantiles (q05/q95) protect weak growers; narrower quantiles make the screen more aggressive.
+                                        </p>
+                                        <div class="cluster-detection-controls">
+                                            <label class="cluster-enable-control">
+                                                <input type="checkbox" id="cluster-prescreen"> Enable
+                                            </label>
+                                            <label for="cluster-prescreen-tol">τ (tolerance)</label>
+                                            <input type="number" id="cluster-prescreen-tol" value="1.5" min="1.0" max="10.0" step="0.1">
+                                            <label for="cluster-prescreen-qlo">q-low</label>
+                                            <input type="number" id="cluster-prescreen-qlo" value="0.05" min="0" max="0.99" step="0.01">
+                                            <label for="cluster-prescreen-qhi">q-high</label>
+                                            <input type="number" id="cluster-prescreen-qhi" value="0.95" min="0.01" max="1.0" step="0.01">
+                                        </div>
+                                    </section>
+                                    <section class="cluster-detection-section">
+                                        <div class="cluster-detection-heading">Trend test</div>
+                                        <p>
+                                            Assign curves with no significant OD-vs-time slope (two-sided slope t-test, p ≥ threshold) to the same non-growing group. Works with every clustering method and can also drive blank derivation.
+                                        </p>
+                                        <div class="cluster-detection-controls">
+                                            <label class="cluster-enable-control">
+                                                <input type="checkbox" id="cluster-trend-test"> Enable
+                                            </label>
+                                            <label for="cluster-trend-p">p threshold</label>
+                                            <input type="number" id="cluster-trend-p" value="0.05" min="0.001" max="0.5" step="0.005">
+                                        </div>
+                                    </section>
                                 </div>
 
                             </div>
@@ -831,7 +838,7 @@
                         </div>
 
                         <div style="margin-top: 14px;">
-                            <div style="display: flex; gap: 18px; margin-bottom: 10px; align-items: center; flex-wrap: wrap;">
+                            <div class="fit-choice-row">
                                 <span style="font-size: 0.9em; font-weight: 500; color: #495057;">Fitting method:</span>
                                 <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:0.9em;">
                                     <input type="radio" name="batch-fit-method" value="parametric" checked onchange="onBatchFitMethodChange()">
@@ -846,7 +853,7 @@
 
                         <div id="batch-parametric-wrap">
                         <div style="margin-top: 14px;">
-                            <div style="display: flex; gap: 18px; margin-bottom: 10px; align-items: center; flex-wrap: wrap;">
+                            <div class="fit-choice-row">
                                 <span style="font-size: 0.9em; font-weight: 500; color: #495057;">Model selection:</span>
                                 <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:0.9em;">
                                     <input type="radio" name="batch-fit-mode" value="single" checked onchange="onBatchModeChange()">
@@ -856,11 +863,16 @@
                                     <input type="radio" name="batch-fit-mode" value="multi" onchange="onBatchModeChange()">
                                     Compare models — pick best by AICc
                                 </label>
-                                <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:0.9em; margin-left:auto;" title="Also run a sliding-window log-linear fit alongside the parametric model. Produces μ_max bounded by physiology; serves as a sanity check on the model-derived growth rate.">
-                                    <input type="checkbox" id="batch-fit-also-loglin">
-                                    Also compute log-linear μ<sub>max</sub>
-                                </label>
+                                <div class="batch-loglin-companion-control">
+                                    <label title="Also run a sliding-window log-linear fit alongside the parametric model. Produces μ_max bounded by physiology; serves as a sanity check on the model-derived growth rate.">
+                                        <input type="checkbox" id="batch-fit-also-loglin" onchange="onBatchLogLinCompanionChange()">
+                                        Also compute log-linear μ<sub>max</sub>
+                                    </label>
+                                    <button id="batch-companion-loglin-options-btn" class="btn batch-loglin-options-btn" onclick="toggleBatchLogLinOptions()" disabled>⚙ Log-Lin options</button>
+                                </div>
                             </div>
+
+                            <div id="batch-loglin-options-parametric-anchor"></div>
 
                             <div id="batch-single-model-wrap">
                                 <select id="batch-fit-model" class="fitting-select model-select" style="max-width:280px;">
@@ -877,14 +889,16 @@
                             </div>
                         </div>
 
-                        <div style="margin-top: 10px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 0.9em;">
-                            <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <div class="fit-control-strip">
+                            <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer;" title="Centered-average preprocessing for the parametric model; Log-Lin pt_avg is configured separately.">
                                 <input type="checkbox" id="batch-fit-smoothing" onchange="document.getElementById('batch-fit-smoothing-window').disabled = !this.checked">
-                                Smooth parametric fits
+                                Smooth curves before parametric fitting
                             </label>
-                            <label for="batch-fit-smoothing-window" style="white-space: nowrap;">Centered-average window:</label>
-                            <input type="number" id="batch-fit-smoothing-window" value="3" min="3" max="99" step="2" disabled style="font-size: 0.9em; padding: 2px 6px; border: 1px solid #ced4da; border-radius: 4px; width: 64px; color: #495057;">
-                            <span style="color:#6c757d;">points</span>
+                            <span class="fit-window-control">
+                                <label for="batch-fit-smoothing-window" title="Centered-average window">Window:</label>
+                                <input type="number" id="batch-fit-smoothing-window" value="3" min="3" max="99" step="2" disabled>
+                                <span class="fit-window-unit">points</span>
+                            </span>
                         </div>
                         </div>
 
@@ -892,31 +906,54 @@
                             <div style="font-size: 0.85em; color: #6c757d; margin-bottom: 8px;">
                                 Log-linear sliding-window fit. Reports μ<sub>max</sub> (slope of log OD vs time in the auto-detected exponential window), 1σ standard error on μ<sub>max</sub>, R², doubling time, and exponential-window bounds. No optimizer; no AICc.
                             </div>
-                            <details style="font-size: 0.85em;">
-                                <summary style="cursor:pointer; color:#495057;">Advanced parameters</summary>
-                                <div style="margin-top: 8px; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px 18px; padding: 8px; background:#f8f9fa; border-radius:4px;">
-                                    <label style="display:flex; flex-direction:column; gap:2px;" title="Rolling-average window size in points.">
-                                        <span>Smoothing window (<code>pt_avg</code>)</span>
-                                        <input type="number" id="batch-loglin-pt-avg" value="7" min="1" max="99" step="1" style="padding:3px 6px; border:1px solid #ced4da; border-radius:4px;">
-                                    </label>
-                                    <label style="display:flex; flex-direction:column; gap:2px;" title="Sliding-window size for the per-point derivative used to find the exponential phase.">
-                                        <span>Derivative window (<code>pt_smoothing_derivative</code>)</span>
-                                        <input type="number" id="batch-loglin-pt-deriv" value="7" min="2" max="99" step="1" style="padding:3px 6px; border:1px solid #ced4da; border-radius:4px;">
-                                    </label>
-                                    <label style="display:flex; flex-direction:column; gap:2px;" title="Minimum number of points required inside the exponential window before fitting.">
-                                        <span>Min exp-window size (<code>pt_min_size_of_win</code>)</span>
-                                        <input type="number" id="batch-loglin-pt-min-win" value="7" min="3" max="99" step="1" style="padding:3px 6px; border:1px solid #ced4da; border-radius:4px;">
-                                    </label>
-                                    <label style="display:flex; flex-direction:column; gap:2px;" title="Quantile threshold (0–1) used to define the exponential-phase region. Higher = stricter.">
-                                        <span>Exp-phase quantile (<code>threshold_of_exp</code>)</span>
-                                        <input type="number" id="batch-loglin-thr-exp" value="0.9" min="0" max="1" step="0.05" style="padding:3px 6px; border:1px solid #ced4da; border-radius:4px;">
-                                    </label>
-                                </div>
-                            </details>
+                            <button class="btn batch-loglin-options-btn" onclick="toggleBatchLogLinOptions()">⚙ Log-Lin options</button>
+                            <div id="batch-loglin-options-standalone-anchor"></div>
                         </div>
 
-                        <div style="margin-top: 8px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
-                            <label style="display: flex; align-items: center; gap: 8px; font-size: 0.9em; cursor: pointer;">
+                        <div id="batch-loglin-options" class="fit-settings-panel" style="display:none;">
+                            <div class="settings-card-title">Log-Lin options</div>
+                            <div class="fit-parameter-grid">
+                                <div class="batch-loglin-standalone-only" style="display:flex; flex-direction:column; gap:4px;">
+                                    <label>Smoothing</label>
+                                    <select id="batch-loglin-smoothing" style="padding:3px 6px;">
+                                        <option value="rolling_avg" selected>Rolling avg</option>
+                                        <option value="lowess">LOWESS</option>
+                                        <option value="NO">None</option>
+                                    </select>
+                                </div>
+                                <div class="batch-loglin-standalone-only" style="display:flex; flex-direction:column; gap:4px;">
+                                    <label>Window type</label>
+                                    <select id="batch-loglin-win-type" style="padding:3px 6px;">
+                                        <option value="maximum" selected>Maximum</option>
+                                        <option value="global_thr">Global threshold</option>
+                                        <option value="max_with_min_OD">Max with min OD</option>
+                                    </select>
+                                </div>
+                                <div style="display:flex; flex-direction:column; gap:4px;">
+                                    <label title="Number of points in smoothing window">pt_avg</label>
+                                    <input type="number" id="batch-loglin-pt-avg" value="7" min="1" max="99" step="1" style="padding:3px 6px;">
+                                </div>
+                                <div style="display:flex; flex-direction:column; gap:4px;">
+                                    <label title="Window size for derivative-based GR estimate">pt_smooth_deriv</label>
+                                    <input type="number" id="batch-loglin-pt-deriv" value="7" min="2" max="99" step="1" style="padding:3px 6px;">
+                                </div>
+                                <div style="display:flex; flex-direction:column; gap:4px;">
+                                    <label title="Minimum number of points in the exponential window">pt_min_win</label>
+                                    <input type="number" id="batch-loglin-pt-min-win" value="7" min="3" max="99" step="1" style="padding:3px 6px;">
+                                </div>
+                                <div style="display:flex; flex-direction:column; gap:4px;">
+                                    <label title="Quantile threshold on growth rate to define the exponential window">threshold_exp</label>
+                                    <input type="number" id="batch-loglin-thr-exp" value="0.9" min="0" max="1" step="0.01" style="padding:3px 6px;">
+                                </div>
+                                <div class="batch-loglin-standalone-only" style="display:flex; flex-direction:column; gap:4px;">
+                                    <label title="Minimum OD to start the exponential window">start_OD_thr</label>
+                                    <input type="number" id="batch-loglin-start-thr" value="0.05" min="0" step="0.01" style="padding:3px 6px;">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="fit-control-strip">
+                            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                                 <input type="checkbox" id="batch-fit-blank-subtraction" onchange="document.getElementById('batch-fit-blank-method-wrap').style.display = this.checked ? 'flex' : 'none'">
                                 Blank subtraction
                             </label>
@@ -929,11 +966,12 @@
                                 </select>
                             </div>
                         </div>
-                        <div style="margin-top: 6px; display: flex; align-items: center; gap: 8px; font-size: 0.85em; color: #6c757d;">
+                        <div class="fit-control-strip fit-control-strip--muted">
                             <label for="batch-fit-calibration-file" style="white-space: nowrap;">Custom calibration file:</label>
                             <input type="text" id="batch-fit-calibration-file" placeholder="auto-detected (leave blank)" style="font-size: 0.9em; padding: 2px 6px; border: 1px solid #ced4da; border-radius: 4px; width: 280px; color: #495057;">
                         </div>
-                        <div style="margin-top: 6px; display: flex; align-items: center; gap: 8px; font-size: 0.9em; flex-wrap: wrap;">
+                        <div class="fit-settings-panel fit-optimizer-panel">
+                            <div class="fit-control-row">
                             <div id="batch-fit-optimizer-row" style="display: contents;">
                                 <label style="white-space: nowrap;">Optimizer:</label>
                                 <select id="batch-fit-optimizer-mode" onchange="onBatchFitOptimizerModeChange()" style="font-size: 0.9em; padding: 2px 6px;">
@@ -969,11 +1007,12 @@
                             </div>
                             <label for="batch-fit-skip-flat" style="white-space: nowrap;" title="Skip curves whose OD amplitude (max - min) is below this. Typical OD ranges are 0.01 - 1.0; default 0.02 catches blanks. Set to 0 to disable.">Skip if OD range &lt;:</label>
                             <input type="number" id="batch-fit-skip-flat" value="0.02" min="0" max="2" step="0.01" style="font-size: 0.9em; padding: 2px 6px; border: 1px solid #ced4da; border-radius: 4px; width: 70px; color: #495057;">
+                            </div>
                         </div>
                         <div id="batch-fit-optimizer-best-panel" style="display: none; margin-top: 6px; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; font-size: 0.85em;">
                             <div style="color: #6c757d; margin-bottom: 6px;">Each deterministic optimizer runs once per well; each stochastic runs N times. Lowest-RMSE fit wins per well.</div>
-                            <div style="margin-bottom: 4px;"><b>Deterministic:</b> <span id="batch-fit-det-optimizers"></span></div>
-                            <div style="margin-bottom: 4px;"><b>Stochastic:</b> <span id="batch-fit-sto-optimizers"></span></div>
+                            <div style="margin-bottom: 4px;"><b>Deterministic:</b> <span id="batch-fit-det-optimizers"><label class="optimizer-choice"><input type="checkbox" data-optimizer="GN_DIRECT_L" data-type="deterministic">GN DIRECT-L</label><label class="optimizer-choice"><input type="checkbox" data-optimizer="LN_BOBYQA" data-type="deterministic">BOBYQA</label><label class="optimizer-choice"><input type="checkbox" data-optimizer="LN_COBYLA" data-type="deterministic" checked>COBYLA</label></span></div>
+                            <div style="margin-bottom: 4px;"><b>Stochastic:</b> <span id="batch-fit-sto-optimizers"><label class="optimizer-choice"><input type="checkbox" data-optimizer="BBO_adaptive_de_rand_1_bin_radiuslimited" data-type="stochastic" checked>BBO Adaptive DE</label><label class="optimizer-choice"><input type="checkbox" data-optimizer="GN_ISRES" data-type="stochastic">GN ISRES</label></span></div>
                             <label style="display: inline-flex; align-items: center; gap: 6px;">Runs per stochastic: <input type="number" id="batch-fit-sto-runs" value="3" min="1" max="20" style="font-size: 0.85em; padding: 2px 6px; width: 50px; border: 1px solid #ced4da; border-radius: 4px;"></label>
                         </div>
 
@@ -1181,6 +1220,6 @@
         </div>
     </div>
 
-    <script type="module" src="/static/js/app.js"></script>
+    <script type="module" src="/static/js/app.js?v=20260722-5"></script>
 </body>
 </html>
