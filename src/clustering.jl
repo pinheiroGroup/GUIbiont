@@ -50,6 +50,72 @@ function _strip_nan_tail(t::Vector{Float64}, y::Vector{Float64})
     return t[1:last_valid], y[1:last_valid]
 end
 
+# Rebuild the clustering grid after blank correction has been applied to the
+# original source curves. Detection can happen on an interpolated/normalised
+# grid, but subtraction must precede that transformation so annotated and
+# derived blanks share the same measurement-index semantics.
+function _rebuild_clustering_grid(
+    curves_all::Vector{Vector{Float64}},
+    times_all::Vector{Vector{Float64}},
+    labels::Vector{String},
+    groups::Vector{String},
+    target_times::Vector{Float64};
+    interpolate::Bool,
+    irregular::Bool,
+)
+    length(curves_all) == length(times_all) == length(labels) == length(groups) ||
+        throw(ArgumentError("curves, times, labels, and groups must have the same length"))
+
+    if interpolate
+        curves = Kinbiont.interpolate_curves_to_grid(curves_all, times_all, target_times)
+        return (
+            curves=curves,
+            times=target_times,
+            labels=labels,
+            groups=groups,
+            time_normalized=false,
+        )
+    elseif irregular
+        clean_times = Vector{Vector{Float64}}()
+        clean_curves = Vector{Vector{Float64}}()
+        clean_labels = String[]
+        clean_groups = String[]
+        for i in eachindex(curves_all)
+            ct, cy = _strip_nan_tail(times_all[i], curves_all[i])
+            length(ct) < 2 && continue
+            push!(clean_times, ct)
+            push!(clean_curves, cy)
+            push!(clean_labels, labels[i])
+            push!(clean_groups, groups[i])
+        end
+        isempty(clean_curves) && error("No valid curves after raw blank correction")
+        igd = IrregularGrowthData(clean_curves, clean_times, clean_labels; step=0.01)
+        return (
+            curves=igd.curves,
+            times=igd.times,
+            labels=clean_labels,
+            groups=clean_groups,
+            time_normalized=true,
+        )
+    end
+
+    ncols = length(target_times)
+    curves = Matrix{Float64}(undef, length(curves_all), ncols)
+    for i in eachindex(curves_all)
+        length(curves_all[i]) >= ncols || throw(ArgumentError(
+            "curve $(labels[i]) is shorter than the prepared grid"
+        ))
+        curves[i, :] = curves_all[i][1:ncols]
+    end
+    return (
+        curves=curves,
+        times=target_times,
+        labels=labels,
+        groups=groups,
+        time_normalized=false,
+    )
+end
+
 function _smooth_clustering_curves(
     curves::Matrix{Float64},
     times::Vector{Float64},

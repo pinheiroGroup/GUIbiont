@@ -437,10 +437,8 @@ function _run_fit_attempt(
     preprocessed_time = Float64.(fit_results.data.times)
     preprocessed_od = Float64.(vec(fit_results.data.curves[1, :]))
 
-    # Shift the fitted curve back to blank-subtracted display space if needed.
-    fit_od_curve = subtract_blank && blank_value > 0.0 ?
-        r.fitted_curve .- shift :
-        r.fitted_curve
+    # Keep the fitted curve in the exact numerical space used by the optimizer.
+    fit_od_curve = r.fitted_curve
 
     fit_time_out = collect(r.times)
     fit_od_out = collect(fit_od_curve)
@@ -459,8 +457,7 @@ function _run_fit_attempt(
     )
     loss_re   = r.loss
 
-    preprocessed_od_out = subtract_blank && blank_value > 0.0 ?
-        preprocessed_od .- shift : preprocessed_od
+    preprocessed_od_out = preprocessed_od
 
     return (
         best_params        = r.best_params,
@@ -520,8 +517,8 @@ function _prepare_fit_curve(
     corrected = pointwise ? od_raw .- blank_timeseries : od_raw .- blank_value
     return (
         od_for_fit=od_for_fit,
-        od_subtracted_display=max.(corrected, 0.0),
-        anchor=max(corrected[1], 0.0),
+        od_subtracted_display=copy(od_for_fit),
+        anchor=od_for_fit[1],
         shift=effective_method == :clip ? 0.0 : od_for_fit[1] - corrected[1],
         blank_applied=true,
     )

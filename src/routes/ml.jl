@@ -56,8 +56,7 @@
                 excluded_wells = Set{String}()
                 annotated_blanks = Set{String}()
                 if isfile(annotation_file)
-                    ann = CSV.read(annotation_file, DataFrame, header=false,
-                                  silencewarnings=true, stringtype=String)
+                    ann = read_annotation_file(annotation_file)
                     excluded_wells = get_blank_wells(ann)
                     annotated_blanks = Set(get_blank_well_names(ann))
                 end
@@ -97,9 +96,13 @@
     end
 
     isempty(curves_all) && return json(Dict("error" => "No data loaded"); status=400)
+    source_times_all = times_all
+    source_curves_all = curves_all
+    source_labels_all = copy(labels_all)
+    source_groups_all = copy(sample_groups)
 
-    # Pair annotated blanks with samples from the same experiment and align the
-    # blank traces to each sample's real time grid before any global resampling.
+    # Pair annotated blanks with samples from the same experiment by source
+    # measurement index before any global resampling.
     annotated_blanks = !isempty(blank_curves_all)
     if subtract_blank && annotated_blanks && !derive_non_growing_blanks
         curves_all, corrected_mask = Kinbiont.apply_grouped_blank_subtraction(
@@ -189,9 +192,9 @@
             lowess_frac=lowess_frac,
             gaussian_h_mult=gaussian_hmult,
         )
-        derived = Kinbiont.derive_blank_from_non_growing(
-            curves, times, labels_all, sample_groups,
-            detector_curves, detector_times;
+        derived = Kinbiont.derive_blank_from_non_growing_sources(
+            source_curves_all, source_times_all, source_labels_all, source_groups_all,
+            detector_curves, detector_times, labels_all;
             annotated_blank_curves=blank_curves_all,
             annotated_blank_times=blank_times_all,
             annotated_blank_groups=blank_groups_all,
@@ -211,9 +214,16 @@
         isempty(derived.labels) && return json(Dict(
             "error" => "No sample curves remain after blank derivation"
         ); status=400)
-        curves = Kinbiont.fill_nonfinite_colmean(derived.curves)
-        labels_all = derived.labels
-        sample_groups = derived.groups
+        rebuilt = _rebuild_clustering_grid(
+            derived.curves, derived.times, derived.labels, derived.groups, times;
+            interpolate=do_interp,
+            irregular=!do_interp && has_irregular,
+        )
+        curves = Kinbiont.fill_nonfinite_colmean(rebuilt.curves)
+        times = rebuilt.times
+        labels_all = rebuilt.labels
+        sample_groups = rebuilt.groups
+        time_normalized = rebuilt.time_normalized
         blank_labels_used = derived.blank_labels
         blank_source = annotated_blanks ? "annotated+derived" : "derived"
         blank_subtraction_applied = any(derived.corrected_mask)
@@ -445,8 +455,7 @@ end
                 excluded_wells = Set{String}()
                 blank_wells = Set{String}()
                 if isfile(annotation_file)
-                    ann = CSV.read(annotation_file, DataFrame, header=false,
-                                  silencewarnings=true, stringtype=String)
+                    ann = read_annotation_file(annotation_file)
                     excluded_wells = get_blank_wells(ann)
                     blank_wells = Set(get_blank_well_names(ann))
                 end
@@ -483,6 +492,10 @@ end
     end
 
     isempty(curves_all) && return json(Dict("error" => "No data loaded"); status=400)
+    source_times_all = times_all
+    source_curves_all = curves_all
+    source_labels_all = copy(labels_all)
+    source_groups_all = copy(sample_groups)
 
     annotated_blanks = !isempty(blank_curves_all)
     if subtract_blank && annotated_blanks && !derive_non_growing_blanks
@@ -556,9 +569,9 @@ end
             lowess_frac=lowess_frac,
             gaussian_h_mult=gaussian_hmult,
         )
-        derived = Kinbiont.derive_blank_from_non_growing(
-            curves, times, labels_all, sample_groups,
-            detector_curves, detector_times;
+        derived = Kinbiont.derive_blank_from_non_growing_sources(
+            source_curves_all, source_times_all, source_labels_all, source_groups_all,
+            detector_curves, detector_times, labels_all;
             annotated_blank_curves=blank_curves_all,
             annotated_blank_times=blank_times_all,
             annotated_blank_groups=blank_groups_all,
@@ -578,9 +591,15 @@ end
         isempty(derived.labels) && return json(Dict(
             "error" => "No sample curves remain after blank derivation"
         ); status=400)
-        curves = Kinbiont.fill_nonfinite_colmean(derived.curves)
-        labels_all = derived.labels
-        sample_groups = derived.groups
+        rebuilt = _rebuild_clustering_grid(
+            derived.curves, derived.times, derived.labels, derived.groups, times;
+            interpolate=do_interp,
+            irregular=!do_interp && has_irregular,
+        )
+        curves = Kinbiont.fill_nonfinite_colmean(rebuilt.curves)
+        times = rebuilt.times
+        labels_all = rebuilt.labels
+        sample_groups = rebuilt.groups
         n_series = size(curves, 1)
     end
 

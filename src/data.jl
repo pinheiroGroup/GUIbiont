@@ -98,8 +98,9 @@ function compute_blank_value(growth_data::DataFrame, annotations::DataFrame)::Fl
             try push!(vals, parse(Float64, string(val))) catch _ end
         end
     end
-    isempty(vals) && return 0.0
-    return mean(filter(!isnan, vals))
+    finite = filter(isfinite, vals)
+    isempty(finite) && return 0.0
+    return mean(finite)
 end
 
 # Compute the mean blank OD at each time point across all blank ("b") wells.
@@ -132,8 +133,9 @@ function compute_blank_value(growth_data::DataFrame, blank_wells::Vector{String}
             try push!(vals, parse(Float64, string(val))) catch _ end
         end
     end
-    isempty(vals) && return 0.0
-    return mean(filter(!isnan, vals))
+    finite = filter(isfinite, vals)
+    isempty(finite) && return 0.0
+    return mean(finite)
 end
 
 function compute_blank_timeseries(growth_data::DataFrame, blank_wells::Vector{String})::Vector{Float64}
@@ -164,12 +166,12 @@ function _mean_across_blanks(columns::Vector{Vector{Float64}}, n::Int)::Vector{F
         s = 0.0; k = 0
         for c in columns
             v = c[t]
-            if !isnan(v); s += v; k += 1; end
+            if isfinite(v); s += v; k += 1; end
         end
         out[t] = k > 0 ? s / k : NaN
     end
     # Global fallback for any all-NaN timepoint
-    valid = filter(!isnan, out)
+    valid = filter(isfinite, out)
     fallback = isempty(valid) ? 0.0 : sum(valid) / length(valid)
     @inbounds for t in 1:n
         isnan(out[t]) && (out[t] = fallback)
