@@ -56,8 +56,7 @@
                 excluded_wells = Set{String}()
                 annotated_blanks = Set{String}()
                 if isfile(annotation_file)
-                    ann = CSV.read(annotation_file, DataFrame, header=false,
-                                  silencewarnings=true, stringtype=String)
+                    ann = read_annotation_file(annotation_file)
                     excluded_wells = get_blank_wells(ann)
                     annotated_blanks = Set(get_blank_well_names(ann))
                 end
@@ -445,8 +444,7 @@ end
                 excluded_wells = Set{String}()
                 blank_wells = Set{String}()
                 if isfile(annotation_file)
-                    ann = CSV.read(annotation_file, DataFrame, header=false,
-                                  silencewarnings=true, stringtype=String)
+                    ann = read_annotation_file(annotation_file)
                     excluded_wells = get_blank_wells(ann)
                     blank_wells = Set(get_blank_well_names(ann))
                 end
