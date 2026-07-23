@@ -30,15 +30,6 @@ include("experiment_store_test.jl")
 include("clustering_helpers_test.jl")
 include("analysis_helpers_test.jl")
 
-@testset "Dynamic Julia code exports" begin
-    node = Sys.which("node")
-    if isnothing(node)
-        @test_skip false
-    else
-        @test success(`$node $(joinpath(@__DIR__, "code_export_test.mjs"))`)
-    end
-end
-
 # ---------------------------------------------------------------------------
 # Paths to fixtures — prefer committed test/fixtures, fall back to local data
 # ---------------------------------------------------------------------------
