@@ -310,12 +310,14 @@ end
     @test string(body[:cost_metric]) == "wcss"
     sweep = body[:sweep]
     @test !isempty(sweep)
-    # k=1 is included as the WCSS/elbow baseline; cluster-quality metrics that
-    # require at least two clusters are returned as nothing for that row.
+    # The sweep runs k in {2,...,k_max}: at k=1 every cluster-quality index is
+    # undefined and a single-cluster cost is not a meaningful elbow baseline, so
+    # k=1 is no longer emitted.
     ks = [Int(s[:k]) for s in sweep]
-    @test minimum(ks) == 1
+    @test minimum(ks) == 2
     @test maximum(ks) <= 4
     @test ks == sort(ks)
+    @test !any(==(1), ks)
     for s in sweep
         @test haskey(s, :k)
         @test haskey(s, :wcss)
@@ -327,9 +329,9 @@ end
         @test haskey(s, :calinski_harabasz)
         @test haskey(s, :xie_beni)
         @test Float64(s[:wcss]) >= 0
+        # Every emitted row has k >= 2, so quality indices are defined.
+        @test s[:silhouette_mean] !== nothing
     end
-    k1 = only(filter(s -> Int(s[:k]) == 1, sweep))
-    @test k1[:silhouette_mean] === nothing
 end
 
 @testset "POST /api/cluster-sweep — via experiment" begin

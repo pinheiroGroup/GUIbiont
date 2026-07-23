@@ -597,9 +597,11 @@ end
         curves_for = curves
     end
     sweep_results = []
-    for k in 1:min(k_max, n_series)
-        prescreen_for_k = !derive_non_growing_blanks && k > 1 &&
-                          Bool(body.prescreen_constant)
+    # Sweep starts at k=2: at k=1 every quality index is undefined (silhouette,
+    # Dunn, Davies-Bouldin, Calinski-Harabasz and Xie-Beni all require ≥ 2
+    # clusters) and a single-cluster cost is not a meaningful elbow baseline.
+    for k in 2:min(k_max, n_series)
+        prescreen_for_k = !derive_non_growing_blanks && Bool(body.prescreen_constant)
         gd_sw   = GrowthData(curves_for, times, labels_all)
         sw_opts = FitOptions(
             cluster                    = true,
@@ -626,25 +628,10 @@ end
         cluster_cost = something(gd_result.wcss, 0.0)
         cost_metric = cluster_method == "kmedoids" ? "distance_to_medoid" : "wcss"
 
-        # At k=1 every quality index is undefined (silhouette, Dunn, Davies-Bouldin,
-        # Calinski-Harabasz and Xie-Beni all need ≥ 2 clusters). Skip the call so
-        # we don't pay for the n×n pairwise-distance allocation that
-        # `_cluster_quality_indices` does internally before short-circuiting.
-        # The method-specific clustering cost is still emitted as the k=1
-        # baseline used by the elbow diagnostic.
-        q = if k < 2
-            Dict{String,Any}(
-                "silhouette_mean"   => nothing,
-                "dunn"              => nothing,
-                "davies_bouldin"    => nothing,
-                "calinski_harabasz" => nothing,
-                "xie_beni"          => nothing,
-            )
-        else
-            ids_r, _ = _remap_ids(ids)
-            zscored  = _zscore_rows(curves_for)
-            _cluster_quality_indices(zscored, ids_r)
-        end
+        # k ≥ 2 for the whole sweep, so every quality index is well defined.
+        ids_r, _ = _remap_ids(ids)
+        zscored  = _zscore_rows(curves_for)
+        q = _cluster_quality_indices(zscored, ids_r)
         push!(sweep_results, Dict(
             "k"                 => k,
             "cost"              => cluster_cost,
