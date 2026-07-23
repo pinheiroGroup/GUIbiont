@@ -28,16 +28,17 @@ import { initBatchFitTab, loadBatchFitModels, loadBatchFitExperiments,
          onBatchExperimentChange, updateBatchWellCount,
          selectAllBatchWells, clearAllBatchWells,
          onBatchModeChange, onBatchFitMethodChange,
+         toggleBatchLogLinOptions, onBatchLogLinCompanionChange,
          selectAllBatchModels, clearAllBatchModels,
          runBatchFit, displayBatchResults, downloadBatchCSV,
-         downloadBatchFittedCurvesCSV } from './batch-fit.js';
+         downloadBatchFittedCurvesCSV } from './batch-fit.js?v=20260722-5';
 import { onFitResultsFileChange, onFeatureMatrixFileChange, updateMlRunBtn,
          runMlAnalysis, onCorrParamChange, onCorrZoomToggle, onMlLabelColChange,
          downloadMlResultsCSV } from './ml-analysis.js';
 import { openFitCodeExport, openBatchCodeExport, openClusterCodeExport,
          closeCodeExportModal, toggleCodeComments, downloadExportedCode } from './code-export.js';
 import { loadOptimizers, onFitOptimizerModeChange, onBatchFitOptimizerModeChange,
-         buildOptimizerPayload } from './optimizers.js';
+         buildOptimizerPayload } from './optimizers.js?v=20260722-5';
 import { setClusteringMode, populateClusteringExperiments,
          selectAllClusteringExperiments, clearAllClusteringExperiments,
          onClusteringFileChange, onClusterNormalizeChange, updateClusteringRunBtn, toggleClusteringAdvanced,
@@ -280,6 +281,7 @@ Object.assign(window, {
     onBatchExperimentChange, updateBatchWellCount,
     selectAllBatchWells, clearAllBatchWells,
     onBatchModeChange, onBatchFitMethodChange,
+    toggleBatchLogLinOptions, onBatchLogLinCompanionChange,
     selectAllBatchModels, clearAllBatchModels,
     runBatchFit, displayBatchResults, downloadBatchCSV, downloadBatchFittedCurvesCSV,
     // ML downstream analysis

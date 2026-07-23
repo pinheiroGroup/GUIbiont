@@ -295,11 +295,73 @@ function renderClusterBlankNotice(data) {
     const src = data.blank_source === 'derived' ? 'Derived' :
         data.blank_source === 'annotated+derived' ? 'Annotated and derived' : 'Annotated';
     const wells = (data.blank_wells_used || []).join(', ') || '—';
-    notice.textContent = `🧪 Blank subtraction applied — ${src} blank wells: ${wells}`;
-    notice.style.display = 'block';
+    const message = document.createElement('span');
+    message.className = 'cluster-blank-notice-text';
+    message.textContent = `🧪 Blank subtraction applied — ${src} blank wells: ${wells}`;
     const uncorrected = data.blank_uncorrected_experiments || [];
     if (uncorrected.length) {
-        notice.textContent += `; no same-experiment blank for: ${uncorrected.join(', ')}`;
+        message.textContent += `; no same-experiment blank for: ${uncorrected.join(', ')}`;
+    }
+
+    const downloadButton = document.createElement('button');
+    downloadButton.type = 'button';
+    downloadButton.className = 'cluster-annotated-download-btn';
+    downloadButton.textContent = 'Download annotated files';
+    downloadButton.title =
+        'Download the original data_channel_1.csv together with annotation_clean.csv marking the blank wells, ready for a Clean_data folder.';
+    downloadButton.addEventListener('click', () =>
+        downloadClusterAnnotatedFiles(downloadButton));
+
+    notice.replaceChildren(message, downloadButton);
+    notice.style.display = 'flex';
+}
+
+async function downloadClusterAnnotatedFiles(button) {
+    const data = state._lastClusterData;
+    const source = data?._annotatedExportSource;
+    if (!data?.blank_subtracted || !source) {
+        alert('Run clustering with blank subtraction before downloading annotated files.');
+        return;
+    }
+
+    const originalText = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Preparing…';
+    try {
+        const response = await fetch(`${API_BASE}/api/cluster/annotated-files`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                ...source,
+                blank_wells_used: data.blank_wells_used || [],
+            }),
+        });
+        if (!response.ok) {
+            let message = response.statusText;
+            try {
+                const errorBody = await response.json();
+                message = errorBody.error || message;
+            } catch (_) {}
+            throw new Error(message);
+        }
+
+        const blob = await response.blob();
+        const disposition = response.headers.get('Content-Disposition') || '';
+        const filenameMatch = disposition.match(/filename="?([^";]+)"?/i);
+        const filename = filenameMatch?.[1] || 'clustering_annotated_files.zip';
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+    } catch (error) {
+        alert(`Annotated-file download failed: ${error.message}`);
+    } finally {
+        button.disabled = false;
+        button.textContent = originalText;
     }
 }
 
@@ -451,6 +513,7 @@ async function runClustering() {
         return;
     }
     let sourceInfo    = {};
+    let annotatedExportSource = {};
     let body;
 
     if (state.currentClusteringMode === 'file') {
@@ -459,15 +522,22 @@ async function runClustering() {
         if (serverPath) {
             body = { csv_path: serverPath, k, normalize };
             sourceInfo = { csv_path: serverPath };
+            annotatedExportSource = {
+                csv_path: serverPath,
+                csv_name: serverPath.split(/[\\/]/).pop() || 'clustering_data.csv',
+            };
         } else if (file) {
-            body = { csv: await file.text(), k, normalize };
+            const csvText = await file.text();
+            body = { csv: csvText, k, normalize };
             sourceInfo = { csv_name: file.name };
+            annotatedExportSource = { csv: csvText, csv_name: file.name };
         } else return;
     } else {
         const selected = [...document.querySelectorAll('.clustering-exp-checkbox:checked')].map(c => c.value);
         if (!selected.length) return;
         body = { experiments: selected, k, normalize };
         sourceInfo = { experiments: selected };
+        annotatedExportSource = { experiments: selected };
     }
     const doInterpolate = state.currentClusteringMode === 'file' &&
         document.getElementById('cluster-interpolate').checked;
@@ -544,6 +614,7 @@ async function runClustering() {
             trend_test_flat:     useTrendTest,
             trend_p_thr:         parseFloat(document.getElementById('cluster-trend-p').value) || 0.05,
         };
+        data._annotatedExportSource = annotatedExportSource;
         state._lastClusterData = data;
         document.getElementById('cluster-export-btn').disabled = false;
         renderClusterGrid(data);

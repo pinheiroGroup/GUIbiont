@@ -187,6 +187,14 @@ Base.@kwdef mutable struct ClusterRequest
     trend_p_thr::Float64 = 0.05
 end
 
+Base.@kwdef mutable struct ClusterAnnotatedFilesRequest
+    experiments::Vector{String} = String[]
+    csv::String = ""
+    csv_path::String = ""
+    csv_name::String = "clustering_data.csv"
+    blank_wells_used::Vector{String} = String[]
+end
+
 Base.@kwdef mutable struct ClusterSweepRequest
     experiments::Vector{String} = String[]
     csv::String = ""
@@ -240,6 +248,7 @@ StructTypes.StructType(::Type{FitReplicateRequest}) = StructTypes.Mutable()
 StructTypes.StructType(::Type{BlankAnalysisRequest}) = StructTypes.Mutable()
 StructTypes.StructType(::Type{PlotDataRequest}) = StructTypes.Mutable()
 StructTypes.StructType(::Type{ClusterRequest}) = StructTypes.Mutable()
+StructTypes.StructType(::Type{ClusterAnnotatedFilesRequest}) = StructTypes.Mutable()
 StructTypes.StructType(::Type{ClusterSweepRequest}) = StructTypes.Mutable()
 StructTypes.StructType(::Type{ClusterCompareRequest}) = StructTypes.Mutable()
 StructTypes.StructType(::Type{BatchAverageRequest})   = StructTypes.Mutable()

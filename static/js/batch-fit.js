@@ -1,5 +1,5 @@
 import { state, API_BASE } from './state.js';
-import { buildOptimizerPayload } from './optimizers.js';
+import { buildOptimizerPayload } from './optimizers.js?v=20260722-5';
 
 // Models pre-checked in "compare" mode by default
 const DEFAULT_COMPARE_MODELS = new Set([
@@ -14,6 +14,8 @@ const DEFAULT_BATCH_FIT_ABSTOL = '1e-15';
 async function initBatchFitTab() {
     const abstolSelect = document.getElementById('batch-fit-abstol');
     if (abstolSelect) abstolSelect.value = DEFAULT_BATCH_FIT_ABSTOL;
+    onBatchFitMethodChange();
+    onBatchLogLinCompanionChange();
     await loadBatchFitModels();
     await loadBatchFitExperiments();
 }
@@ -66,19 +68,58 @@ function onBatchFitMethodChange() {
     const method = document.querySelector('input[name="batch-fit-method"]:checked').value;
     const isLoglin = method === 'loglin';
 
+    _placeBatchLogLinOptions(isLoglin);
+
     document.getElementById('batch-parametric-wrap').style.display = isLoglin ? 'none' : 'block';
     document.getElementById('batch-loglin-wrap').style.display     = isLoglin ? 'block' : 'none';
+    document.querySelectorAll('.batch-loglin-standalone-only').forEach(el => {
+        el.style.display = isLoglin ? 'flex' : 'none';
+    });
 
     // Hide optimizer/maxiters/tolerance — irrelevant for log-lin.
     const optRow = document.getElementById('batch-fit-optimizer-row');
     if (optRow) optRow.style.display = isLoglin ? 'none' : 'contents';
 
-    // Best-of-N panel is a sub-panel of the optimizer row; close it for log-lin.
+    // Best-of-N is irrelevant for log-lin. Restore its previous mode when the
+    // user switches back to parametric fitting.
     const bestPanel = document.getElementById('batch-fit-optimizer-best-panel');
-    if (bestPanel && isLoglin) bestPanel.style.display = 'none';
+    if (bestPanel) {
+        const bestSelected = document.getElementById('batch-fit-optimizer-mode')?.value === 'best';
+        bestPanel.style.display = !isLoglin && bestSelected ? '' : 'none';
+    }
 
     const btn = document.getElementById('batch-fit-run-btn');
     if (btn) btn.textContent = isLoglin ? '⚡ Run log-linear batch fit' : '⚡ Run Batch Fit';
+
+    const companionEnabled = document.getElementById('batch-fit-also-loglin')?.checked || false;
+    if (!isLoglin && !companionEnabled) {
+        document.getElementById('batch-loglin-options').style.display = 'none';
+    }
+}
+
+function toggleBatchLogLinOptions() {
+    const panel = document.getElementById('batch-loglin-options');
+    panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+}
+
+function _placeBatchLogLinOptions(isLoglin) {
+    const panel = document.getElementById('batch-loglin-options');
+    const anchorId = isLoglin
+        ? 'batch-loglin-options-standalone-anchor'
+        : 'batch-loglin-options-parametric-anchor';
+    const anchor = document.getElementById(anchorId);
+    if (panel.parentElement !== anchor) anchor.appendChild(panel);
+}
+
+function onBatchLogLinCompanionChange() {
+    const enabled = document.getElementById('batch-fit-also-loglin').checked;
+    _placeBatchLogLinOptions(false);
+    const optionsBtn = document.getElementById('batch-companion-loglin-options-btn');
+    optionsBtn.disabled = !enabled;
+    document.querySelectorAll('.batch-loglin-standalone-only').forEach(el => {
+        el.style.display = 'none';
+    });
+    document.getElementById('batch-loglin-options').style.display = enabled ? 'block' : 'none';
 }
 
 function selectAllBatchModels() {
@@ -163,8 +204,9 @@ function clearAllBatchWells() {
 // Run batch fit
 // ---------------------------------------------------------------------------
 
-// Read the four log-lin advanced parameters with safe defaults — used both
-// by the standalone log-lin endpoint and the parametric companion flag.
+// Read the log-lin parameters with safe defaults. The standalone batch
+// endpoint accepts the complete Kinbiont option set; the parametric companion
+// consumes the compatible subset below.
 function _readLoglinParams() {
     const intOr = (id, dflt) => {
         const v = parseInt(document.getElementById(id)?.value || '', 10);
@@ -175,10 +217,14 @@ function _readLoglinParams() {
         return Number.isFinite(v) ? v : dflt;
     };
     return {
+        type_of_smoothing:       document.getElementById('batch-loglin-smoothing')?.value || 'rolling_avg',
+        type_of_win:             document.getElementById('batch-loglin-win-type')?.value || 'maximum',
         pt_avg:                  intOr('batch-loglin-pt-avg', 7),
         pt_smoothing_derivative: intOr('batch-loglin-pt-deriv', 7),
         pt_min_size_of_win:      intOr('batch-loglin-pt-min-win', 7),
         threshold_of_exp:        Math.max(0, Math.min(1, fltOr('batch-loglin-thr-exp', 0.9))),
+        start_exp_win_thr:       Math.max(0, fltOr('batch-loglin-start-thr', 0.05)),
+        thr_lowess:              0.05,
     };
 }
 
@@ -631,6 +677,7 @@ export {
     onBatchExperimentChange, updateBatchWellCount,
     selectAllBatchWells, clearAllBatchWells,
     onBatchModeChange, onBatchFitMethodChange,
+    toggleBatchLogLinOptions, onBatchLogLinCompanionChange,
     selectAllBatchModels, clearAllBatchModels,
     runBatchFit, displayBatchResults, downloadBatchCSV, downloadBatchFittedCurvesCSV,
 };

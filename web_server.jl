@@ -1,4 +1,5 @@
 using HTTP, JSON3, CSV, DataFrames, Statistics
+using ZipFile
 using Kinbiont
 using OptimizationNLopt
 using Distributions: Normal, cdf

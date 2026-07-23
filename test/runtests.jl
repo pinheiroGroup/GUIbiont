@@ -4,6 +4,7 @@ using DataFrames
 using HTTP
 using JSON3
 using Statistics
+using ZipFile
 
 # Load the functions under test. The cleaning code was split into per-vendor
 # adapters under src/cleaning/; load the interface and the two adapters that

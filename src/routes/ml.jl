@@ -1,3 +1,145 @@
+function _cluster_download_component(name::AbstractString, fallback::AbstractString)
+    stem = splitext(basename(strip(String(name))))[1]
+    safe = replace(stem, r"[^A-Za-z0-9._-]+" => "_")
+    safe = strip(safe, ['.', '_'])
+    return isempty(safe) ? String(fallback) : safe
+end
+
+function _cluster_zip_add!(writer::ZipFile.Writer, path::AbstractString, bytes)
+    entry = ZipFile.addfile(writer, replace(String(path), '\\' => '/');
+                            method=ZipFile.Deflate)
+    write(entry, bytes)
+    return nothing
+end
+
+function _cluster_annotation_bytes(
+    data_labels::Vector{String},
+    blank_wells::Set{String};
+    annotation_path::Union{Nothing,String}=nothing,
+)
+    annotation = if annotation_path !== nothing && isfile(annotation_path)
+        CSV.read(annotation_path, DataFrame;
+                 header=false, silencewarnings=true, stringtype=String)
+    else
+        DataFrame(Column1=String[], Column2=String[])
+    end
+
+    if ncol(annotation) == 0
+        annotation = DataFrame(Column1=String[], Column2=String[])
+    elseif ncol(annotation) == 1
+        annotation[!, :Column2] = fill("", nrow(annotation))
+    end
+
+    existing = Set{String}()
+    for row in eachrow(annotation)
+        well = ismissing(row[1]) ? "" : string(row[1])
+        isempty(well) && continue
+        push!(existing, well)
+        if well in blank_wells
+            row[2] = "b"
+        end
+    end
+
+    for well in data_labels
+        well in existing && continue
+        values = Any[well, well in blank_wells ? "b" : "sample"]
+        append!(values, fill("", max(0, ncol(annotation) - 2)))
+        push!(annotation, values; promote=true)
+    end
+
+    io = IOBuffer()
+    CSV.write(io, annotation; writeheader=false)
+    return take!(io)
+end
+
+function _cluster_group_blank_wells(labels::Vector{String}, group::Union{Nothing,String})
+    wells = Set{String}()
+    for label in labels
+        parts = split(label, '/'; limit=2)
+        if length(parts) == 2
+            (group === nothing || parts[1] == group) && push!(wells, parts[2])
+        elseif group === nothing
+            push!(wells, label)
+        end
+    end
+    return wells
+end
+
+@post "/api/cluster/annotated-files" function(
+    req::HTTP.Request,
+    body::Json{ClusterAnnotatedFilesRequest},
+)
+    payload = body.payload
+    isempty(payload.blank_wells_used) &&
+        return json(Dict("error" => "No blank wells are available to annotate"); status=400)
+
+    zip_io = IOBuffer()
+    writer = ZipFile.Writer(zip_io)
+    try
+        if !isempty(payload.experiments)
+            for experiment in payload.experiments
+                normalized_experiment = normpath(experiment)
+                (normalized_experiment in (".", "..") ||
+                 basename(normalized_experiment) != normalized_experiment) &&
+                    error("Invalid experiment name: $experiment")
+                safe_experiment = _cluster_download_component(experiment, "experiment")
+                exp_dir = joinpath(CLEAN_DATA_PATH, experiment)
+                data_path = joinpath(exp_dir, "data_channel_1.csv")
+                isfile(data_path) || error("Missing data_channel_1.csv for $experiment")
+
+                data = CSV.read(data_path, DataFrame;
+                                silencewarnings=true, stringtype=String)
+                ncol(data) >= 2 || error("No well columns found for $experiment")
+                wells = String.(names(data)[2:end])
+                blank_wells = _cluster_group_blank_wells(
+                    payload.blank_wells_used, experiment)
+                annotation_path = joinpath(exp_dir, "annotation_clean.csv")
+                annotation_bytes = _cluster_annotation_bytes(
+                    wells, blank_wells; annotation_path=annotation_path)
+
+                root = joinpath("Clean_data", safe_experiment)
+                _cluster_zip_add!(writer, joinpath(root, "data_channel_1.csv"),
+                                  read(data_path))
+                _cluster_zip_add!(writer, joinpath(root, "annotation_clean.csv"),
+                                  annotation_bytes)
+            end
+        elseif !isempty(payload.csv) || !isempty(payload.csv_path)
+            source_bytes, source_name = if !isempty(payload.csv_path)
+                isfile(payload.csv_path) ||
+                    error("File not found: $(payload.csv_path)")
+                read(payload.csv_path), basename(payload.csv_path)
+            else
+                Vector{UInt8}(codeunits(payload.csv)), payload.csv_name
+            end
+            data = CSV.read(IOBuffer(source_bytes), DataFrame;
+                            silencewarnings=true, stringtype=String)
+            ncol(data) >= 2 || error("No series columns found in clustering CSV")
+            wells = String.(names(data)[2:end])
+            blank_wells = _cluster_group_blank_wells(
+                payload.blank_wells_used, nothing)
+            folder = _cluster_download_component(source_name, "clustering_data")
+            root = joinpath("Clean_data", folder)
+            _cluster_zip_add!(writer, joinpath(root, "data_channel_1.csv"),
+                              source_bytes)
+            _cluster_zip_add!(writer, joinpath(root, "annotation_clean.csv"),
+                              _cluster_annotation_bytes(wells, blank_wells))
+        else
+            error("No clustering source was provided")
+        end
+    catch error_value
+        close(writer)
+        return json(Dict("error" => sprint(showerror, error_value)); status=400)
+    end
+    close(writer)
+
+    return HTTP.Response(200, [
+        "Content-Type" => "application/zip",
+        "Content-Disposition" =>
+            "attachment; filename=\"clustering_annotated_files.zip\"",
+        "Cache-Control" => "no-store",
+    ], take!(zip_io))
+end
+
 @post "/api/cluster" function(req::HTTP.Request, body::Json{ClusterRequest})
     body = body.payload
     k_input        = Int(body.k)

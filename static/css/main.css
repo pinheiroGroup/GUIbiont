@@ -223,6 +223,46 @@
             white-space: nowrap;
         }
 
+        .cluster-blank-notice {
+            display: none;
+            align-items: center;
+            gap: 10px;
+            max-width: 100%;
+            padding: 7px 10px 7px 12px;
+            border: 1px solid #4a90e2;
+            border-radius: 6px;
+            background: rgba(74, 144, 226, 0.1);
+            color: #2c5f8a;
+            font-size: 0.875em;
+        }
+
+        .cluster-blank-notice-text {
+            min-width: 0;
+            overflow-wrap: anywhere;
+        }
+
+        .cluster-annotated-download-btn {
+            flex: 0 0 auto;
+            padding: 5px 9px;
+            border: 1px solid rgba(44, 95, 138, 0.35);
+            border-radius: 5px;
+            background: #fff;
+            color: #2c5f8a;
+            font: inherit;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .cluster-annotated-download-btn:hover:not(:disabled) {
+            background: #eaf3fb;
+        }
+
+        .cluster-annotated-download-btn:disabled {
+            cursor: wait;
+            opacity: 0.65;
+        }
+
         .cluster-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
@@ -1422,6 +1462,11 @@
             flex-wrap: wrap;
         }
 
+        .fitting-controls > .btn {
+            align-self: stretch;
+            margin: 0;
+        }
+
         .fitting-selectors {
             display: flex;
             gap: 10px;
@@ -1503,6 +1548,622 @@
             flex: 1;
             font-size: 14px;
             padding: 8px 12px;
+        }
+
+        /* Compact, stable settings layouts shared by Fit, Batch Fit and Clustering. */
+        .fit-settings-panel {
+            margin-top: 10px;
+            padding: 11px 12px;
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            font-size: 0.9em;
+        }
+
+        .fit-parameter-grid {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: flex-end;
+            gap: 10px 14px;
+            font-size: 0.92em;
+        }
+
+        .fit-parameter-grid > div {
+            flex: 0 0 auto;
+            min-width: 0;
+        }
+
+        .fit-parameter-grid select,
+        .fit-parameter-grid input,
+        .fit-control-row select,
+        .fit-control-row input,
+        .fit-control-strip select,
+        .fit-control-strip input,
+        .batch-loglin-parameter-grid input,
+        .batch-loglin-parameter-grid select {
+            box-sizing: border-box;
+            border: 1px solid #ced4da;
+            border-radius: 5px;
+            background: #fff;
+            color: #495057;
+        }
+
+        #loglin-smoothing,
+        #batch-loglin-smoothing { width: 118px; }
+        #loglin-win-type,
+        #batch-loglin-win-type { width: 166px; }
+        #loglin-pt-avg,
+        #loglin-pt-deriv,
+        #loglin-pt-min-win,
+        #batch-loglin-pt-avg,
+        #batch-loglin-pt-deriv,
+        #batch-loglin-pt-min-win { width: 66px; }
+        #loglin-thr-exp,
+        #loglin-start-thr,
+        #batch-loglin-thr-exp,
+        #batch-loglin-start-thr { width: 78px; }
+
+        .fit-control-row {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .fit-control-row label {
+            font-weight: 500;
+            color: #495057;
+        }
+
+        .fitting-container .fit-control-row label,
+        .fitting-container .fit-control-strip label,
+        .fitting-container .fit-choice-row label,
+        .fitting-container .fit-parameter-grid label,
+        .fitting-container .model-selector-row label {
+            margin: 0;
+            font-size: inherit;
+        }
+
+        #fit-optimizer-mode,
+        #batch-fit-optimizer-mode { width: 105px; }
+
+        #fit-optimizer,
+        #batch-fit-optimizer { width: 190px; }
+
+        #fit-abstol,
+        #batch-fit-abstol { width: 86px; }
+
+        #fit-blank-method,
+        #batch-fit-blank-method { width: 150px; }
+
+        #fit-maxiters,
+        #batch-fit-maxiters { width: 96px; }
+
+        #batch-fit-skip-flat { width: 76px; }
+
+        .fit-control-strip {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px 10px;
+            margin-top: 8px;
+            padding: 8px 10px;
+            border: 1px solid #e4e8ec;
+            border-radius: 7px;
+            background: #fff;
+            font-size: 0.9em;
+        }
+
+        .fit-window-control {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            height: 28px;
+            white-space: nowrap;
+            line-height: normal;
+        }
+
+        .fit-window-control label,
+        .fit-window-unit {
+            display: inline-flex;
+            align-items: center;
+            height: 28px;
+            min-height: 28px;
+            line-height: 28px;
+        }
+
+        .fit-window-control label {
+            margin: 0;
+        }
+
+        .fit-window-control input[type="number"] {
+            flex: 0 0 56px;
+            width: 56px;
+            min-width: 56px;
+            max-width: 56px;
+            height: 28px;
+            padding: 2px 6px;
+            font: inherit;
+            line-height: normal;
+        }
+
+        .fit-window-unit {
+            color: #6c757d;
+        }
+
+        .optimizer-choice {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            margin-right: 10px;
+            cursor: pointer;
+        }
+
+        .fit-control-strip--muted {
+            color: #6c757d;
+            background: #fbfcfd;
+        }
+
+        .fit-control-strip input[type="text"] {
+            width: min(280px, 100%);
+            min-width: 180px;
+        }
+
+        .fit-settings-panel select:focus,
+        .fit-settings-panel input:focus,
+        .fit-control-strip select:focus,
+        .fit-control-strip input:focus,
+        .cluster-settings-card select:focus,
+        .cluster-settings-card input:focus {
+            outline: none;
+            border-color: #4facfe;
+            box-shadow: 0 0 0 2px rgba(79, 172, 254, 0.12);
+        }
+
+        .fit-settings-panel input:disabled,
+        .fit-control-strip input:disabled,
+        .cluster-settings-card input:disabled,
+        .cluster-settings-card select:disabled {
+            background: #eef1f3;
+            color: #868e96;
+            cursor: not-allowed;
+        }
+
+        .fit-choice-row {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px 18px;
+            margin-bottom: 10px;
+            padding: 7px 10px;
+            border-radius: 7px;
+            background: #f8f9fa;
+        }
+
+        .batch-loglin-companion-control {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 6px 8px;
+            margin-left: auto;
+        }
+
+        .batch-loglin-companion-control > label {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin: 0;
+            cursor: pointer;
+            font-size: 0.9em;
+        }
+
+        .batch-loglin-options-btn {
+            padding: 4px 10px;
+            font-size: 0.85em;
+            margin: 0;
+        }
+
+        #batch-loglin-options {
+            margin-bottom: 10px;
+        }
+
+        .batch-loglin-parameter-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+            gap: 10px 18px;
+            margin-top: 8px;
+            padding: 10px;
+            background: #f8f9fa;
+            border: 1px solid #e4e8ec;
+            border-radius: 7px;
+        }
+
+        .batch-loglin-settings {
+            font-size: 0.88em;
+        }
+
+        .batch-loglin-parameter-grid select {
+            align-self: flex-start;
+            width: 166px;
+            max-width: 100%;
+            padding: 3px 6px;
+            font: inherit;
+        }
+
+        .batch-loglin-parameter-grid input[type="number"] {
+            align-self: flex-start;
+            width: 88px;
+            max-width: 88px;
+            padding: 3px 6px;
+            font: inherit;
+        }
+
+        .cluster-advanced-panel {
+            margin-top: 12px;
+            padding: 14px;
+            border: 1px solid #dfe4e8;
+            border-radius: 10px;
+            background: #f5f7f9;
+            font-size: 0.925em;
+        }
+
+        .cluster-advanced-panel label,
+        .cluster-advanced-panel input,
+        .cluster-advanced-panel select,
+        .cluster-advanced-panel button {
+            font-size: 0.94em !important;
+        }
+
+        .cluster-advanced-panel p,
+        .cluster-advanced-panel #batch-avg-status {
+            font-size: 0.9em !important;
+        }
+
+        .cluster-advanced-panel .settings-card-title {
+            font-size: 1em;
+        }
+
+        .cluster-advanced-grid {
+            display: grid;
+            grid-template-columns: repeat(12, minmax(0, 1fr));
+            gap: 12px;
+            align-items: flex-start;
+        }
+
+        .cluster-settings-card {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            min-width: 0;
+            padding: 12px;
+            border: 1px solid #dee3e7;
+            border-radius: 8px;
+            background: #fff;
+            box-shadow: 0 1px 2px rgba(33, 37, 41, 0.04);
+        }
+
+        .cluster-card-smoothing {
+            grid-column: span 3;
+        }
+
+        .cluster-card-algorithm {
+            grid-column: span 5;
+        }
+
+        .cluster-algorithm-body {
+            display: grid;
+            grid-template-columns: minmax(120px, 0.75fr) minmax(225px, 1.25fr);
+            gap: 8px 12px;
+            align-items: end;
+        }
+
+        .cluster-algorithm-body > .settings-field:first-child {
+            grid-column: 1;
+        }
+
+        .cluster-algorithm-body > #cluster-hclust-params,
+        .cluster-algorithm-body > #cluster-dbscan-params,
+        .cluster-algorithm-body > #cluster-iter-params {
+            grid-column: 2;
+        }
+
+        .cluster-card-algorithm #cluster-iter-params {
+            gap: 5px 8px;
+            margin-top: 0;
+            padding-top: 0;
+            border-top: 0;
+        }
+
+        .cluster-card-algorithm #cluster-iter-params input[type="number"] {
+            width: 76px !important;
+        }
+
+        .cluster-card-algorithm .cluster-subsection-title {
+            margin-bottom: 0;
+        }
+
+        .cluster-card-blank {
+            grid-column: span 4;
+        }
+
+        .cluster-card-interpolation {
+            grid-column: span 3;
+        }
+
+        .cluster-card-replicates {
+            grid-column: span 9;
+        }
+
+        .cluster-replicate-controls {
+            display: grid;
+            grid-template-columns: minmax(310px, 0.8fr) minmax(330px, 1.45fr);
+            gap: 10px 14px;
+            align-items: center;
+        }
+
+        .cluster-replicate-controls > * {
+            min-width: 0;
+        }
+
+        .cluster-replicate-controls > input[type="file"] {
+            width: 100%;
+        }
+
+        .cluster-replicate-controls .btn {
+            margin: 0;
+            white-space: nowrap;
+        }
+
+        .cluster-replicate-controls > :nth-child(1),
+        .cluster-replicate-controls > :nth-child(3) {
+            grid-column: 1;
+        }
+
+        .cluster-replicate-controls > :nth-child(2),
+        .cluster-replicate-controls > :nth-child(4) {
+            grid-column: 2;
+        }
+
+        .settings-card-title {
+            padding-bottom: 6px;
+            border-bottom: 1px solid #edf0f2;
+            color: #343a40;
+            font-size: 0.95em;
+            font-weight: 650;
+        }
+
+        .cluster-card-fields {
+            display: grid;
+            grid-template-columns: minmax(112px, 0.9fr) minmax(142px, 1.1fr);
+            align-items: end;
+            gap: 12px;
+        }
+
+        .cluster-smoothing-param-slot {
+            min-width: 0;
+            min-height: 50px;
+        }
+
+        .settings-field {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            min-width: 0;
+        }
+
+        .settings-field label,
+        .cluster-settings-card > label {
+            color: #495057;
+            font-size: 0.9em;
+        }
+
+        .settings-field select,
+        .settings-field input,
+        .cluster-settings-card select,
+        .cluster-settings-card input[type="number"],
+        .cluster-settings-card input[type="text"] {
+            box-sizing: border-box;
+            max-width: 100%;
+            padding: 5px 7px;
+            border: 1px solid #ced4da;
+            border-radius: 5px;
+            background: #fff;
+            color: #495057;
+        }
+
+        .settings-field select,
+        .cluster-settings-card > select {
+            width: 100%;
+        }
+
+        .settings-field input[type="number"],
+        .cluster-settings-card input[type="number"] {
+            width: 84px;
+        }
+
+        .cluster-inline-fields {
+            flex-direction: row;
+            flex-wrap: wrap;
+            align-items: flex-end;
+            gap: 10px 12px;
+        }
+
+        .cluster-inline-fields > div {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .cluster-inline-fields > .settings-card-title {
+            flex: 0 0 100%;
+            width: 100%;
+        }
+
+        .cluster-settings-card--wide {
+            min-width: 0;
+        }
+
+        .cluster-card-subsection {
+            margin-top: 4px;
+            padding-top: 12px;
+            border-top: 1px solid rgba(108, 117, 125, 0.18);
+        }
+
+        .cluster-inline-fields > .cluster-subsection-title {
+            flex: 0 0 100%;
+            width: 100%;
+            color: #495057;
+            font-size: 0.94em;
+            font-weight: 600;
+        }
+
+        .cluster-non-growing-card {
+            grid-column: 1 / -1;
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            column-gap: 18px;
+            gap: 0;
+        }
+
+        .cluster-non-growing-card > .settings-card-title {
+            grid-column: 1 / -1;
+        }
+
+        .cluster-detection-section {
+            display: grid;
+            gap: 7px;
+            padding: 10px 0 2px;
+        }
+
+        .cluster-detection-section:first-of-type {
+            padding-right: 18px;
+        }
+
+        .cluster-detection-section + .cluster-detection-section {
+            margin-top: 0;
+            padding-top: 10px;
+            padding-left: 18px;
+            border-top: 0;
+            border-left: 1px solid rgba(108, 117, 125, 0.22);
+        }
+
+        .cluster-detection-heading {
+            color: #495057;
+            font-size: 0.96em;
+            font-weight: 600;
+        }
+
+        .cluster-detection-section p {
+            margin: 0;
+            color: #6c757d;
+            font-size: 0.9em;
+            line-height: 1.45;
+        }
+
+        .cluster-detection-controls {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 7px 9px;
+            min-height: 30px;
+            font-size: 0.92em;
+        }
+
+        .cluster-detection-controls label {
+            white-space: nowrap;
+        }
+
+        .cluster-enable-control {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            margin-right: 4px;
+            cursor: pointer;
+        }
+
+        .cluster-detection-controls input[type="number"] {
+            width: 70px;
+            padding: 4px 6px;
+            border: 1px solid #ced4da;
+            border-radius: 5px;
+            background: #fff;
+            color: #495057;
+            font: inherit;
+        }
+
+        @media (max-width: 1100px) {
+            .cluster-advanced-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .cluster-card-smoothing,
+            .cluster-card-algorithm,
+            .cluster-card-blank,
+            .cluster-card-interpolation {
+                grid-column: span 1;
+            }
+
+            .cluster-card-replicates,
+            .cluster-non-growing-card {
+                grid-column: 1 / -1;
+            }
+
+            .cluster-replicate-controls {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .cluster-non-growing-card {
+                grid-template-columns: 1fr;
+            }
+
+            .cluster-detection-section + .cluster-detection-section {
+                margin-top: 10px;
+                padding-top: 14px;
+                padding-left: 0;
+                border-top: 1px solid rgba(108, 117, 125, 0.22);
+                border-left: 0;
+            }
+
+            .cluster-detection-section:first-of-type {
+                padding-right: 0;
+            }
+        }
+
+        @media (max-width: 780px) {
+            .cluster-advanced-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .cluster-advanced-grid > .cluster-settings-card {
+                grid-column: 1;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .cluster-card-fields {
+                grid-template-columns: 1fr;
+            }
+
+            .cluster-algorithm-body,
+            .cluster-replicate-controls {
+                grid-template-columns: 1fr;
+            }
+
+            .cluster-algorithm-body > .settings-field:first-child,
+            .cluster-algorithm-body > #cluster-hclust-params,
+            .cluster-algorithm-body > #cluster-dbscan-params,
+            .cluster-algorithm-body > #cluster-iter-params {
+                grid-column: 1;
+            }
+
+            .cluster-replicate-controls > * {
+                grid-column: 1 !important;
+            }
+
+            .fit-control-strip input[type="text"] {
+                min-width: 0;
+                width: 100%;
+            }
         }
 
         .model-info-card {
