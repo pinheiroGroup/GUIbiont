@@ -223,7 +223,7 @@ const WELL_SELECTIONS = ${selectionsLiteral}
 replicate_times = Vector{Vector{Float64}}()
 replicate_curves = Vector{Vector{Float64}}()
 for selection in WELL_SELECTIONS
-    source = load_gui_experiment_data(
+    source = load_experiment_data(
         CLEAN_DATA_PATH,
         selection.experiment;
         channel=selection.channel,
@@ -245,7 +245,7 @@ valid = findall(.!isnan.(avg_curve))
 length(valid) >= 10 || error("Not enough valid replicate-average measurements")
 data = GrowthData(reshape(avg_curve[valid], 1, :), avg_time[valid], [FIT_LABEL])`
         : `# Load the original experiment and recompute its annotated blank summary.
-source = load_gui_experiment_data(CLEAN_DATA_PATH, EXPERIMENT)
+source = load_experiment_data(CLEAN_DATA_PATH, EXPERIMENT)
 idx = findfirst(==(WELL), source.data.labels)
 idx === nothing && error("Well $(WELL) not found in $(EXPERIMENT)")
 data = GrowthData(reshape(vec(source.data.curves[idx, :]), 1, :),
@@ -372,7 +372,7 @@ const EXPERIMENT = ${juliaString(experiment)}
 const OUT_PREFIX = ${juliaString(outPrefix)}
 const WELLS = ${juliaStringArray(wells)}
 
-source = load_gui_experiment_data(CLEAN_DATA_PATH, EXPERIMENT)
+source = load_experiment_data(CLEAN_DATA_PATH, EXPERIMENT)
 data = source.data
 batch = kinbiont_batch_fit(
     data;
@@ -381,7 +381,7 @@ batch = kinbiont_batch_fit(
 ${batchKeywords}
 )
 
-paths = save_gui_batch_results(batch, "."; prefix=OUT_PREFIX)
+paths = save_batch_results(batch, "."; prefix=OUT_PREFIX)
 println("Saved ", paths.summary)
 println("Saved ", paths.fitted_curves)
 println("Fitted: ", length(batch.results), "  skipped: ", length(batch.skipped), "  failed: ", length(batch.errors))
@@ -446,7 +446,7 @@ const EXPERIMENT = ${juliaString(experiment)}
 const OUT_PREFIX = ${juliaString(outPrefix)}
 const WELLS = ${juliaStringArray(wells)}
 
-source = load_gui_experiment_data(CLEAN_DATA_PATH, EXPERIMENT)
+source = load_experiment_data(CLEAN_DATA_PATH, EXPERIMENT)
 data = source.data
 batch = kinbiont_batch_loglin(
     data;
@@ -455,7 +455,7 @@ batch = kinbiont_batch_loglin(
 ${loglinKeywords}
 )
 
-paths = save_gui_batch_loglin_results(batch, "."; prefix=OUT_PREFIX)
+paths = save_batch_loglin_results(batch, "."; prefix=OUT_PREFIX)
 println("Saved ", paths.summary)
 println("Fitted: ", length(batch.results), "  skipped: ", length(batch.skipped), "  failed: ", length(batch.errors))
 `;
