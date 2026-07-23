@@ -280,6 +280,8 @@
         cluster_hclust_linkage     = Symbol(hclust_linkage),
         cluster_dbscan_eps         = Float64(dbscan_eps),
         cluster_dbscan_minpts      = Int(dbscan_minpts),
+        kmeans_seed                = 42,
+        kmedoids_seed              = 42,
         kmeans_n_init              = kmeans_n_init,
         kmeans_max_iters           = maxiter,
         kmeans_tol                 = tol,
@@ -370,6 +372,8 @@
         "time_normalized"  => time_normalized,
         "clusters"         => clusters,
         "cluster_method"   => cluster_method,
+        "wcss"             => something(gd_clustered.wcss, 0.0),
+        "cost_metric"      => "wcss",
         "smooth_method"    => string(smooth_method),
         "quality"          => quality,
         "assignments"      => cluster_ids,
@@ -612,6 +616,8 @@ end
             cluster_q_low              = prescreen_qlo,
             cluster_q_high             = prescreen_qhi,
             cluster_hclust_linkage     = hclust_linkage,
+            kmeans_seed                = 42,
+            kmedoids_seed              = 42,
             kmeans_n_init              = kmeans_n_init,
             kmeans_max_iters           = maxiter,
             kmeans_tol                 = tol,
@@ -624,14 +630,14 @@ end
         end
         ids   = gd_result.clusters
         cluster_cost = something(gd_result.wcss, 0.0)
-        cost_metric = cluster_method == "kmedoids" ? "distance_to_medoid" : "wcss"
+        cost_metric = "wcss"
 
         # At k=1 every quality index is undefined (silhouette, Dunn, Davies-Bouldin,
         # Calinski-Harabasz and Xie-Beni all need ≥ 2 clusters). Skip the call so
         # we don't pay for the n×n pairwise-distance allocation that
         # `_cluster_quality_indices` does internally before short-circuiting.
-        # The method-specific clustering cost is still emitted as the k=1
-        # baseline used by the elbow diagnostic.
+        # The method-independent WCSS is still emitted as the k=1 baseline
+        # used by the elbow diagnostic.
         q = if k < 2
             Dict{String,Any}(
                 "silhouette_mean"   => nothing,
@@ -658,7 +664,7 @@ end
         ))
     end
 
-    cost_metric = cluster_method == "kmedoids" ? "distance_to_medoid" : "wcss"
+    cost_metric = "wcss"
     return sanitize_for_json(Dict(
         "sweep" => sweep_results,
         "cost_metric" => cost_metric,

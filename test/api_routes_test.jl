@@ -208,6 +208,19 @@ end
 # POST /api/cluster
 # ---------------------------------------------------------------------------
 
+function _response_centroid_wcss(body)
+    total = 0.0
+    for cluster in body[:clusters]
+        Int(cluster[:id]) == 0 && continue
+        Bool(cluster[:is_non_growing]) && continue
+        centroid = Float64.(cluster[:centroid_normalized])
+        for curve in cluster[:series_data_normalized]
+            total += sum((Float64.(curve) .- centroid) .^ 2)
+        end
+    end
+    return total
+end
+
 @testset "POST /api/cluster — via CSV, k=2" begin
     status, body = post_json("/api/cluster", Dict("csv" => CLUSTER_CSV, "k" => 2))
     @test status == 200
@@ -216,6 +229,10 @@ end
     @test haskey(body, :assignments)
     @test haskey(body, :series_labels)
     @test haskey(body, :quality)
+    @test haskey(body, :wcss)
+    @test Float64(body[:wcss]) >= 0
+    @test string(body[:cost_metric]) == "wcss"
+    @test Float64(body[:wcss]) ≈ _response_centroid_wcss(body)
     @test length(body[:clusters]) == 2
     for c in body[:clusters]
         @test haskey(c, :id)
@@ -264,6 +281,9 @@ end
                                   "cluster_method" => "kmedoids"))
     @test status == 200
     @test string(body[:cluster_method]) == "kmedoids"
+    @test string(body[:cost_metric]) == "wcss"
+    @test Float64(body[:wcss]) >= 0
+    @test Float64(body[:wcss]) ≈ _response_centroid_wcss(body)
     @test length(body[:clusters]) == 2
 end
 
@@ -272,7 +292,54 @@ end
                              Dict("csv" => CLUSTER_CSV, "k" => 2,
                                   "cluster_method" => "hclust"))
     @test status == 200
+    @test string(body[:cost_metric]) == "wcss"
+    @test Float64(body[:wcss]) >= 0
+    @test Float64(body[:wcss]) ≈ _response_centroid_wcss(body)
     @test length(body[:clusters]) == 2
+end
+
+@testset "POST /api/cluster — DBSCAN reports centroid WCSS" begin
+    status, body = post_json("/api/cluster",
+                             Dict("csv" => CLUSTER_CSV,
+                                  "cluster_method" => "dbscan",
+                                  "dbscan_eps" => 2.0,
+                                  "dbscan_min_pts" => 2,
+                                  "smooth_method" => "none",
+                                  "trend_test_flat" => false))
+    @test status == 200
+    @test string(body[:cluster_method]) == "dbscan"
+    @test string(body[:cost_metric]) == "wcss"
+    @test Float64(body[:wcss]) >= 0
+    @test Float64(body[:wcss]) ≈ _response_centroid_wcss(body)
+end
+
+@testset "Clustering export uses the same WCSS contract" begin
+    export_source = read(joinpath(@__DIR__, "..", "static", "js", "code-export.js"), String)
+    @test occursin("const costLabel = 'WCSS';", export_source)
+    @test occursin("['kmeans_seed', clusterMethod === 'kmeans' ? '42' : null]", export_source)
+    @test occursin("['kmedoids_seed', clusterMethod === 'kmedoids' ? '42' : null]", export_source)
+    @test occursin("prepare_clustering_data(", export_source)
+    @test occursin("println(\"\${costLabel}: \", processed.wcss)", export_source)
+    @test occursin("excludes the", export_source)
+    @test occursin("non-growing sentinel and DBSCAN noise", export_source)
+    @test !occursin("GUIBIONT_WCSS", export_source)
+    @test !occursin("clustering_input_curves", export_source)
+    @test !occursin("isapprox(processed.wcss", export_source)
+    @test !occursin("Distance-to-medoid", export_source)
+end
+
+@testset "Code exporters rebuild workflows from local source paths" begin
+    export_source = read(joinpath(@__DIR__, "..", "static", "js", "code-export.js"), String)
+    @test occursin("const CLEAN_DATA_PATH = \"path/to/Clean_data\"", export_source)
+    @test length(findall("load_experiment_data(", export_source)) >= 4
+    @test occursin("kinbiont_batch_fit(", export_source)
+    @test occursin("kinbiont_batch_loglin(", export_source)
+    @test occursin("prepare_clustering_data(", export_source)
+    @test !occursin("fitData.experimental_time", export_source)
+    @test !occursin("fitData.experimental_od", export_source)
+    @test !occursin("fitData.initial_parameters", export_source)
+    @test !occursin("batchData.results", export_source)
+    @test !occursin("GUIBIONT_WCSS", export_source)
 end
 
 @testset "POST /api/cluster — unknown cluster_method returns 400" begin
@@ -339,15 +406,15 @@ end
     @test !isempty(body[:sweep])
 end
 
-@testset "POST /api/cluster-sweep - reports distance-to-medoid cost" begin
+@testset "POST /api/cluster-sweep - reports centroid WCSS for k-medoids" begin
     status, body = post_json("/api/cluster-sweep",
                              Dict("csv" => CLUSTER_CSV, "k_max" => 4,
                                   "smooth_method" => "none",
                                   "cluster_method" => "kmedoids"))
     @test status == 200
-    @test string(body[:cost_metric]) == "distance_to_medoid"
+    @test string(body[:cost_metric]) == "wcss"
     @test !isempty(body[:sweep])
-    @test all(r -> string(r[:cost_metric]) == "distance_to_medoid", body[:sweep])
+    @test all(r -> string(r[:cost_metric]) == "wcss", body[:sweep])
     @test all(r -> Float64(r[:cost]) == Float64(r[:wcss]), body[:sweep])
 end
 

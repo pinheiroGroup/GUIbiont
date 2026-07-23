@@ -12,10 +12,29 @@ function stripComments(code) {
         .trim();
 }
 
-function juliaFloatLiteral(value) {
-    const n = Number(value);
-    if (!Number.isFinite(n)) return '0.0';
+// JavaScript serialises an integral Number such as 2.0 as "2". That is not
+// interchangeable with Float64 for type-annotated Julia keyword arguments.
+function juliaFloat(value, fallback = 0.0) {
+    const parsed = Number(value);
+    const n = Number.isFinite(parsed) ? parsed : Number(fallback);
+    if (!Number.isFinite(n)) throw new Error(`Cannot export non-finite Julia Float64: ${value}`);
     return Number.isInteger(n) ? `${n}.0` : String(n);
+}
+
+function juliaString(value) {
+    return JSON.stringify(String(value));
+}
+
+function juliaStringArray(values) {
+    const items = Array.isArray(values) ? values : [];
+    return `String[${items.map(juliaString).join(', ')}]`;
+}
+
+function juliaKeywordLines(entries) {
+    return entries
+        .filter(([, literal]) => literal !== null && literal !== undefined)
+        .map(([name, literal]) => `    ${name}=${literal},`)
+        .join('\n');
 }
 
 // ---------------------------------------------------------------------------
@@ -121,161 +140,156 @@ export function openClusterCodeExport() {
 // ---------------------------------------------------------------------------
 
 export function generateFitCode(fitData, withComments) {
-    const req        = fitData._request || {};
-    const well       = req.well        || fitData.well  || 'B2';
-    const model      = req.model_name  || fitData.model || 'aHPM';
+    const req = fitData._request || {};
+    const experiment = req.experiment || 'experiment';
+    const well = req.well || 'B2';
+    const fitLabel = req.label || well;
+    const model = req.model_name || 'aHPM';
+    const modelNames = Array.isArray(req.model_names) ? req.model_names : [];
     const isReplicate = Array.isArray(req.well_selections);
-    const blankSub   = fitData.blank_applied ?? (isReplicate
-        ? (fitData.blank_subtraction ?? false)
-        : (req.blank_subtraction ?? fitData.blank_subtraction ?? false));
-    const blankMethod= req.blank_method      ?? fitData.blank_method      ?? 'pointbypoint';
-    const blankValue = typeof fitData.blank_value === 'number' ? fitData.blank_value : 0.0;
-    const blankTimeseries = Array.isArray(fitData.blank_timeseries)
-        ? fitData.blank_timeseries.map(value => {
-            const numeric = Number(value);
-            return Number.isFinite(numeric) ? numeric : 0.0;
-        })
-        : [];
-    // Same defaults the form uses (see fitting.js buildFitOptionsPayload).
-    // Without these the optimizer falls back to Kinbiont's defaults which
-    // terminate earlier than the GUI does and land on a worse minimum.
-    const maxiters = req.maxiters ?? fitData.maxiters ?? 100000;
-    const abstol   = req.abstol   ?? fitData.abstol   ?? 1e-15;
-    const smooth = req.smooth ?? fitData.preprocessing?.smooth ?? false;
-    const smoothWindow = req.smooth_window ?? fitData.preprocessing?.smooth_window ?? 3;
+    const blankSub = isReplicate ? false : (req.blank_subtraction ?? false);
+    const blankMethod = req.blank_method ?? 'pointbypoint';
+    const maxiters = req.maxiters ?? 100000;
+    const abstol = req.abstol ?? 1e-15;
+    const smooth = req.smooth ?? false;
+    const smoothWindow = req.smooth_window ?? 3;
     const computeLoglin = !!req.compute_loglin;
     const llPtAvg = req.loglin_pt_avg ?? 7;
     const llPtDeriv = req.loglin_pt_smoothing_derivative ?? 7;
     const llPtMinWin = req.loglin_pt_min_size_of_win ?? 7;
     const llThreshold = req.loglin_threshold_of_exp ?? 0.9;
-    const optParams = abstol > 0
-        ? `(maxiters = ${maxiters}, abstol = ${abstol})`
-        : `(maxiters = ${maxiters},)`;
-    const blankLiteral = `Float64[${blankTimeseries.map(juliaFloatLiteral).join(', ')}]`;
-    const exportedBlankMethod = ['pointbypoint', 'shift', 'clip'].includes(blankMethod)
-        ? blankMethod
-        : 'global';
-    const blankLines = `    blank_subtraction               = ${blankSub},
-    blank_method                    = :${exportedBlankMethod},
-    blank_value                     = ${juliaFloatLiteral(blankValue)},
-    blank_timeseries                = ${blankLiteral},
-    blank_floor                     = 1e-4,
-    # Without blank subtraction GUIbiont floors raw OD to 0.01.
-    correct_negatives               = ${!blankSub},
-    negative_method                 = :thr_correction,
-    negative_threshold              = 0.01,`;
-    const experimentalTime = Array.isArray(fitData.experimental_time) ? fitData.experimental_time : [];
-    const experimentalOd = Array.isArray(fitData.experimental_od) ? fitData.experimental_od : [];
-    const hasEmbeddedCurve = experimentalTime.length > 0 && experimentalTime.length === experimentalOd.length;
-    const dataBlock = hasEmbeddedCurve
-        ? `# Exact experimental input retained by GUIbiont for this fit.
-fit_times = Float64[${experimentalTime.map(juliaFloatLiteral).join(', ')}]
-fit_od = Float64[${experimentalOd.map(juliaFloatLiteral).join(', ')}]
-data_well = GrowthData(reshape(fit_od, 1, :), fit_times, [${JSON.stringify(well)}])`
-        : `# CSV format: first column = time points, remaining columns = wells.
-data = GrowthData("your_data.csv")
-data_well = data[[${JSON.stringify(well)}]]`;
+    const optimizer = req.optimizer || 'LN_COBYLA';
+    const detOpts = Array.isArray(req.deterministic_optimizers) ? req.deterministic_optimizers : [];
+    const stoOpts = Array.isArray(req.stochastic_optimizers) ? req.stochastic_optimizers : [];
+    const stochasticRuns = req.stochastic_runs ?? 3;
+    const selections = isReplicate ? req.well_selections : [];
+    const selectionsLiteral = `[${selections.map(sel =>
+        `(experiment=${juliaString(sel.experiment)}, ` +
+        `well=${juliaString(sel.well)}, channel=${Number(sel.channel) || 1})`
+    ).join(', ')}]`;
+    const targetConstant = isReplicate
+        ? `const FIT_LABEL = ${juliaString(fitLabel)}`
+        : `const WELL = ${juliaString(well)}`;
+    const bestOfOptimizers = detOpts.length > 0 || stoOpts.length > 0;
+    const modelKeywords = modelNames.length > 0
+        ? [['model_names', juliaStringArray(modelNames)]]
+        : [['model_name', juliaString(model)]];
+    const optimizerKeywords = bestOfOptimizers
+        ? [
+            ['deterministic_optimizers', detOpts.length ? juliaStringArray(detOpts) : null],
+            ['stochastic_optimizers', stoOpts.length ? juliaStringArray(stoOpts) : null],
+            ['stochastic_runs', stoOpts.length ? String(stochasticRuns) : null],
+            ['optimizer_seed', stoOpts.length ? '42' : null],
+        ]
+        : [
+            ['optimizer', juliaString(optimizer)],
+            ['optimizer_seed', optimizer === 'BBO_adaptive_de_rand_1_bin_radiuslimited' ||
+                optimizer === 'GN_ISRES' ? '42' : null],
+        ];
+    const smoothingKeywords = smooth
+        ? [['smooth', 'true'], ['smooth_window', String(smoothWindow)]]
+        : [];
+    const loglinKeywords = computeLoglin
+        ? [
+            ['compute_loglin', 'true'],
+            ['loglin_pt_avg', String(llPtAvg)],
+            ['loglin_pt_smoothing_derivative', String(llPtDeriv)],
+            ['loglin_pt_min_size_of_win', String(llPtMinWin)],
+            ['loglin_threshold_of_exp', juliaFloat(llThreshold, 0.9)],
+        ]
+        : [];
+    const blankKeywords = blankSub
+        ? [
+            ['blank_subtraction', 'true'],
+            ['blank_method', juliaString(blankMethod)],
+            ['blank_value', 'source.blank_value'],
+            ['blank_timeseries', blankMethod === 'pointbypoint' ? 'source.blank_timeseries' : null],
+        ]
+        : [];
+    const fitKeywords = juliaKeywordLines([
+        ...modelKeywords,
+        ...optimizerKeywords,
+        ['maxiters', String(maxiters)],
+        ['abstol', juliaFloat(abstol, 1e-15)],
+        ['skip_flat_threshold', '0.0'],
+        ...smoothingKeywords,
+        ...loglinKeywords,
+        ...blankKeywords,
+    ]);
+    const loglinPrintBlock = computeLoglin
+        ? `println("Log-linear mu_max: ", r["gr_loglin"])
+println("Log-linear lag:    ", r["lag_loglin"])
+println("N_max (cutoff):    ", r["N_max_emp"])`
+        : '';
 
-    const p0        = fitData.initial_parameters?.[0];
-    // Bare list — the surrounding spec block wraps it in [...] so the
-    // ModelSpec params argument ends up as a 2-D structure (one row per
-    // model). Double-wrapping here produced [[[ ... ]]] which Kinbiont
-    // rejects with a Vector{Vector{Vector{Float64}}} mismatch.
-    const initParam = p0 && p0.length > 0
-        ? `${JSON.stringify(p0)}`
-        : `fill(1.0, n_params)`;
-
-    // Optimizer the GUI actually used (e.g. "LN_BOBYQA",
-    // "BBO_adaptive_de_rand_1_bin_radiuslimited"). Surface it explicitly
-    // in the exported script — Kinbiont's FitOptions default is the DE
-    // optimizer, which lands on a different minimum than the GUI's
-    // BOBYQA default for non-convex models like aHPM.
-    const optimizerName = fitData.optimizer_used || 'LN_BOBYQA';
-    const isBBO = optimizerName.startsWith('BBO_');
-    const optimizerExpr = isBBO
-        ? `OptimizationBBO.${optimizerName}()`
-        : `OptimizationNLopt.NLopt.${optimizerName}`;
-
-    const loglinBlock = computeLoglin ? `
-# Optional log-linear companion. Kinbiont derives N_max from its fitted mu_max;
-# change the parameters below to explore a different exponential-window setup.
-loglin = kinbiont_fit_loglin(
-    data_well, opts;
-    experiment                 = "GUIbiont export",
-    pt_avg                     = ${llPtAvg},
-    pt_smoothing_derivative    = ${llPtDeriv},
-    pt_min_size_of_win         = ${llPtMinWin},
-    threshold_of_exp           = ${llThreshold},
-)
-
-println("Log-linear mu_max: ", loglin["gr_loglin"])
-println("Log-linear lag:    ", loglin["lag_loglin"])
-println("N_max (cutoff):    ", loglin["N_max_emp"])
-` : '';
+    const dataBlock = isReplicate
+        ? `# Rebuild the replicate mean from the locally stored source experiments.
+const WELL_SELECTIONS = ${selectionsLiteral}
+replicate_times = Vector{Vector{Float64}}()
+replicate_curves = Vector{Vector{Float64}}()
+for selection in WELL_SELECTIONS
+    source = load_experiment_data(
+        CLEAN_DATA_PATH,
+        selection.experiment;
+        channel=selection.channel,
+        channel_annotation=true,
+    )
+    idx = findfirst(==(selection.well), source.data.labels)
+    idx === nothing && error("Well $(selection.well) not found in $(selection.experiment)")
+    curve = vec(source.data.curves[idx, :])
+    # GUIbiont replicate fitting subtracts each experiment's global blank
+    # before truncating all selected curves to their shortest common length.
+    push!(replicate_curves, max.(curve .- source.blank_value, 0.01))
+    push!(replicate_times, source.data.times)
+end
+isempty(replicate_curves) && error("No replicate curves loaded")
+min_len = minimum(length.(replicate_curves))
+avg_time = replicate_times[1][1:min_len]
+avg_curve = sum(curve[1:min_len] for curve in replicate_curves) ./ length(replicate_curves)
+valid = findall(.!isnan.(avg_curve))
+length(valid) >= 10 || error("Not enough valid replicate-average measurements")
+data = GrowthData(reshape(avg_curve[valid], 1, :), avg_time[valid], [FIT_LABEL])`
+        : `# Load the original experiment and recompute its annotated blank summary.
+source = load_experiment_data(CLEAN_DATA_PATH, EXPERIMENT)
+idx = findfirst(==(WELL), source.data.labels)
+idx === nothing && error("Well $(WELL) not found in $(EXPERIMENT)")
+data = GrowthData(reshape(vec(source.data.curves[idx, :]), 1, :),
+                  source.data.times, [WELL])`;
 
     const code = `\
 # ================================================================
 # Growth curve fitting — exported from GUIbiont
 # KinBiont.jl docs: https://github.com/pinheiroGroup/Kinbiont.jl
-# Install:  using Pkg; Pkg.add("Kinbiont")
+# Reruns the workflow from local source files; no GUI input curve or
+# GUI result is embedded, and result comparison is intentionally external.
 # ================================================================
 
 using Kinbiont
-import OptimizationNLopt
-import OptimizationBBO
+
+const CLEAN_DATA_PATH = "path/to/Clean_data"
+const EXPERIMENT = ${juliaString(experiment)}
+${targetConstant}
 
 ${dataBlock}
 
-# Growth model: "${model}".
-# List all available models: collect(keys(MODEL_REGISTRY))
-# Common choices: "aHPM", "logistic", "gompertz", "baranyi_exp", "NL_Gompertz"
-model = MODEL_REGISTRY["${model}"]
-n_params = length(model.param_names)
-
-# Initial parameters computed by GUIbiont's data-driven smart initialisation.
-# These match the values used for this fit — change to explore the parameter space.
-spec = ModelSpec(
-    [model],
-    [${initParam}];
-    lower = [${fitData.param_lower?.[0]
-        ? JSON.stringify(fitData.param_lower[0])
-        : 'fill(0.0, n_params)'}],
-    upper = [${fitData.param_upper?.[0]
-        ? JSON.stringify(fitData.param_upper[0])
-        : 'fill(50.0, n_params)'}],
+# With one selected label, this follows GUIbiont's smart initialisation,
+# preprocessing and complete single/best-of-N optimizer workflow.
+fit = kinbiont_batch_fit(
+    data;
+    experiment=EXPERIMENT,
+    labels=[${isReplicate ? 'FIT_LABEL' : 'WELL'}],
+${fitKeywords}
 )
 
-# Fitting options — these match exactly what GUIbiont used.
-# See FitOptions docs for all available fields.
-opts = FitOptions(
-    # Optional centered moving average; the same preprocessing is used by every optimizer.
-    smooth                          = ${smooth},
-    smooth_method                   = :boxcar,
-    boxcar_window                   = ${smoothWindow},
-    # Detect and truncate stationary phase before fitting, as in GUIbiont
-    cut_stationary_phase            = true,
-    stationary_percentile_thr       = 0.05,
-    stationary_pt_smooth_derivative = 10,
-    stationary_win_size             = 5,
-    # Loss function: "RE" = relative error (also: "L2", "L2_derivative")
-    loss                            = "RE",
-    # Optimizer chosen in the GUI for this fit.
-    optimizer                       = ${optimizerExpr},
-    # Termination tolerances actually used by the GUI; without these the
-    # optimizer falls back to Kinbiont defaults and may terminate earlier.
-    opt_params                      = ${optParams},
-${blankLines}
-)
-
-# Run fitting — returns a GrowthFitResults iterable (one entry per curve)
-results = kinbiont_fit(data_well, spec, opts)
-r = results[1]
-
-println("Model:       ", r.best_model.name)
-println("Param names: ", r.best_model.param_names)
-println("Parameters:  ", r.best_params)
-println("AICc:        ", r.best_aic)
-${loglinBlock}
+isempty(fit.results) && error("Fit failed: $(join(fit.errors, \"; \"))")
+r = only(fit.results)
+println("Model:       ", r["model"])
+println("Param names: ", r["param_names"])
+println("Parameters:  ", r["parameters"])
+println("AICc:        ", r["aic"])
+println("RMSE:        ", r["loss_rmse"])
+println("Optimizer:   ", r["optimizer_used"])
+${loglinPrintBlock}
 `;
 
     return withComments ? code : stripComments(code);
@@ -283,99 +297,101 @@ ${loglinBlock}
 
 export function generateBatchCode(batchData, withComments) {
     const req = batchData._request || {};
-    const experiment = batchData.experiment || req.experiment || 'experiment';
+    const experiment = req.experiment || 'experiment';
     const wells = req.wells || [];
     const rawModels = req.model_names && req.model_names.length > 0
         ? req.model_names
-        : [req.model_name || batchData.model || 'aHPM'];
+        : [req.model_name || 'aHPM'];
     const modelNames = rawModels.filter(m => m !== 'log_lin');
     const modelName = modelNames[0] || req.model_name || 'aHPM';
     const detOpts = req.deterministic_optimizers || [];
     const stoOpts = req.stochastic_optimizers || [];
     const stochasticRuns = req.stochastic_runs ?? 1;
-    const singleOptimizer = req.optimizer || batchData.optimizer_used || 'LN_BOBYQA';
-    const maxiters = req.maxiters ?? batchData.maxiters ?? 100000;
-    const abstol = req.abstol ?? batchData.abstol ?? 1e-15;
+    const singleOptimizer = req.optimizer || 'LN_COBYLA';
+    const maxiters = req.maxiters ?? 100000;
+    const abstol = req.abstol ?? 1e-15;
     const skipFlat = req.skip_flat_threshold ?? 0.02;
-    const smooth = req.smooth ?? batchData.smooth ?? false;
-    const smoothWindow = req.smooth_window ?? batchData.smooth_window ?? 3;
+    const smooth = req.smooth ?? false;
+    const smoothWindow = req.smooth_window ?? 3;
     const computeLoglin = !!req.compute_loglin || rawModels.includes('log_lin');
     const llPtAvg = req.loglin_pt_avg ?? 7;
     const llPtDeriv = req.loglin_pt_smoothing_derivative ?? 7;
     const llPtMinWin = req.loglin_pt_min_size_of_win ?? 7;
     const llThrExp = req.loglin_threshold_of_exp ?? 0.9;
-    const blankSub = req.blank_subtraction ?? batchData.blank_subtraction ?? false;
-    const blankMethod = req.blank_method || batchData.blank_method || 'pointbypoint';
-    const firstResult = Array.isArray(batchData.results) ? batchData.results.find(r => typeof r.blank_value === 'number') : null;
-    const blankValue = batchData.blank_value ?? (firstResult ? firstResult.blank_value : 0.0);
-    const blankTimeseries = Array.isArray(batchData.blank_timeseries) ? batchData.blank_timeseries : [];
-    const blankTimeseriesLiteral = `Float64[${blankTimeseries.map(juliaFloatLiteral).join(', ')}]`;
+    const blankSub = req.blank_subtraction ?? false;
+    const blankMethod = req.blank_method || 'pointbypoint';
     const outPrefix = `${experiment}_batch_fit`;
-    const strArray = xs => `String[${xs.map(x => `"${x}"`).join(', ')}]`;
-    const jb = x => x ? 'true' : 'false';
+    const bestOfOptimizers = detOpts.length > 0 || stoOpts.length > 0;
+    const modelKeywords = modelNames.length > 1
+        ? [['model_names', juliaStringArray(modelNames)]]
+        : [['model_name', juliaString(modelName)]];
+    const optimizerKeywords = bestOfOptimizers
+        ? [
+            ['deterministic_optimizers', detOpts.length ? juliaStringArray(detOpts) : null],
+            ['stochastic_optimizers', stoOpts.length ? juliaStringArray(stoOpts) : null],
+            ['stochastic_runs', stoOpts.length ? String(stochasticRuns) : null],
+            ['optimizer_seed', stoOpts.length ? '42' : null],
+        ]
+        : [
+            ['optimizer', juliaString(singleOptimizer)],
+            ['optimizer_seed', singleOptimizer === 'BBO_adaptive_de_rand_1_bin_radiuslimited' ||
+                singleOptimizer === 'GN_ISRES' ? '42' : null],
+        ];
+    const smoothingKeywords = smooth
+        ? [['smooth', 'true'], ['smooth_window', String(smoothWindow)]]
+        : [];
+    const loglinKeywords = computeLoglin
+        ? [
+            ['compute_loglin', 'true'],
+            ['loglin_pt_avg', String(llPtAvg)],
+            ['loglin_pt_smoothing_derivative', String(llPtDeriv)],
+            ['loglin_pt_min_size_of_win', String(llPtMinWin)],
+            ['loglin_threshold_of_exp', juliaFloat(llThrExp, 0.9)],
+        ]
+        : [];
+    const blankKeywords = blankSub
+        ? [
+            ['blank_subtraction', 'true'],
+            ['blank_method', juliaString(blankMethod)],
+            ['blank_value', 'source.blank_value'],
+            ['blank_timeseries', blankMethod === 'pointbypoint' ? 'source.blank_timeseries' : null],
+        ]
+        : [];
+    const batchKeywords = juliaKeywordLines([
+        ...modelKeywords,
+        ...optimizerKeywords,
+        ['maxiters', String(maxiters)],
+        ['abstol', juliaFloat(abstol, 1e-15)],
+        ['skip_flat_threshold', juliaFloat(skipFlat, 0.02)],
+        ...smoothingKeywords,
+        ...loglinKeywords,
+        ...blankKeywords,
+    ]);
 
     const code = `\
 # ================================================================
 # Batch growth curve fitting - exported from GUIbiont
 # KinBiont.jl docs: https://github.com/pinheiroGroup/Kinbiont.jl
-# Install:  using Pkg; Pkg.add(Pkg.PackageSpec(name="Kinbiont", version="1.4"))
+# Reruns the workflow from local source files; no GUI result is embedded.
 # ================================================================
 
 using Kinbiont
 
-const EXPERIMENT = "${experiment}"
-const DATA_FILE = "your_data.csv"
-const OUT_PREFIX = "${outPrefix}"
-const WELLS = ${strArray(wells)}
-const MODEL_NAME = "${modelName}"
-const MODEL_NAMES = ${strArray(modelNames.length > 1 ? modelNames : [])}
-const SINGLE_OPTIMIZER = "${singleOptimizer}"
-const DETERMINISTIC_OPTIMIZERS = ${strArray(detOpts)}
-const STOCHASTIC_OPTIMIZERS = ${strArray(stoOpts)}
-const STOCHASTIC_RUNS = ${stochasticRuns}
-const MAXITERS = ${maxiters}
-const ABSTOL = ${abstol}
-const SKIP_FLAT_THRESHOLD = ${skipFlat}
-const SMOOTH = ${jb(smooth)}
-const SMOOTH_WINDOW = ${smoothWindow}
-const COMPUTE_LOGLIN = ${jb(computeLoglin)}
-const LOGLIN_PT_AVG = ${llPtAvg}
-const LOGLIN_PT_DERIV = ${llPtDeriv}
-const LOGLIN_PT_MIN_WIN = ${llPtMinWin}
-const LOGLIN_THR_EXP = ${llThrExp}
-const BLANK_SUBTRACTION = ${jb(blankSub)}
-const BLANK_METHOD = "${blankMethod}"
-const BLANK_VALUE = ${juliaFloatLiteral(blankValue)}
-const BLANK_TIMESERIES = ${blankTimeseriesLiteral}
+const CLEAN_DATA_PATH = "path/to/Clean_data"
+const EXPERIMENT = ${juliaString(experiment)}
+const OUT_PREFIX = ${juliaString(outPrefix)}
+const WELLS = ${juliaStringArray(wells)}
 
-data = GrowthData(DATA_FILE)
+source = load_experiment_data(CLEAN_DATA_PATH, EXPERIMENT)
+data = source.data
 batch = kinbiont_batch_fit(
     data;
     experiment=EXPERIMENT,
     labels=WELLS,
-    model_name=MODEL_NAME,
-    model_names=MODEL_NAMES,
-    optimizer=SINGLE_OPTIMIZER,
-    deterministic_optimizers=DETERMINISTIC_OPTIMIZERS,
-    stochastic_optimizers=STOCHASTIC_OPTIMIZERS,
-    stochastic_runs=STOCHASTIC_RUNS,
-    maxiters=MAXITERS,
-    abstol=ABSTOL,
-    skip_flat_threshold=SKIP_FLAT_THRESHOLD,
-    smooth=SMOOTH,
-    smooth_window=SMOOTH_WINDOW,
-    compute_loglin=COMPUTE_LOGLIN,
-    loglin_pt_avg=LOGLIN_PT_AVG,
-    loglin_pt_smoothing_derivative=LOGLIN_PT_DERIV,
-    loglin_pt_min_size_of_win=LOGLIN_PT_MIN_WIN,
-    loglin_threshold_of_exp=LOGLIN_THR_EXP,
-    blank_subtraction=BLANK_SUBTRACTION,
-    blank_method=BLANK_METHOD,
-    blank_value=BLANK_VALUE,
-    blank_timeseries=BLANK_TIMESERIES,
+${batchKeywords}
 )
 
-paths = save_gui_batch_results(batch, "."; prefix=OUT_PREFIX)
+paths = save_batch_results(batch, "."; prefix=OUT_PREFIX)
 println("Saved ", paths.summary)
 println("Saved ", paths.fitted_curves)
 println("Fitted: ", length(batch.results), "  skipped: ", length(batch.skipped), "  failed: ", length(batch.errors))
@@ -386,75 +402,70 @@ println("Fitted: ", length(batch.results), "  skipped: ", length(batch.skipped),
 
 export function generateBatchLogLinKinbiontCode(batchData, withComments) {
     const req = batchData._request || {};
-    const experiment = batchData.experiment || req.experiment || 'experiment';
+    const experiment = req.experiment || 'experiment';
     const wells = req.wells || [];
     const ptAvg = req.pt_avg ?? 7;
     const ptDeriv = req.pt_smoothing_derivative ?? 7;
     const ptMinWin = req.pt_min_size_of_win ?? 7;
     const thrExp = req.threshold_of_exp ?? 0.9;
     const flatThr = req.skip_flat_threshold ?? 0.02;
-    const blankSub = req.blank_subtraction ?? batchData.blank_subtraction ?? false;
-    const blankMethod = req.blank_method || batchData.blank_method || 'pointbypoint';
+    const blankSub = req.blank_subtraction ?? false;
+    const blankMethod = req.blank_method || 'pointbypoint';
     const smoothing = req.type_of_smoothing || 'rolling_avg';
     const winType = req.type_of_win || 'maximum';
     const startThr = req.start_exp_win_thr ?? 0.05;
     const thrLowess = req.thr_lowess ?? 0.05;
-    const firstResult = Array.isArray(batchData.results) ? batchData.results.find(r => typeof r.blank_value === 'number') : null;
-    const blankValue = batchData.blank_value ?? (firstResult ? firstResult.blank_value : 0.0);
-    const blankTimeseries = Array.isArray(batchData.blank_timeseries) ? batchData.blank_timeseries : [];
-    const blankTimeseriesLiteral = `Float64[${blankTimeseries.map(juliaFloatLiteral).join(', ')}]`;
     const outPrefix = `${experiment}_batch_fit_loglin`;
-    const strArray = xs => `String[${xs.map(x => `"${x}"`).join(', ')}]`;
-    const jb = x => x ? 'true' : 'false';
+    const smoothingKeywords = smoothing === 'rolling_avg'
+        ? [['type_of_smoothing', juliaString(smoothing)], ['pt_avg', String(ptAvg)]]
+        : smoothing === 'lowess'
+        ? [['type_of_smoothing', juliaString(smoothing)], ['thr_lowess', juliaFloat(thrLowess, 0.05)]]
+        : [['type_of_smoothing', juliaString(smoothing)]];
+    const blankKeywords = blankSub
+        ? [
+            ['blank_subtraction', 'true'],
+            ['blank_method', juliaString(blankMethod)],
+            ['blank_value', 'source.blank_value'],
+            ['blank_timeseries', blankMethod === 'pointbypoint' ? 'source.blank_timeseries' : null],
+        ]
+        : [];
+    const loglinKeywords = juliaKeywordLines([
+        ...blankKeywords,
+        ...smoothingKeywords,
+        ['pt_smoothing_derivative', String(ptDeriv)],
+        ['pt_min_size_of_win', String(ptMinWin)],
+        ['type_of_win', juliaString(winType)],
+        ['threshold_of_exp', juliaFloat(thrExp, 0.9)],
+        ['start_exp_win_thr',
+            winType === 'global_thr' || winType === 'max_with_min_OD'
+                ? juliaFloat(startThr, 0.05) : null],
+        ['skip_flat_threshold', juliaFloat(flatThr, 0.02)],
+    ]);
 
     const code = `\
 # ================================================================
 # Batch log-linear growth-rate fit - exported from GUIbiont
 # KinBiont.jl docs: https://github.com/pinheiroGroup/Kinbiont.jl
-# Install:  using Pkg; Pkg.add(Pkg.PackageSpec(name="Kinbiont", version="1.4"))
+# Reruns the workflow from local source files; no GUI result is embedded.
 # ================================================================
 
 using Kinbiont
 
-const EXPERIMENT = "${experiment}"
-const DATA_FILE = "your_data.csv"
-const OUT_PREFIX = "${outPrefix}"
-const WELLS = ${strArray(wells)}
-const BLANK_SUBTRACTION = ${jb(blankSub)}
-const BLANK_METHOD = "${blankMethod}"
-const BLANK_VALUE = ${juliaFloatLiteral(blankValue)}
-const BLANK_TIMESERIES = ${blankTimeseriesLiteral}
-const TYPE_OF_SMOOTHING = "${smoothing}"
-const PT_AVG = ${ptAvg}
-const PT_SMOOTHING_DERIVATIVE = ${ptDeriv}
-const PT_MIN_SIZE_OF_WIN = ${ptMinWin}
-const TYPE_OF_WIN = "${winType}"
-const THRESHOLD_OF_EXP = ${thrExp}
-const START_EXP_WIN_THR = ${startThr}
-const THR_LOWESS = ${thrLowess}
-const SKIP_FLAT_THRESHOLD = ${flatThr}
+const CLEAN_DATA_PATH = "path/to/Clean_data"
+const EXPERIMENT = ${juliaString(experiment)}
+const OUT_PREFIX = ${juliaString(outPrefix)}
+const WELLS = ${juliaStringArray(wells)}
 
-data = GrowthData(DATA_FILE)
+source = load_experiment_data(CLEAN_DATA_PATH, EXPERIMENT)
+data = source.data
 batch = kinbiont_batch_loglin(
     data;
     experiment=EXPERIMENT,
     labels=WELLS,
-    blank_subtraction=BLANK_SUBTRACTION,
-    blank_method=BLANK_METHOD,
-    blank_value=BLANK_VALUE,
-    blank_timeseries=BLANK_TIMESERIES,
-    type_of_smoothing=TYPE_OF_SMOOTHING,
-    pt_avg=PT_AVG,
-    pt_smoothing_derivative=PT_SMOOTHING_DERIVATIVE,
-    pt_min_size_of_win=PT_MIN_SIZE_OF_WIN,
-    type_of_win=TYPE_OF_WIN,
-    threshold_of_exp=THRESHOLD_OF_EXP,
-    start_exp_win_thr=START_EXP_WIN_THR,
-    thr_lowess=THR_LOWESS,
-    skip_flat_threshold=SKIP_FLAT_THRESHOLD,
+${loglinKeywords}
 )
 
-paths = save_gui_batch_loglin_results(batch, "."; prefix=OUT_PREFIX)
+paths = save_batch_loglin_results(batch, "."; prefix=OUT_PREFIX)
 println("Saved ", paths.summary)
 println("Fitted: ", length(batch.results), "  skipped: ", length(batch.skipped), "  failed: ", length(batch.errors))
 `;
@@ -492,57 +503,77 @@ export function generateClusterCode(clusterData, withComments) {
     const dbscanMinPts  = req.dbscan_min_pts ?? 3;
     const isFileMode    = req._mode === 'file';
     const smoothEnabled = smoothMethod !== 'none';
-    const prescreenApplied = deriveBlanks ? false : (clusterData.prescreen_applied ?? prescreen);
+    // Export the selected workflow, not a decision inferred from its result.
+    // Re-running the detector on the source data determines whether a sentinel
+    // is actually populated.
+    const prescreenApplied = deriveBlanks ? false : prescreen;
     const trendApplied = deriveBlanks ? false : trendTest;
-    const costLabel = clusterMethod === 'kmedoids'
-        ? 'Distance-to-medoid cost'
-        : clusterMethod === 'dbscan' ? 'DBSCAN cost (not defined; stored as 0.0)' : 'WCSS';
+    const costLabel = 'WCSS';
     const experimentsLiteral = Array.isArray(req.experiments) && req.experiments.length
-        ? JSON.stringify(req.experiments)
+        ? juliaStringArray(req.experiments)
         : 'String[]';
     const dataPathLiteral = req.csv_path
-        ? JSON.stringify(req.csv_path)
-        : '"your_data.csv"';
-    // JS bool → Julia `true`/`false` literal for interpolation into source code.
-    const jb = (value) => value ? 'true' : 'false';
-
+        ? juliaString(req.csv_path)
+        : '"path/to/data.csv"';
     const smoothParam = !smoothEnabled ? '' : smoothMethod === 'lowess'
         ? `    # LOWESS bandwidth: fraction of points used for local regression
-    lowess_frac   = ${lowessFrac},`
+    lowess_frac   = ${juliaFloat(lowessFrac, 0.05)},`
         : smoothMethod === 'gaussian'
         ? `    # Gaussian bandwidth multiplier (multiplied by median Δt)
-    gaussian_h_mult = ${gaussianHmult},`
+    gaussian_h_mult = ${juliaFloat(gaussianHmult, 2.0)},`
         : '';
 
-    const nInitParam = clusterMethod === 'kmeans'
-        ? `    kmeans_n_init          = ${nInit},\n`
-        : '';
+    const prepareKeywords = [
+        ['interpolate', interpolate ? 'true' : null],
+        ['interp_n', interpolate ? String(interpN) : null],
+        ['interp_quantile_lo', interpolate ? juliaFloat(interpQLo, 0.05) : null],
+        ['interp_quantile_hi', interpolate ? juliaFloat(interpQHi, 0.95) : null],
+        // GUIbiont never performs the legacy automatic low-OD blank removal.
+        ['auto_detect_blanks', 'false'],
+        ['subtract_blank', blankSub ? 'true' : null],
+        ['blank_method', (blankSub || deriveBlanks) ? `:${blankMethod}` : null],
+        ['blank_floor', (blankSub || deriveBlanks) ? '1e-4' : null],
+        ['derive_non_growing_blanks', deriveBlanks ? 'true' : null],
+        ['blank_prescreen_constant', deriveBlanks && prescreen ? 'true' : null],
+        ['blank_prescreen_tol', deriveBlanks && prescreen ? juliaFloat(prescreenTol, 1.5) : null],
+        ['blank_prescreen_q_low', deriveBlanks && prescreen ? juliaFloat(prescreenQLo, 0.05) : null],
+        ['blank_prescreen_q_high', deriveBlanks && prescreen ? juliaFloat(prescreenQHi, 0.95) : null],
+        ['blank_trend_test', deriveBlanks && trendTest ? 'true' : null],
+        ['blank_trend_p_threshold', deriveBlanks && trendTest ? juliaFloat(trendPThr, 0.05) : null],
+        ['detection_smooth', deriveBlanks && smoothEnabled ? 'true' : null],
+        ['detection_smooth_method', deriveBlanks && smoothEnabled ? `:${smoothMethod}` : null],
+        ['detection_lowess_frac',
+            deriveBlanks && smoothEnabled && smoothMethod === 'lowess'
+                ? juliaFloat(lowessFrac, 0.05) : null],
+        ['detection_gaussian_h_mult',
+            deriveBlanks && smoothEnabled && smoothMethod === 'gaussian'
+                ? juliaFloat(gaussianHmult, 2.0) : null],
+    ];
 
-    // kmeans_max_iters and kmeans_tol are used by :kmeans and :kmedoids.
-    // kmeans_n_init is used only by :kmeans in Kinbiont._kmeans_best.
-    const iterParam = (clusterMethod === 'kmeans' || clusterMethod === 'kmedoids')
-        ? `
-${nInitParam}    kmeans_max_iters       = ${maxiter},
-    kmeans_tol             = ${tol},`
-        : '';
-
-    // Algorithm-specific parameters for hclust / dbscan. These must travel with
-    // the cluster_method choice or Kinbiont silently falls back to its defaults.
-    const methodParam = clusterMethod === 'hclust'
-        ? `
-    cluster_hclust_linkage = :${hclustLinkage},`
-        : clusterMethod === 'dbscan'
-        ? `
-    cluster_dbscan_eps     = ${dbscanEps},
-    cluster_dbscan_minpts  = ${dbscanMinPts},`
-        : '';
-
-    const prescreenParam = prescreenApplied
-        ? `    cluster_prescreen_constant = true,
-    cluster_tol_const          = ${prescreenTol},
-    cluster_q_low              = ${prescreenQLo},
-    cluster_q_high             = ${prescreenQHi},`
-        : `    cluster_prescreen_constant = false,`;
+    const usesK = clusterMethod !== 'dbscan';
+    const clusterKeywords = [
+        ['cluster', 'true'],
+        ['n_clusters', usesK ? 'N_CLUSTER_LABELS' : null],
+        ['cluster_method', `:${clusterMethod}`],
+        ['kmeans_n_init', clusterMethod === 'kmeans' ? String(nInit) : null],
+        ['kmeans_max_iters',
+            clusterMethod === 'kmeans' || clusterMethod === 'kmedoids' ? String(maxiter) : null],
+        ['kmeans_tol',
+            clusterMethod === 'kmeans' || clusterMethod === 'kmedoids'
+                ? juliaFloat(tol, 1e-6) : null],
+        ['kmeans_seed', clusterMethod === 'kmeans' ? '42' : null],
+        ['kmedoids_seed', clusterMethod === 'kmedoids' ? '42' : null],
+        ['cluster_hclust_linkage', clusterMethod === 'hclust' ? `:${hclustLinkage}` : null],
+        ['cluster_dbscan_eps', clusterMethod === 'dbscan' ? juliaFloat(dbscanEps, 1.0) : null],
+        ['cluster_dbscan_minpts', clusterMethod === 'dbscan' ? String(dbscanMinPts) : null],
+        ['cluster_prescreen_constant', prescreenApplied ? 'true' : null],
+        ['cluster_tol_const', prescreenApplied ? juliaFloat(prescreenTol, 1.5) : null],
+        ['cluster_q_low', prescreenApplied ? juliaFloat(prescreenQLo, 0.05) : null],
+        ['cluster_q_high', prescreenApplied ? juliaFloat(prescreenQHi, 0.95) : null],
+        // FitOptions defaults this to true, so false is an active override.
+        ['cluster_trend_test', trendApplied ? 'true' : 'false'],
+        ['cluster_trend_p_thr', trendApplied ? juliaFloat(trendPThr, 0.05) : null],
+    ];
 
     const normalizeNote = normalize
         ? `# Display normalisation was enabled in GUIbiont. Kinbiont already
@@ -577,59 +608,19 @@ ${nInitParam}    kmeans_max_iters       = ${maxiter},
         ? `# CSV layout: first usable column is time, following columns are curves.
 # CSV files saved by pandas with an index column are handled automatically.
 const DATA_PATH = ${dataPathLiteral}`
-        : `# Point this at GUIbiont's Clean_data directory before running elsewhere.
-const CLEAN_DATA_PATH = "Clean_data"`;
+        : `# Point this at GUIbiont's Clean_data directory on this machine.
+const CLEAN_DATA_PATH = "path/to/Clean_data"`;
 
-    const dataLoadBlock = isFileMode
-        ? `# prepare_clustering_data mirrors the GUIbiont clustering loader:
-# CSV parsing, optional interpolation, blank handling, and non-finite cleanup.
+    const sourceKeywords = isFileMode
+        ? [['csv_path', 'DATA_PATH']]
+        : [
+            ['clean_data_path', 'CLEAN_DATA_PATH'],
+            ['experiments', experimentsLiteral],
+        ];
+    const dataLoadBlock = `# prepare_clustering_data mirrors GUIbiont's source loader
+# and includes only the preparation stages enabled for this run.
 data = prepare_clustering_data(
-    csv_path             = DATA_PATH,
-    interpolate          = ${jb(interpolate)},
-    interp_n             = ${interpN},
-    interp_quantile_lo   = ${interpQLo},
-    interp_quantile_hi   = ${interpQHi},
-    auto_detect_blanks   = false,
-    subtract_blank       = ${jb(blankSub)},
-    blank_method         = :${blankMethod},
-    blank_floor          = 1e-4,
-    derive_non_growing_blanks = ${jb(deriveBlanks)},
-    blank_prescreen_constant  = ${jb(prescreen)},
-    blank_trend_test          = ${jb(trendTest)},
-    blank_prescreen_tol       = ${prescreenTol},
-    blank_prescreen_q_low     = ${prescreenQLo},
-    blank_prescreen_q_high    = ${prescreenQHi},
-    blank_trend_p_threshold   = ${trendPThr},
-    detection_smooth          = ${jb(smoothEnabled)},
-    detection_smooth_method   = :${smoothMethod},
-    detection_lowess_frac     = ${lowessFrac},
-    detection_gaussian_h_mult = ${gaussianHmult},
-)`
-        : `# prepare_clustering_data reads the selected experiments from Clean_data.
-# It excludes discard wells and aligns each experiment's annotated blank wells
-# to that experiment's sample times before subtraction, matching GUIbiont.
-data = prepare_clustering_data(
-    clean_data_path      = CLEAN_DATA_PATH,
-    experiments          = ${experimentsLiteral},
-    interpolate          = ${jb(interpolate)},
-    interp_n             = ${interpN},
-    interp_quantile_lo   = ${interpQLo},
-    interp_quantile_hi   = ${interpQHi},
-    auto_detect_blanks   = false,
-    subtract_blank       = ${jb(blankSub)},
-    blank_method         = :${blankMethod},
-    blank_floor          = 1e-4,
-    derive_non_growing_blanks = ${jb(deriveBlanks)},
-    blank_prescreen_constant  = ${jb(prescreen)},
-    blank_trend_test          = ${jb(trendTest)},
-    blank_prescreen_tol       = ${prescreenTol},
-    blank_prescreen_q_low     = ${prescreenQLo},
-    blank_prescreen_q_high    = ${prescreenQHi},
-    blank_trend_p_threshold   = ${trendPThr},
-    detection_smooth          = ${jb(smoothEnabled)},
-    detection_smooth_method   = :${smoothMethod},
-    detection_lowess_frac     = ${lowessFrac},
-    detection_gaussian_h_mult = ${gaussianHmult},
+${juliaKeywordLines([...sourceKeywords, ...prepareKeywords])}
 )`;
 
     const smoothBlock = smoothEnabled
@@ -639,13 +630,18 @@ smooth_opts = FitOptions(
     smooth        = true,
     smooth_method = :${smoothMethod},
 ${smoothParam}
-    cluster       = false,
 )
 smoothed = preprocess(data, smooth_opts)
 tlen = min(size(smoothed.curves, 2), length(smoothed.times))
 cluster_data = GrowthData(smoothed.curves[:, 1:tlen], smoothed.times[1:tlen], smoothed.labels)`
         : `# Smoothing was disabled in GUIbiont.
 cluster_data = data`;
+    const clusterCountBlock = usesK
+        ? `# GUIbiont caps k to the number of series after data preparation.
+const N_REQUESTED_CLUSTERS = ${k}
+const N_CLUSTER_LABELS = min(N_REQUESTED_CLUSTERS, size(cluster_data.curves, 1))
+`
+        : '';
 
     const code = `\
 # ================================================================
@@ -659,31 +655,19 @@ using Kinbiont
 ${normalizeNote}${interpolationNote}${blankNote}${autoBlankNote}${trendNote}${dataPathBlock}
 ${dataLoadBlock}
 
-const N_REQUESTED_CLUSTERS = ${k}
-const PRESCREEN_CONSTANT = ${jb(prescreenApplied)}
-
 ${smoothBlock}
 
-# GUIbiont caps k to the number of series after blank removal/preparation.
-const N_CLUSTER_LABELS = min(N_REQUESTED_CLUSTERS, size(cluster_data.curves, 1))
+${clusterCountBlock}
 
 # These options are the clustering controls selected in GUIbiont. Parameters
 # that do not apply to the selected algorithm are intentionally omitted.
 cluster_opts = FitOptions(
-    cluster       = true,
-    n_clusters    = N_CLUSTER_LABELS,
-    cluster_method = :${clusterMethod},${iterParam}${methodParam}
-    # Non-growing prescreen from GUIbiont Advanced options.
-${prescreenParam}
-    # Post-hoc flat/non-growing reassignment from GUIbiont Advanced options.
-    cluster_trend_test = ${jb(trendApplied)},
-    cluster_trend_p_thr = ${trendPThr},
+${juliaKeywordLines(clusterKeywords)}
 )
 
 processed = preprocess(cluster_data, cluster_opts)
 # Quality indices are computed on the same data that was passed to clustering.
-quality = cluster_quality_indices(cluster_data.curves, processed.clusters;
-)
+quality = cluster_quality_indices(cluster_data.curves, processed.clusters)
 quality_summary = Dict(
     "silhouette_mean"   => quality["silhouette_mean"],
     "dunn"              => quality["dunn"],
@@ -694,7 +678,6 @@ quality_summary = Dict(
 
 cluster_counts_all = Dict(k => count(==(k), processed.clusters)
                           for k in sort(unique(processed.clusters)))
-assignment_rows = collect(zip(cluster_data.labels, processed.clusters))
 
 # Optional diagnostics:
 #println("Cluster assignments: ", processed.clusters)
@@ -702,10 +685,10 @@ println("Cluster counts:      ", cluster_counts_all)
 println("${costLabel}: ", processed.wcss)
 println("Quality summary:     ", quality_summary)
 #println("Quality indices:     ", quality)
-#println("Label/cluster rows:  ", assignment_rows)
 
-# For methods that use k, repeat preprocessing over candidate k values and plot
-# the method-specific cost stored in processed.wcss. DBSCAN has no k sweep.
+# WCSS uses centroid-based squared error for every method and excludes the
+# non-growing sentinel and DBSCAN noise. For methods that use k, repeat
+# preprocessing over candidate k values to build an elbow plot.
 `;
 
     return withComments ? code : stripComments(code);
