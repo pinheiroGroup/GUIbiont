@@ -12,12 +12,6 @@ function stripComments(code) {
         .trim();
 }
 
-function juliaFloatLiteral(value) {
-    const n = Number(value);
-    if (!Number.isFinite(n)) return '0.0';
-    return Number.isInteger(n) ? `${n}.0` : String(n);
-}
-
 // ---------------------------------------------------------------------------
 // CodeMirror instance — created lazily on first modal open
 // ---------------------------------------------------------------------------
@@ -121,161 +115,135 @@ export function openClusterCodeExport() {
 // ---------------------------------------------------------------------------
 
 export function generateFitCode(fitData, withComments) {
-    const req        = fitData._request || {};
-    const well       = req.well        || fitData.well  || 'B2';
-    const model      = req.model_name  || fitData.model || 'aHPM';
+    const req = fitData._request || {};
+    const experiment = req.experiment || 'experiment';
+    const well = req.well || 'B2';
+    const fitLabel = req.label || well;
+    const model = req.model_name || 'aHPM';
+    const modelNames = Array.isArray(req.model_names) ? req.model_names : [];
     const isReplicate = Array.isArray(req.well_selections);
-    const blankSub   = fitData.blank_applied ?? (isReplicate
-        ? (fitData.blank_subtraction ?? false)
-        : (req.blank_subtraction ?? fitData.blank_subtraction ?? false));
-    const blankMethod= req.blank_method      ?? fitData.blank_method      ?? 'pointbypoint';
-    const blankValue = typeof fitData.blank_value === 'number' ? fitData.blank_value : 0.0;
-    const blankTimeseries = Array.isArray(fitData.blank_timeseries)
-        ? fitData.blank_timeseries.map(value => {
-            const numeric = Number(value);
-            return Number.isFinite(numeric) ? numeric : 0.0;
-        })
-        : [];
-    // Same defaults the form uses (see fitting.js buildFitOptionsPayload).
-    // Without these the optimizer falls back to Kinbiont's defaults which
-    // terminate earlier than the GUI does and land on a worse minimum.
-    const maxiters = req.maxiters ?? fitData.maxiters ?? 100000;
-    const abstol   = req.abstol   ?? fitData.abstol   ?? 1e-15;
-    const smooth = req.smooth ?? fitData.preprocessing?.smooth ?? false;
-    const smoothWindow = req.smooth_window ?? fitData.preprocessing?.smooth_window ?? 3;
+    const blankSub = isReplicate ? false : (req.blank_subtraction ?? false);
+    const blankMethod = req.blank_method ?? 'pointbypoint';
+    const maxiters = req.maxiters ?? 100000;
+    const abstol = req.abstol ?? 1e-15;
+    const smooth = req.smooth ?? false;
+    const smoothWindow = req.smooth_window ?? 3;
     const computeLoglin = !!req.compute_loglin;
     const llPtAvg = req.loglin_pt_avg ?? 7;
     const llPtDeriv = req.loglin_pt_smoothing_derivative ?? 7;
     const llPtMinWin = req.loglin_pt_min_size_of_win ?? 7;
     const llThreshold = req.loglin_threshold_of_exp ?? 0.9;
-    const optParams = abstol > 0
-        ? `(maxiters = ${maxiters}, abstol = ${abstol})`
-        : `(maxiters = ${maxiters},)`;
-    const blankLiteral = `Float64[${blankTimeseries.map(juliaFloatLiteral).join(', ')}]`;
-    const exportedBlankMethod = ['pointbypoint', 'shift', 'clip'].includes(blankMethod)
-        ? blankMethod
-        : 'global';
-    const blankLines = `    blank_subtraction               = ${blankSub},
-    blank_method                    = :${exportedBlankMethod},
-    blank_value                     = ${juliaFloatLiteral(blankValue)},
-    blank_timeseries                = ${blankLiteral},
-    blank_floor                     = 1e-4,
-    # Without blank subtraction GUIbiont floors raw OD to 0.01.
-    correct_negatives               = ${!blankSub},
-    negative_method                 = :thr_correction,
-    negative_threshold              = 0.01,`;
-    const experimentalTime = Array.isArray(fitData.experimental_time) ? fitData.experimental_time : [];
-    const experimentalOd = Array.isArray(fitData.experimental_od) ? fitData.experimental_od : [];
-    const hasEmbeddedCurve = experimentalTime.length > 0 && experimentalTime.length === experimentalOd.length;
-    const dataBlock = hasEmbeddedCurve
-        ? `# Exact experimental input retained by GUIbiont for this fit.
-fit_times = Float64[${experimentalTime.map(juliaFloatLiteral).join(', ')}]
-fit_od = Float64[${experimentalOd.map(juliaFloatLiteral).join(', ')}]
-data_well = GrowthData(reshape(fit_od, 1, :), fit_times, [${JSON.stringify(well)}])`
-        : `# CSV format: first column = time points, remaining columns = wells.
-data = GrowthData("your_data.csv")
-data_well = data[[${JSON.stringify(well)}]]`;
+    const optimizer = req.optimizer || 'LN_COBYLA';
+    const detOpts = Array.isArray(req.deterministic_optimizers) ? req.deterministic_optimizers : [];
+    const stoOpts = Array.isArray(req.stochastic_optimizers) ? req.stochastic_optimizers : [];
+    const stochasticRuns = req.stochastic_runs ?? 3;
+    const strArray = xs => `String[${xs.map(x => JSON.stringify(String(x))).join(', ')}]`;
+    const jb = value => value ? 'true' : 'false';
+    const selections = isReplicate ? req.well_selections : [];
+    const selectionsLiteral = `[${selections.map(sel =>
+        `(experiment=${JSON.stringify(String(sel.experiment))}, ` +
+        `well=${JSON.stringify(String(sel.well))}, channel=${Number(sel.channel) || 1})`
+    ).join(', ')}]`;
 
-    const p0        = fitData.initial_parameters?.[0];
-    // Bare list — the surrounding spec block wraps it in [...] so the
-    // ModelSpec params argument ends up as a 2-D structure (one row per
-    // model). Double-wrapping here produced [[[ ... ]]] which Kinbiont
-    // rejects with a Vector{Vector{Vector{Float64}}} mismatch.
-    const initParam = p0 && p0.length > 0
-        ? `${JSON.stringify(p0)}`
-        : `fill(1.0, n_params)`;
-
-    // Optimizer the GUI actually used (e.g. "LN_BOBYQA",
-    // "BBO_adaptive_de_rand_1_bin_radiuslimited"). Surface it explicitly
-    // in the exported script — Kinbiont's FitOptions default is the DE
-    // optimizer, which lands on a different minimum than the GUI's
-    // BOBYQA default for non-convex models like aHPM.
-    const optimizerName = fitData.optimizer_used || 'LN_BOBYQA';
-    const isBBO = optimizerName.startsWith('BBO_');
-    const optimizerExpr = isBBO
-        ? `OptimizationBBO.${optimizerName}()`
-        : `OptimizationNLopt.NLopt.${optimizerName}`;
-
-    const loglinBlock = computeLoglin ? `
-# Optional log-linear companion. Kinbiont derives N_max from its fitted mu_max;
-# change the parameters below to explore a different exponential-window setup.
-loglin = kinbiont_fit_loglin(
-    data_well, opts;
-    experiment                 = "GUIbiont export",
-    pt_avg                     = ${llPtAvg},
-    pt_smoothing_derivative    = ${llPtDeriv},
-    pt_min_size_of_win         = ${llPtMinWin},
-    threshold_of_exp           = ${llThreshold},
-)
-
-println("Log-linear mu_max: ", loglin["gr_loglin"])
-println("Log-linear lag:    ", loglin["lag_loglin"])
-println("N_max (cutoff):    ", loglin["N_max_emp"])
-` : '';
+    const dataBlock = isReplicate
+        ? `# Rebuild the replicate mean from the locally stored source experiments.
+const WELL_SELECTIONS = ${selectionsLiteral}
+replicate_times = Vector{Vector{Float64}}()
+replicate_curves = Vector{Vector{Float64}}()
+for selection in WELL_SELECTIONS
+    source = load_gui_experiment_data(
+        CLEAN_DATA_PATH,
+        selection.experiment;
+        channel=selection.channel,
+        channel_annotation=true,
+    )
+    idx = findfirst(==(selection.well), source.data.labels)
+    idx === nothing && error("Well $(selection.well) not found in $(selection.experiment)")
+    curve = vec(source.data.curves[idx, :])
+    # GUIbiont replicate fitting subtracts each experiment's global blank
+    # before truncating all selected curves to their shortest common length.
+    push!(replicate_curves, max.(curve .- source.blank_value, 0.01))
+    push!(replicate_times, source.data.times)
+end
+isempty(replicate_curves) && error("No replicate curves loaded")
+min_len = minimum(length.(replicate_curves))
+avg_time = replicate_times[1][1:min_len]
+avg_curve = sum(curve[1:min_len] for curve in replicate_curves) ./ length(replicate_curves)
+valid = findall(.!isnan.(avg_curve))
+length(valid) >= 10 || error("Not enough valid replicate-average measurements")
+data = GrowthData(reshape(avg_curve[valid], 1, :), avg_time[valid], [FIT_LABEL])
+blank_value = 0.0
+blank_timeseries = Float64[]`
+        : `# Load the original experiment and recompute its annotated blank summary.
+source = load_gui_experiment_data(CLEAN_DATA_PATH, EXPERIMENT)
+idx = findfirst(==(WELL), source.data.labels)
+idx === nothing && error("Well $(WELL) not found in $(EXPERIMENT)")
+data = GrowthData(reshape(vec(source.data.curves[idx, :]), 1, :),
+                  source.data.times, [WELL])
+blank_value = source.blank_value
+blank_timeseries = BLANK_SUBTRACTION && BLANK_METHOD == "pointbypoint" ?
+    source.blank_timeseries : Float64[]`;
 
     const code = `\
 # ================================================================
 # Growth curve fitting — exported from GUIbiont
 # KinBiont.jl docs: https://github.com/pinheiroGroup/Kinbiont.jl
-# Install:  using Pkg; Pkg.add("Kinbiont")
+# Reruns the workflow from local source files; no GUI input curve or
+# GUI result is embedded, and result comparison is intentionally external.
 # ================================================================
 
 using Kinbiont
-import OptimizationNLopt
-import OptimizationBBO
+
+const CLEAN_DATA_PATH = "path/to/Clean_data"
+const EXPERIMENT = ${JSON.stringify(experiment)}
+const FIT_LABEL = ${JSON.stringify(fitLabel)}
+const WELL = ${JSON.stringify(well)}
+const BLANK_SUBTRACTION = ${jb(blankSub)}
+const BLANK_METHOD = ${JSON.stringify(blankMethod)}
 
 ${dataBlock}
 
-# Growth model: "${model}".
-# List all available models: collect(keys(MODEL_REGISTRY))
-# Common choices: "aHPM", "logistic", "gompertz", "baranyi_exp", "NL_Gompertz"
-model = MODEL_REGISTRY["${model}"]
-n_params = length(model.param_names)
-
-# Initial parameters computed by GUIbiont's data-driven smart initialisation.
-# These match the values used for this fit — change to explore the parameter space.
-spec = ModelSpec(
-    [model],
-    [${initParam}];
-    lower = [${fitData.param_lower?.[0]
-        ? JSON.stringify(fitData.param_lower[0])
-        : 'fill(0.0, n_params)'}],
-    upper = [${fitData.param_upper?.[0]
-        ? JSON.stringify(fitData.param_upper[0])
-        : 'fill(50.0, n_params)'}],
+# With one selected label, this follows GUIbiont's smart initialisation,
+# preprocessing and complete single/best-of-N optimizer workflow.
+fit = kinbiont_batch_fit(
+    data;
+    experiment=EXPERIMENT,
+    labels=[${isReplicate ? 'FIT_LABEL' : 'WELL'}],
+    model_name=${JSON.stringify(model)},
+    model_names=${strArray(modelNames)},
+    optimizer=${JSON.stringify(optimizer)},
+    deterministic_optimizers=${strArray(detOpts)},
+    stochastic_optimizers=${strArray(stoOpts)},
+    stochastic_runs=${stochasticRuns},
+    maxiters=${maxiters},
+    abstol=${abstol},
+    skip_flat_threshold=0.0,
+    smooth=${jb(smooth)},
+    smooth_window=${smoothWindow},
+    compute_loglin=${jb(computeLoglin)},
+    loglin_pt_avg=${llPtAvg},
+    loglin_pt_smoothing_derivative=${llPtDeriv},
+    loglin_pt_min_size_of_win=${llPtMinWin},
+    loglin_threshold_of_exp=${llThreshold},
+    blank_subtraction=BLANK_SUBTRACTION,
+    blank_method=BLANK_METHOD,
+    blank_value=blank_value,
+    blank_timeseries=blank_timeseries,
 )
 
-# Fitting options — these match exactly what GUIbiont used.
-# See FitOptions docs for all available fields.
-opts = FitOptions(
-    # Optional centered moving average; the same preprocessing is used by every optimizer.
-    smooth                          = ${smooth},
-    smooth_method                   = :boxcar,
-    boxcar_window                   = ${smoothWindow},
-    # Detect and truncate stationary phase before fitting, as in GUIbiont
-    cut_stationary_phase            = true,
-    stationary_percentile_thr       = 0.05,
-    stationary_pt_smooth_derivative = 10,
-    stationary_win_size             = 5,
-    # Loss function: "RE" = relative error (also: "L2", "L2_derivative")
-    loss                            = "RE",
-    # Optimizer chosen in the GUI for this fit.
-    optimizer                       = ${optimizerExpr},
-    # Termination tolerances actually used by the GUI; without these the
-    # optimizer falls back to Kinbiont defaults and may terminate earlier.
-    opt_params                      = ${optParams},
-${blankLines}
-)
-
-# Run fitting — returns a GrowthFitResults iterable (one entry per curve)
-results = kinbiont_fit(data_well, spec, opts)
-r = results[1]
-
-println("Model:       ", r.best_model.name)
-println("Param names: ", r.best_model.param_names)
-println("Parameters:  ", r.best_params)
-println("AICc:        ", r.best_aic)
-${loglinBlock}
+isempty(fit.results) && error("Fit failed: $(join(fit.errors, \"; \"))")
+r = only(fit.results)
+println("Model:       ", r["model"])
+println("Param names: ", r["param_names"])
+println("Parameters:  ", r["parameters"])
+println("AICc:        ", r["aic"])
+println("RMSE:        ", r["loss_rmse"])
+println("Optimizer:   ", r["optimizer_used"])
+if ${jb(computeLoglin)}
+    println("Log-linear mu_max: ", r["gr_loglin"])
+    println("Log-linear lag:    ", r["lag_loglin"])
+    println("N_max (cutoff):    ", r["N_max_emp"])
+end
 `;
 
     return withComments ? code : stripComments(code);
@@ -283,48 +251,44 @@ ${loglinBlock}
 
 export function generateBatchCode(batchData, withComments) {
     const req = batchData._request || {};
-    const experiment = batchData.experiment || req.experiment || 'experiment';
+    const experiment = req.experiment || 'experiment';
     const wells = req.wells || [];
     const rawModels = req.model_names && req.model_names.length > 0
         ? req.model_names
-        : [req.model_name || batchData.model || 'aHPM'];
+        : [req.model_name || 'aHPM'];
     const modelNames = rawModels.filter(m => m !== 'log_lin');
     const modelName = modelNames[0] || req.model_name || 'aHPM';
     const detOpts = req.deterministic_optimizers || [];
     const stoOpts = req.stochastic_optimizers || [];
     const stochasticRuns = req.stochastic_runs ?? 1;
-    const singleOptimizer = req.optimizer || batchData.optimizer_used || 'LN_BOBYQA';
-    const maxiters = req.maxiters ?? batchData.maxiters ?? 100000;
-    const abstol = req.abstol ?? batchData.abstol ?? 1e-15;
+    const singleOptimizer = req.optimizer || 'LN_COBYLA';
+    const maxiters = req.maxiters ?? 100000;
+    const abstol = req.abstol ?? 1e-15;
     const skipFlat = req.skip_flat_threshold ?? 0.02;
-    const smooth = req.smooth ?? batchData.smooth ?? false;
-    const smoothWindow = req.smooth_window ?? batchData.smooth_window ?? 3;
+    const smooth = req.smooth ?? false;
+    const smoothWindow = req.smooth_window ?? 3;
     const computeLoglin = !!req.compute_loglin || rawModels.includes('log_lin');
     const llPtAvg = req.loglin_pt_avg ?? 7;
     const llPtDeriv = req.loglin_pt_smoothing_derivative ?? 7;
     const llPtMinWin = req.loglin_pt_min_size_of_win ?? 7;
     const llThrExp = req.loglin_threshold_of_exp ?? 0.9;
-    const blankSub = req.blank_subtraction ?? batchData.blank_subtraction ?? false;
-    const blankMethod = req.blank_method || batchData.blank_method || 'pointbypoint';
-    const firstResult = Array.isArray(batchData.results) ? batchData.results.find(r => typeof r.blank_value === 'number') : null;
-    const blankValue = batchData.blank_value ?? (firstResult ? firstResult.blank_value : 0.0);
-    const blankTimeseries = Array.isArray(batchData.blank_timeseries) ? batchData.blank_timeseries : [];
-    const blankTimeseriesLiteral = `Float64[${blankTimeseries.map(juliaFloatLiteral).join(', ')}]`;
+    const blankSub = req.blank_subtraction ?? false;
+    const blankMethod = req.blank_method || 'pointbypoint';
     const outPrefix = `${experiment}_batch_fit`;
-    const strArray = xs => `String[${xs.map(x => `"${x}"`).join(', ')}]`;
+    const strArray = xs => `String[${xs.map(x => JSON.stringify(String(x))).join(', ')}]`;
     const jb = x => x ? 'true' : 'false';
 
     const code = `\
 # ================================================================
 # Batch growth curve fitting - exported from GUIbiont
 # KinBiont.jl docs: https://github.com/pinheiroGroup/Kinbiont.jl
-# Install:  using Pkg; Pkg.add(Pkg.PackageSpec(name="Kinbiont", version="1.4"))
+# Reruns the workflow from local source files; no GUI result is embedded.
 # ================================================================
 
 using Kinbiont
 
+const CLEAN_DATA_PATH = "path/to/Clean_data"
 const EXPERIMENT = "${experiment}"
-const DATA_FILE = "your_data.csv"
 const OUT_PREFIX = "${outPrefix}"
 const WELLS = ${strArray(wells)}
 const MODEL_NAME = "${modelName}"
@@ -345,10 +309,11 @@ const LOGLIN_PT_MIN_WIN = ${llPtMinWin}
 const LOGLIN_THR_EXP = ${llThrExp}
 const BLANK_SUBTRACTION = ${jb(blankSub)}
 const BLANK_METHOD = "${blankMethod}"
-const BLANK_VALUE = ${juliaFloatLiteral(blankValue)}
-const BLANK_TIMESERIES = ${blankTimeseriesLiteral}
 
-data = GrowthData(DATA_FILE)
+source = load_gui_experiment_data(CLEAN_DATA_PATH, EXPERIMENT)
+data = source.data
+blank_timeseries = BLANK_SUBTRACTION && BLANK_METHOD == "pointbypoint" ?
+    source.blank_timeseries : Float64[]
 batch = kinbiont_batch_fit(
     data;
     experiment=EXPERIMENT,
@@ -371,8 +336,8 @@ batch = kinbiont_batch_fit(
     loglin_threshold_of_exp=LOGLIN_THR_EXP,
     blank_subtraction=BLANK_SUBTRACTION,
     blank_method=BLANK_METHOD,
-    blank_value=BLANK_VALUE,
-    blank_timeseries=BLANK_TIMESERIES,
+    blank_value=source.blank_value,
+    blank_timeseries=blank_timeseries,
 )
 
 paths = save_gui_batch_results(batch, "."; prefix=OUT_PREFIX)
@@ -386,44 +351,38 @@ println("Fitted: ", length(batch.results), "  skipped: ", length(batch.skipped),
 
 export function generateBatchLogLinKinbiontCode(batchData, withComments) {
     const req = batchData._request || {};
-    const experiment = batchData.experiment || req.experiment || 'experiment';
+    const experiment = req.experiment || 'experiment';
     const wells = req.wells || [];
     const ptAvg = req.pt_avg ?? 7;
     const ptDeriv = req.pt_smoothing_derivative ?? 7;
     const ptMinWin = req.pt_min_size_of_win ?? 7;
     const thrExp = req.threshold_of_exp ?? 0.9;
     const flatThr = req.skip_flat_threshold ?? 0.02;
-    const blankSub = req.blank_subtraction ?? batchData.blank_subtraction ?? false;
-    const blankMethod = req.blank_method || batchData.blank_method || 'pointbypoint';
+    const blankSub = req.blank_subtraction ?? false;
+    const blankMethod = req.blank_method || 'pointbypoint';
     const smoothing = req.type_of_smoothing || 'rolling_avg';
     const winType = req.type_of_win || 'maximum';
     const startThr = req.start_exp_win_thr ?? 0.05;
     const thrLowess = req.thr_lowess ?? 0.05;
-    const firstResult = Array.isArray(batchData.results) ? batchData.results.find(r => typeof r.blank_value === 'number') : null;
-    const blankValue = batchData.blank_value ?? (firstResult ? firstResult.blank_value : 0.0);
-    const blankTimeseries = Array.isArray(batchData.blank_timeseries) ? batchData.blank_timeseries : [];
-    const blankTimeseriesLiteral = `Float64[${blankTimeseries.map(juliaFloatLiteral).join(', ')}]`;
     const outPrefix = `${experiment}_batch_fit_loglin`;
-    const strArray = xs => `String[${xs.map(x => `"${x}"`).join(', ')}]`;
+    const strArray = xs => `String[${xs.map(x => JSON.stringify(String(x))).join(', ')}]`;
     const jb = x => x ? 'true' : 'false';
 
     const code = `\
 # ================================================================
 # Batch log-linear growth-rate fit - exported from GUIbiont
 # KinBiont.jl docs: https://github.com/pinheiroGroup/Kinbiont.jl
-# Install:  using Pkg; Pkg.add(Pkg.PackageSpec(name="Kinbiont", version="1.4"))
+# Reruns the workflow from local source files; no GUI result is embedded.
 # ================================================================
 
 using Kinbiont
 
+const CLEAN_DATA_PATH = "path/to/Clean_data"
 const EXPERIMENT = "${experiment}"
-const DATA_FILE = "your_data.csv"
 const OUT_PREFIX = "${outPrefix}"
 const WELLS = ${strArray(wells)}
 const BLANK_SUBTRACTION = ${jb(blankSub)}
 const BLANK_METHOD = "${blankMethod}"
-const BLANK_VALUE = ${juliaFloatLiteral(blankValue)}
-const BLANK_TIMESERIES = ${blankTimeseriesLiteral}
 const TYPE_OF_SMOOTHING = "${smoothing}"
 const PT_AVG = ${ptAvg}
 const PT_SMOOTHING_DERIVATIVE = ${ptDeriv}
@@ -434,15 +393,18 @@ const START_EXP_WIN_THR = ${startThr}
 const THR_LOWESS = ${thrLowess}
 const SKIP_FLAT_THRESHOLD = ${flatThr}
 
-data = GrowthData(DATA_FILE)
+source = load_gui_experiment_data(CLEAN_DATA_PATH, EXPERIMENT)
+data = source.data
+blank_timeseries = BLANK_SUBTRACTION && BLANK_METHOD == "pointbypoint" ?
+    source.blank_timeseries : Float64[]
 batch = kinbiont_batch_loglin(
     data;
     experiment=EXPERIMENT,
     labels=WELLS,
     blank_subtraction=BLANK_SUBTRACTION,
     blank_method=BLANK_METHOD,
-    blank_value=BLANK_VALUE,
-    blank_timeseries=BLANK_TIMESERIES,
+    blank_value=source.blank_value,
+    blank_timeseries=blank_timeseries,
     type_of_smoothing=TYPE_OF_SMOOTHING,
     pt_avg=PT_AVG,
     pt_smoothing_derivative=PT_SMOOTHING_DERIVATIVE,
@@ -492,17 +454,18 @@ export function generateClusterCode(clusterData, withComments) {
     const dbscanMinPts  = req.dbscan_min_pts ?? 3;
     const isFileMode    = req._mode === 'file';
     const smoothEnabled = smoothMethod !== 'none';
-    const prescreenApplied = deriveBlanks ? false : (clusterData.prescreen_applied ?? prescreen);
+    // Export the selected workflow, not a decision inferred from its result.
+    // Re-running the detector on the source data determines whether a sentinel
+    // is actually populated.
+    const prescreenApplied = deriveBlanks ? false : prescreen;
     const trendApplied = deriveBlanks ? false : trendTest;
-    const costLabel = clusterMethod === 'kmedoids'
-        ? 'Distance-to-medoid cost'
-        : clusterMethod === 'dbscan' ? 'DBSCAN cost (not defined; stored as 0.0)' : 'WCSS';
+    const costLabel = 'WCSS';
     const experimentsLiteral = Array.isArray(req.experiments) && req.experiments.length
         ? JSON.stringify(req.experiments)
         : 'String[]';
     const dataPathLiteral = req.csv_path
         ? JSON.stringify(req.csv_path)
-        : '"your_data.csv"';
+        : '"path/to/data.csv"';
     // JS bool → Julia `true`/`false` literal for interpolation into source code.
     const jb = (value) => value ? 'true' : 'false';
 
@@ -577,8 +540,8 @@ ${nInitParam}    kmeans_max_iters       = ${maxiter},
         ? `# CSV layout: first usable column is time, following columns are curves.
 # CSV files saved by pandas with an index column are handled automatically.
 const DATA_PATH = ${dataPathLiteral}`
-        : `# Point this at GUIbiont's Clean_data directory before running elsewhere.
-const CLEAN_DATA_PATH = "Clean_data"`;
+        : `# Point this at GUIbiont's Clean_data directory on this machine.
+const CLEAN_DATA_PATH = "path/to/Clean_data"`;
 
     const dataLoadBlock = isFileMode
         ? `# prepare_clustering_data mirrors the GUIbiont clustering loader:
@@ -673,6 +636,8 @@ cluster_opts = FitOptions(
     cluster       = true,
     n_clusters    = N_CLUSTER_LABELS,
     cluster_method = :${clusterMethod},${iterParam}${methodParam}
+    # Explicitly match GUIbiont's deterministic k-means initialisation.
+    kmeans_seed = 42,
     # Non-growing prescreen from GUIbiont Advanced options.
 ${prescreenParam}
     # Post-hoc flat/non-growing reassignment from GUIbiont Advanced options.
@@ -704,8 +669,9 @@ println("Quality summary:     ", quality_summary)
 #println("Quality indices:     ", quality)
 #println("Label/cluster rows:  ", assignment_rows)
 
-# For methods that use k, repeat preprocessing over candidate k values and plot
-# the method-specific cost stored in processed.wcss. DBSCAN has no k sweep.
+# WCSS uses centroid-based squared error for every method and excludes the
+# non-growing sentinel and DBSCAN noise. For methods that use k, repeat
+# preprocessing over candidate k values to build an elbow plot.
 `;
 
     return withComments ? code : stripComments(code);

@@ -1282,12 +1282,9 @@ function renderSweepPanel(sweep) {
 
     const ks = sweep.map(r => r.k);
     const costs = sweep.map(r => Number.isFinite(r.cost) ? r.cost : r.wcss);
-    const costMetric = sweep[0]?.cost_metric || state._lastClusterSweepCostMetric || 'wcss';
-    const costLabel = costMetric === 'distance_to_medoid'
-        ? 'Distance-to-medoid cost'
-        : 'WCSS';
+    const costLabel = 'WCSS';
 
-    // --- Method-specific clustering-cost elbow plot ---
+    // --- Method-independent centroid-WCSS elbow plot ---
     const elbowK = _detectElbow(ks, costs);
     const elbowY = costs[ks.indexOf(elbowK)];
     _setSweepTitle('cost', `${costLabel} (elbow: k=${elbowK}) \u2193`);
