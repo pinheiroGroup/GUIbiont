@@ -1,5 +1,45 @@
 _nan_to_null(v::Vector{Float64}) = Union{Float64,Nothing}[isnan(x) ? nothing : x for x in v]
 
+function _plot_stationary_stats(
+    time_numeric::Vector{Float64},
+    od_data::Vector{Float64},
+)
+    n = min(length(time_numeric), length(od_data))
+    valid = findall(i -> isfinite(time_numeric[i]) && isfinite(od_data[i]), 1:n)
+    isempty(valid) && return (specific_growth_rate=nothing, saturation_od=nothing)
+
+    data_mat = Matrix(transpose(hcat(time_numeric[valid], od_data[valid])))
+    opts = FitOptions()
+
+    try
+        # Use Kinbiont's standard detector: its reference mu is maximum(sgr),
+        # not an externally supplied log-linear estimate.
+        cutoff = Kinbiont._find_stationary_cutoff(data_mat, opts)
+        above_threshold = findall(data_mat[2, :] .> opts.stationary_thr_od)
+        isempty(above_threshold) &&
+            return (specific_growth_rate=nothing, saturation_od=nothing)
+
+        sgr = Kinbiont.specific_gr_evaluation(
+            data_mat[:, above_threshold],
+            opts.stationary_pt_smooth_derivative,
+        )
+        sgr_values = sgr isa Real ? [Float64(sgr)] : Float64.(sgr)
+        finite_sgr = filter(isfinite, sgr_values)
+        isempty(finite_sgr) &&
+            return (specific_growth_rate=nothing, saturation_od=nothing)
+
+        specific_growth_rate = maximum(finite_sgr)
+        saturation_od = Float64(data_mat[2, cutoff])
+        return (
+            specific_growth_rate=isfinite(specific_growth_rate) ? specific_growth_rate : nothing,
+            saturation_od=isfinite(saturation_od) ? saturation_od : nothing,
+        )
+    catch e
+        @debug "Unable to calculate stationary growth statistics" exception=(e, catch_backtrace())
+        return (specific_growth_rate=nothing, saturation_od=nothing)
+    end
+end
+
 function _rename_plot_annotations!(annotations::DataFrame)
     col_names = names(annotations)
     new_names = Symbol[]
@@ -99,7 +139,7 @@ function _growth_curve_summary(time_numeric::Vector{Float64}, od_data::Vector{Fl
 
     @inbounds for i in eachindex(od_data)
         od = od_data[i]
-        isnan(od) && continue
+        isfinite(od) || continue
 
         if have_valid
             max_od = max(max_od, od)
@@ -129,6 +169,7 @@ function _plot_trace_and_stat(
 )
     meta = get(metadata, well, (condition="Unknown", antibiotic="Unknown"))
     max_od, final_od, auc = _growth_curve_summary(time_numeric, od_data)
+    stationary_stats = _plot_stationary_stats(time_numeric, od_data)
     well_id = multi_experiment ? "$(experiment)_$(well)" : well
 
     trace = Dict(
@@ -143,9 +184,11 @@ function _plot_trace_and_stat(
         "well"       => well_id,
         "condition"  => meta.condition,
         "antibiotic" => meta.antibiotic,
-        "max_od"     => round(max_od,   digits=3),
-        "final_od"   => round(final_od, digits=3),
-        "auc"        => round(auc,      digits=2),
+        "specific_growth_rate" => stationary_stats.specific_growth_rate === nothing ? nothing : round(stationary_stats.specific_growth_rate, digits=4),
+        "saturation_od"        => stationary_stats.saturation_od === nothing ? nothing : round(stationary_stats.saturation_od, digits=3),
+        "max_od"               => round(max_od, digits=3),
+        "final_od"             => round(final_od, digits=3),
+        "auc"                  => round(auc, digits=2),
     )
 
     if multi_experiment

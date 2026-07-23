@@ -37,6 +37,8 @@ Base.@kwdef mutable struct FitCurveRequest
     stochastic_runs::Int                    = 3
     maxiters::Int = DEFAULT_FIT_MAXITERS
     abstol::Float64 = 1e-15
+    smooth::Bool = false
+    smooth_window::Int = 3
     # Always-on log-linear companion fit. Provides a model-free μ_max next to
     # the parametric one for sanity checking. Set to false to skip.
     compute_loglin::Bool = true
@@ -60,9 +62,11 @@ Base.@kwdef mutable struct BatchFitRequest
     stochastic_runs::Int                    = 3
     # Pre-screen: skip curves with amplitude (max-min OD) below this threshold.
     # Catches blanks/non-growers that can't be fit. Set to 0 to disable.
-    skip_flat_threshold::Float64 = 0.05
+    skip_flat_threshold::Float64 = 0.02
     maxiters::Int = DEFAULT_FIT_MAXITERS
     abstol::Float64 = 1e-15
+    smooth::Bool = false
+    smooth_window::Int = 3
     # Optional log-linear μ_max companion fit. When `compute_loglin` is true,
     # every well also gets a sliding-window log-linear fit (slope of log OD vs
     # time in the auto-detected exponential window) reported alongside the
@@ -100,6 +104,8 @@ Base.@kwdef mutable struct FitReplicateRequest
     stochastic_runs::Int                    = 3
     maxiters::Int = DEFAULT_FIT_MAXITERS
     abstol::Float64 = 1e-15
+    smooth::Bool = false
+    smooth_window::Int = 3
 end
 
 Base.@kwdef mutable struct BlankAnalysisRequest
@@ -139,7 +145,7 @@ Base.@kwdef mutable struct BatchLogLinFitRequest
     threshold_of_exp::Float64 = 0.9
     start_exp_win_thr::Float64 = 0.05
     thr_lowess::Float64 = 0.05
-    skip_flat_threshold::Float64 = 0.05
+    skip_flat_threshold::Float64 = 0.02
 end
 
 Base.@kwdef mutable struct PlotDataRequest
@@ -165,10 +171,10 @@ Base.@kwdef mutable struct ClusterRequest
     dbscan_min_pts::Int = 3
     hclust_linkage::String = "ward"
     subtract_blank::Bool = false
+    derive_non_growing_blanks::Bool = false
     blank_method::String = "pointbypoint"
     blank_range_thr::Float64 = 0.005
     blank_od_percentile::Float64 = 0.10
-    auto_detect_blanks::Bool = true
     interpolate::Bool = false
     interp_n::Int = 100
     interp_quantile_lo::Float64 = 0.05
@@ -195,10 +201,10 @@ Base.@kwdef mutable struct ClusterSweepRequest
     kmeans_n_init::Int = 3
     hclust_linkage::String = "ward"
     subtract_blank::Bool = false
+    derive_non_growing_blanks::Bool = false
     blank_method::String = "pointbypoint"
     blank_range_thr::Float64 = 0.005
     blank_od_percentile::Float64 = 0.10
-    auto_detect_blanks::Bool = true
     interpolate::Bool = false
     interp_n::Int = 100
     interp_quantile_lo::Float64 = 0.05

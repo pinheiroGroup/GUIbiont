@@ -12,7 +12,12 @@ function buildFitOptionsPayload() {
         parseInt(document.getElementById('fit-maxiters')?.value || `${DEFAULT_FIT_MAXITERS}`, 10) || DEFAULT_FIT_MAXITERS
     );
     const abstol = parseFloat(document.getElementById('fit-abstol')?.value || DEFAULT_FIT_ABSTOL) || parseFloat(DEFAULT_FIT_ABSTOL);
-    return { maxiters, abstol };
+    const smooth = document.getElementById('fit-smoothing')?.checked || false;
+    const smoothWindow = Math.max(
+        3,
+        parseInt(document.getElementById('fit-smoothing-window')?.value || '3', 10) || 3
+    );
+    return { maxiters, abstol, smooth, smooth_window: smoothWindow };
 }
 
 function setFitMode(mode) {
@@ -72,18 +77,19 @@ async function fitReplicateAverage() {
         state.lastReplicateTraces = plotData.traces || [];
 
         const fitCalFile = (document.getElementById('fit-calibration-file')?.value || '').trim();
+        const requestPayload = {
+            well_selections: replicateWells,
+            label,
+            experiment,
+            model_name: document.getElementById('fitting-model').value || 'aHPM',
+            ...buildOptimizerPayload('fit'),
+            ...buildFitOptionsPayload(),
+            ...(fitCalFile ? { calibration_file: fitCalFile } : {}),
+        };
         const fitResponse = await fetch(`${API_BASE}/api/fit-replicate`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                well_selections: replicateWells,
-                label: label,
-                experiment: experiment,
-                model_name: document.getElementById('fitting-model').value || 'aHPM',
-                ...buildOptimizerPayload('fit'),
-                ...buildFitOptionsPayload(),
-                ...(fitCalFile ? { calibration_file: fitCalFile } : {}),
-            })
+            body: JSON.stringify(requestPayload)
         });
 
         if (!fitResponse.ok) {
@@ -92,6 +98,7 @@ async function fitReplicateAverage() {
         }
 
         const fitData = await fitResponse.json();
+        fitData._request = requestPayload;
         state.lastFitData = fitData;
         displayFittingResults(fitData);
         updateFitPlot(fitData);
@@ -447,22 +454,23 @@ async function fitGrowthCurve() {
     
     try {
         const calFile = (document.getElementById('fit-calibration-file')?.value || '').trim();
+        const requestPayload = {
+            experiment,
+            well,
+            blank_subtraction: document.getElementById('fit-blank-subtraction').checked,
+            blank_method: document.getElementById('fit-blank-method').value,
+            model_name: document.getElementById('fitting-model').value || 'aHPM',
+            ...buildOptimizerPayload('fit'),
+            ...buildFitOptionsPayload(),
+            ...buildLogLinCompanionPayload(),
+            ...(calFile ? { calibration_file: calFile } : {}),
+        };
         const response = await fetch(`${API_BASE}/api/fit-curve`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({
-                experiment: experiment,
-                well: well,
-                blank_subtraction: document.getElementById('fit-blank-subtraction').checked,
-                blank_method: document.getElementById('fit-blank-method').value,
-                model_name: document.getElementById('fitting-model').value || 'aHPM',
-                ...buildOptimizerPayload('fit'),
-                ...buildFitOptionsPayload(),
-                ...buildLogLinCompanionPayload(),
-                ...(calFile ? { calibration_file: calFile } : {}),
-            })
+            body: JSON.stringify(requestPayload)
         });
 
         if (!response.ok) {
@@ -471,10 +479,9 @@ async function fitGrowthCurve() {
         }
 
         const fitData = await response.json();
+        fitData._request = requestPayload;
 
-        // Stash for the code-export modal, exactly as fitReplicateAverage
-        // does. Without this, openFitCodeExport() short-circuits on the
-        // !state.lastFitData guard and the export modal silently no-ops.
+        // Preserve both the result and the exact submitted settings for export.
         state.lastFitData = fitData;
         displayFittingResults(fitData);
         plotFittedCurve(fitData);
@@ -593,7 +600,7 @@ function displayFittingResults(fitData) {
                 <span class="parameter-value">${fmt(fitData.lag_loglin, 3)} h</span>
             </div>
             <div class="parameter-row">
-                <span class="parameter-name">N<sub>max</sub> (empirical, q95):</span>
+                <span class="parameter-name">N<sub>max</sub> (stationary cutoff):</span>
                 <span class="parameter-value">${fmt(fitData.N_max_emp, 4)}</span>
             </div>
         `;
@@ -667,6 +674,17 @@ function plotFittedCurve(fitData) {
             type: 'scatter',
             name: `${fitData.experiment}: ${fitData.well} (Blank-subtracted)`,
             marker: { color: 'black', size: 6 }
+        });
+    }
+
+    if (Array.isArray(fitData.smoothed_time) && Array.isArray(fitData.smoothed_od) && fitData.smoothed_time.length > 0) {
+        data.push({
+            x: fitData.smoothed_time,
+            y: fitData.smoothed_od,
+            mode: 'lines',
+            type: 'scatter',
+            name: `Centered average (${fitData.preprocessing?.smooth_window || 3} points)`,
+            line: { color: '#167d8d', width: 2 }
         });
     }
 
@@ -966,6 +984,14 @@ function displayLogLinResults(fitData) {
         <div class="parameter-row">
             <span class="parameter-name">R²:</span>
             <span class="parameter-value">${_fmt(r2, 5)}</span>
+        </div>
+        <div class="parameter-row">
+            <span class="parameter-name">Lag (tangent-intercept):</span>
+            <span class="parameter-value">${_fmt(fitData.lag_loglin, 3)} h</span>
+        </div>
+        <div class="parameter-row">
+            <span class="parameter-name">N<sub>max</sub> (stationary cutoff):</span>
+            <span class="parameter-value">${_fmt(fitData.N_max_emp, 4)}</span>
         </div>
     `;
 

@@ -149,6 +149,9 @@ end
     @test haskey(body, :experimental_od)
     @test !isempty(body[:fit_od])
     @test string(body[:model]) == "logistic"
+    @test body[:preprocessing][:smooth] == false
+    @test body[:preprocessing][:cut_stationary_phase] == true
+    @test Float64(body[:stationary_phase_start]) ≈ Float64(last(body[:fit_time]))
 end
 
 @testset "POST /api/fit-replicate — single well" begin
@@ -158,6 +161,20 @@ end
                                   "experiment"      => SINGLE_CH_EXP))
     @test status == 200
     @test haskey(body, :parameters)
+end
+
+@testset "POST /api/fit-replicate — centered smoothing" begin
+    wells = [Dict("experiment" => SINGLE_CH_EXP, "well" => SINGLE_CH_WELL, "channel" => 1)]
+    status, body = post_json("/api/fit-replicate",
+                             Dict("well_selections" => wells,
+                                  "experiment" => SINGLE_CH_EXP,
+                                  "model_name" => "logistic",
+                                  "smooth" => true,
+                                  "smooth_window" => 3))
+    @test status == 200
+    @test body[:preprocessing][:smooth] == true
+    @test string(body[:preprocessing][:smooth_method]) == "boxcar"
+    @test length(body[:smoothed_time]) == length(body[:experimental_time])
 end
 
 @testset "POST /api/fit-replicate — multi-channel wells" begin
@@ -228,6 +245,19 @@ end
     @test string(body[:cluster_method]) == "kmeans"
 end
 
+@testset "POST /api/cluster - experiment-local annotated blank subtraction" begin
+    status, body = post_json("/api/cluster",
+        Dict("experiments" => [SINGLE_CH_EXP], "k" => 2,
+             "smooth_method" => "none", "subtract_blank" => true,
+             "blank_method" => "pointbypoint"))
+    @test status == 200
+    @test body[:blank_subtracted] == true
+    @test string(body[:blank_source]) == "annotated"
+    used = string.(body[:blank_wells_used])
+    @test any(label -> endswith(label, "/A1"), used)
+    @test !any(label -> endswith(label, "/A2"), used)
+end
+
 @testset "POST /api/cluster — kmedoids method" begin
     status, body = post_json("/api/cluster",
                              Dict("csv" => CLUSTER_CSV, "k" => 2,
@@ -277,6 +307,7 @@ end
                              Dict("csv" => CLUSTER_CSV, "k_max" => 4))
     @test status == 200
     @test haskey(body, :sweep)
+    @test string(body[:cost_metric]) == "wcss"
     sweep = body[:sweep]
     @test !isempty(sweep)
     # k=1 is included as the WCSS/elbow baseline; cluster-quality metrics that
@@ -288,6 +319,8 @@ end
     for s in sweep
         @test haskey(s, :k)
         @test haskey(s, :wcss)
+        @test haskey(s, :cost)
+        @test string(s[:cost_metric]) == "wcss"
         @test haskey(s, :silhouette_mean)
         @test haskey(s, :dunn)
         @test haskey(s, :davies_bouldin)
@@ -306,22 +339,31 @@ end
     @test !isempty(body[:sweep])
 end
 
-@testset "POST /api/cluster-sweep — DBSCAN is unavailable (returns 400)" begin
-    # DBSCAN has no k parameter, so the k-sweep is rejected rather than run.
+@testset "POST /api/cluster-sweep - reports distance-to-medoid cost" begin
+    status, body = post_json("/api/cluster-sweep",
+                             Dict("csv" => CLUSTER_CSV, "k_max" => 4,
+                                  "smooth_method" => "none",
+                                  "cluster_method" => "kmedoids"))
+    @test status == 200
+    @test string(body[:cost_metric]) == "distance_to_medoid"
+    @test !isempty(body[:sweep])
+    @test all(r -> string(r[:cost_metric]) == "distance_to_medoid", body[:sweep])
+    @test all(r -> Float64(r[:cost]) == Float64(r[:wcss]), body[:sweep])
+end
+
+@testset "POST /api/cluster-sweep - rejects DBSCAN" begin
     status, body = post_json("/api/cluster-sweep",
                              Dict("csv" => CLUSTER_CSV, "k_max" => 4,
                                   "cluster_method" => "dbscan"))
     @test status == 400
-    @test haskey(body, :error)
-    @test occursin("DBSCAN", body[:error])
+    @test occursin("does not use k", string(body[:error]))
 end
 
-@testset "POST /api/cluster-sweep — blank subtraction is honoured during the sweep" begin
-    # The sweep accepts the same blank-correction options as /api/cluster.
+@testset "POST /api/cluster-sweep - uses blank preprocessing controls" begin
     status, body = post_json("/api/cluster-sweep",
-                             Dict("csv" => CLUSTER_CSV, "k_max" => 3,
-                                  "subtract_blank" => true,
-                                  "auto_detect_blanks" => true))
+        Dict("experiments" => [SINGLE_CH_EXP], "k_max" => 3,
+             "smooth_method" => "none", "subtract_blank" => true,
+             "blank_method" => "pointbypoint"))
     @test status == 200
     @test !isempty(body[:sweep])
 end
@@ -605,6 +647,48 @@ const PRESCREEN_ALL_GROWING_CSV = """Time,G1,G2,G3,G4,G5,G6
     @test all(==(3), flat_ids)
     # Growing curves should NOT be in the sentinel cluster
     @test all(!=(3), grow_ids)
+    sentinel_cluster = only(filter(c -> Int(c[:id]) == 3, body[:clusters]))
+    @test sentinel_cluster[:is_non_growing] == true
+end
+
+@testset "POST /api/cluster - derives per-group blanks from non-growing cluster" begin
+    status, body = post_json("/api/cluster",
+                             Dict("csv" => PRESCREEN_CSV, "k" => 2,
+                                  "smooth_method" => "none",
+                                  "subtract_blank" => true,
+                                  "derive_non_growing_blanks" => true,
+                                  "prescreen_constant" => true,
+                                  "prescreen_tol_const" => 1.5))
+    @test status == 200
+    @test body[:derived_non_growing_blanks] == true
+    @test body[:blank_subtracted] == true
+    @test string(body[:blank_source]) == "derived"
+    @test Set(String.(body[:blank_wells_used])) == Set(["F1", "F2"])
+    @test Set(String.(body[:series_labels])) == Set(["G1", "G2", "G3", "G4"])
+    @test all(c -> c[:is_non_growing] == false, body[:clusters])
+end
+
+@testset "POST /api/cluster-sweep - reuses derived per-group blanks" begin
+    status, body = post_json("/api/cluster-sweep",
+                             Dict("csv" => PRESCREEN_CSV, "k_max" => 6,
+                                  "smooth_method" => "none",
+                                  "subtract_blank" => true,
+                                  "derive_non_growing_blanks" => true,
+                                  "prescreen_constant" => true,
+                                  "prescreen_tol_const" => 1.5))
+    @test status == 200
+    @test !isempty(body[:sweep])
+    # F1/F2 are removed as the derived blank group before the diagnostic
+    # sweep, so only the four growing curves remain available to k.
+    @test maximum(Int(row[:k]) for row in body[:sweep]) == 4
+end
+
+@testset "POST /api/cluster - blank derivation requires a detector" begin
+    status, body = post_json("/api/cluster",
+                             Dict("csv" => PRESCREEN_CSV, "k" => 2,
+                                  "derive_non_growing_blanks" => true))
+    @test status == 400
+    @test occursin("requires", lowercase(string(body[:error])))
 end
 
 @testset "POST /api/cluster — trend_test_flat reassigns flat curves" begin
@@ -687,7 +771,7 @@ end
 
 @testset "POST /api/cluster-sweep — invalid prescreen quantiles return 4xx or are clamped" begin
     # qlo >= qhi should not crash the server. The schema accepts the floats as-is;
-    # _prescreen_constant_mask handles the actual computation. We assert no 500.
+    # Kinbiont handles the actual computation. We assert no 500.
     status, body = post_json("/api/cluster-sweep",
                              Dict("csv" => PRESCREEN_CSV, "k_max" => 3,
                                   "smooth_method" => "none",
@@ -751,6 +835,7 @@ const LOGLIN_FIELDS = ["gr_loglin", "gr_loglin_se", "gr_max_sliding",
     @test 0.0 <= gr <= 5.0       # bounded by physiology for any healthy E. coli
     @test 0.0 <= Float64(r[:R_squared_loglin]) <= 1.0
     @test Float64(r[:t_exp_start_loglin]) < Float64(r[:t_exp_end_loglin])
+    @test isfinite(Float64(r[:N_max_emp]))
     # μ_max from log-lin must NOT have the optimizer-specific keys
     @test !haskey(r, :parameters)
     @test !haskey(r, :aic)
@@ -815,6 +900,7 @@ end
     end
     @test r[:loglin_converged] == true
     @test isfinite(Float64(r[:gr_loglin]))
+    @test isfinite(Float64(r[:N_max_emp]))
 end
 
 @testset "POST /api/batch-fit — compute_loglin defaults to false (absent companion fields)" begin

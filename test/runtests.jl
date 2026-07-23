@@ -325,6 +325,17 @@ else
         @test length(t[:x]) == length(t[:y])
         @test Int(t[:channel]) == 1
         @test haskey(t, :well_name)
+        stats = body[:stats]
+        @test length(stats) == 1
+        s = first(stats)
+        @test haskey(s, :specific_growth_rate)
+        @test haskey(s, :saturation_od)
+        @test haskey(s, :max_od)
+        @test haskey(s, :final_od)
+        @test Float64(s[:specific_growth_rate]) > 0.0
+        @test Float64(s[:saturation_od]) > 0.0
+        @test Float64(s[:max_od]) > 0.0
+        @test Float64(s[:final_od]) > 0.0
     end
 
     @testset "POST /api/plot-data — multi channel" begin
@@ -396,6 +407,40 @@ else
         @test haskey(body, :param_names)
         @test length(body[:param_names]) == 2   # logistic has gr, N_max
         @test length(body[:parameters]) == 2
+        @test haskey(body, :blank_timeseries)
+        @test haskey(body, :blank_applied)
+        @test body[:preprocessing][:smooth] == false
+        @test body[:preprocessing][:cut_stationary_phase] == true
+        @test Float64(body[:stationary_phase_start]) ≈ Float64(last(body[:fit_time]))
+    end
+
+    @testset "POST /api/fit-curve — preprocessing is optimizer-independent" begin
+        status, body = post_json("/api/fit-curve",
+                                 Dict("experiment" => SINGLE_CH_EXP, "well" => SINGLE_CH_WELL,
+                                      "model_name" => "logistic", "optimizer" => "LN_COBYLA"))
+        @test status == 200
+        @test string(body[:optimizer_used]) == "LN_COBYLA"
+        @test body[:preprocessing][:smooth] == false
+        @test body[:preprocessing][:cut_stationary_phase] == true
+        @test Float64(body[:stationary_phase_start]) ≈ Float64(last(body[:fit_time]))
+    end
+
+    @testset "POST /api/fit-curve — centered smoothing" begin
+        status, body = post_json("/api/fit-curve",
+                                 Dict("experiment" => SINGLE_CH_EXP, "well" => SINGLE_CH_WELL,
+                                      "model_name" => "logistic", "smooth" => true,
+                                      "smooth_window" => 3))
+        @test status == 200
+        @test body[:preprocessing][:smooth] == true
+        @test string(body[:preprocessing][:smooth_method]) == "boxcar"
+        @test Int(body[:preprocessing][:smooth_window]) == 3
+        @test length(body[:smoothed_time]) == length(body[:experimental_time])
+        @test length(body[:smoothed_od]) == length(body[:experimental_od])
+
+        bad_status, _ = post_json("/api/fit-curve",
+                                  Dict("experiment" => SINGLE_CH_EXP, "well" => SINGLE_CH_WELL,
+                                       "smooth" => true, "smooth_window" => 4))
+        @test bad_status == 400
     end
 
     @testset "POST /api/fit-curve — unknown model returns 400" begin
@@ -470,6 +515,22 @@ else
         @test haskey(r, :model)
         @test haskey(r, :stationary_phase_start)
         @test string(r[:model]) == "logistic"
+    end
+
+    @testset "POST /api/batch-fit — centered smoothing" begin
+        status, body = batch_fit_and_wait(
+                           Dict("experiment" => SINGLE_CH_EXP,
+                                "wells" => [SINGLE_CH_WELL],
+                                "model_name" => "logistic",
+                                "smooth" => true,
+                                "smooth_window" => 3))
+        @test status == 200
+        @test Int(body[:summary][:success]) == 1
+        r = only(body[:results])
+        @test r[:preprocessing][:smooth] == true
+        @test string(r[:preprocessing][:smooth_method]) == "boxcar"
+        @test Int(r[:preprocessing][:smooth_window]) == 3
+        @test length(r[:smoothed_time]) == length(r[:experimental_time])
     end
 
     @testset "POST /api/batch-fit — all wells (no wells key)" begin

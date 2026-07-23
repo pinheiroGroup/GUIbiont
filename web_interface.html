@@ -275,6 +275,16 @@
                             </div>
                         </div>
 
+                        <div style="margin-top: 8px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 0.9em;">
+                            <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer;">
+                                <input type="checkbox" id="fit-smoothing" onchange="document.getElementById('fit-smoothing-window').disabled = !this.checked">
+                                Smooth parametric fit
+                            </label>
+                            <label for="fit-smoothing-window" style="white-space: nowrap;">Centered-average window:</label>
+                            <input type="number" id="fit-smoothing-window" value="3" min="3" max="99" step="2" disabled style="font-size: 0.9em; padding: 2px 6px; border: 1px solid #ced4da; border-radius: 4px; width: 64px; color: #495057;">
+                            <span style="color:#6c757d;">points</span>
+                        </div>
+
                         <div style="margin-top: 8px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
                             <label style="display: flex; align-items: center; gap: 8px; font-size: 0.9em; cursor: pointer;">
                                 <input type="checkbox" id="fit-blank-subtraction" onchange="onBlankSubtractionChange()">
@@ -428,9 +438,9 @@
                                         Subtract blank
                                     </label>
                                     <label style="display:flex; align-items:center; gap:6px; cursor:pointer;"
-                                           title="When no annotated blank wells are supplied, automatically detect flat low-OD wells and exclude them from clustering (correction applied separately within each experiment). Superseded by pre-screen / trend test when those are enabled. Uncheck to disable.">
-                                        <input type="checkbox" id="cluster-auto-detect-blanks" checked>
-                                        Auto-detect blanks (when none annotated)
+                                           title="Use the non-growing group identified by the enabled pre-screen and/or trend test as experiment-specific blanks, remove it, and rerun clustering.">
+                                        <input type="checkbox" id="cluster-derive-blank" onchange="onClusterDerivedBlankChange()">
+                                        Derive blanks from non-growing group
                                     </label>
                                     <div id="cluster-blank-method-row" style="display:none; flex-direction:column; gap:8px;">
                                         <div style="display:flex; flex-direction:column; gap:4px;">
@@ -441,7 +451,7 @@
                                                 <option value="clip">Clip to zero</option>
                                             </select>
                                         </div>
-                                        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                                        <div style="display:none; gap:10px; flex-wrap:wrap;" aria-hidden="true">
                                             <div style="display:flex; flex-direction:column; gap:4px;">
                                                 <label title="A well is considered flat if its OD range (max−min) is below this value">Max OD range <span style="color:#6c757d;">(?)</span></label>
                                                 <input type="number" id="cluster-blank-range-thr" value="0.005" min="0.001" max="0.1" step="0.001" style="width:90px; padding:4px 6px;">
@@ -727,10 +737,10 @@
                 <div style="background:#fff; border:1px solid #dee2e6; border-radius:8px; padding:16px;">
                     <h4 style="margin:0 0 12px; color:#495057;">🔍 Best k — Quality Indices</h4>
                     <div id="cluster-sweep-grid" style="display:grid; grid-template-columns:repeat(3,1fr); gap:12px;">
-                        <div class="cluster-sweep-card" data-sweep-metric="wcss">
+                        <div class="cluster-sweep-card" data-sweep-metric="cost">
                             <div class="cluster-sweep-titlebar">
                                 <span id="cluster-sweep-title-wcss" class="cluster-sweep-title-text">WCSS</span>
-                                <button type="button" class="cluster-sweep-download" data-sweep-metric="wcss" title="download metric results" aria-label="download metric results">
+                                <button type="button" class="cluster-sweep-download" data-sweep-metric="cost" title="download metric results" aria-label="download metric results">
                                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h12l2 2v16H5V3zm2 2v14h10V7.8L14.2 5H13v5H8V5H7zm3 0v3h1V5h-1zm-1 9h6v4H9v-4z"/></svg>
                                 </button>
                             </div>
@@ -866,6 +876,16 @@
                                 </div>
                             </div>
                         </div>
+
+                        <div style="margin-top: 10px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 0.9em;">
+                            <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer;">
+                                <input type="checkbox" id="batch-fit-smoothing" onchange="document.getElementById('batch-fit-smoothing-window').disabled = !this.checked">
+                                Smooth parametric fits
+                            </label>
+                            <label for="batch-fit-smoothing-window" style="white-space: nowrap;">Centered-average window:</label>
+                            <input type="number" id="batch-fit-smoothing-window" value="3" min="3" max="99" step="2" disabled style="font-size: 0.9em; padding: 2px 6px; border: 1px solid #ced4da; border-radius: 4px; width: 64px; color: #495057;">
+                            <span style="color:#6c757d;">points</span>
+                        </div>
                         </div>
 
                         <div id="batch-loglin-wrap" style="display:none; margin-top: 14px;">
@@ -947,8 +967,8 @@
                                     <option value="1e-16">1e-16</option>
                                 </select>
                             </div>
-                            <label for="batch-fit-skip-flat" style="white-space: nowrap;" title="Skip curves whose OD amplitude (max - min) is below this. Typical OD ranges are 0.01 - 1.0; default 0.05 catches blanks. Set to 0 to disable.">Skip if OD range &lt;:</label>
-                            <input type="number" id="batch-fit-skip-flat" value="0.05" min="0" max="2" step="0.01" style="font-size: 0.9em; padding: 2px 6px; border: 1px solid #ced4da; border-radius: 4px; width: 70px; color: #495057;">
+                            <label for="batch-fit-skip-flat" style="white-space: nowrap;" title="Skip curves whose OD amplitude (max - min) is below this. Typical OD ranges are 0.01 - 1.0; default 0.02 catches blanks. Set to 0 to disable.">Skip if OD range &lt;:</label>
+                            <input type="number" id="batch-fit-skip-flat" value="0.02" min="0" max="2" step="0.01" style="font-size: 0.9em; padding: 2px 6px; border: 1px solid #ced4da; border-radius: 4px; width: 70px; color: #495057;">
                         </div>
                         <div id="batch-fit-optimizer-best-panel" style="display: none; margin-top: 6px; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; font-size: 0.85em;">
                             <div style="color: #6c757d; margin-bottom: 6px;">Each deterministic optimizer runs once per well; each stochastic runs N times. Lowest-RMSE fit wins per well.</div>

@@ -15,11 +15,17 @@ const BATCH_JOBS_LOCK = ReentrantLock()
     sto_runs       = max(1, body.stochastic_runs)
     maxiters       = clamp(body.maxiters > 0 ? body.maxiters : DEFAULT_FIT_MAXITERS, 1, MAX_FIT_MAXITERS)
     abstol         = body.abstol > 0.0 ? body.abstol : 0.0
+    smooth         = body.smooth
+    smooth_window  = body.smooth_window
     compute_loglin = body.compute_loglin
     ll_pt_avg      = max(1, body.loglin_pt_avg)
     ll_pt_deriv    = max(2, body.loglin_pt_smoothing_derivative)
     ll_pt_min_win  = max(3, body.loglin_pt_min_size_of_win)
     ll_thr_exp     = clamp(body.loglin_threshold_of_exp, 0.0, 1.0)
+
+    if smooth && (smooth_window < 3 || iseven(smooth_window))
+        return json(Dict("error" => "Smoothing window must be an odd integer greater than or equal to 3"); status=400)
+    end
 
     data_file        = joinpath(CLEAN_DATA_PATH, experiment, "data_channel_1.csv")
     annotation_file  = joinpath(CLEAN_DATA_PATH, experiment, "annotation_clean.csv")
@@ -83,6 +89,8 @@ const BATCH_JOBS_LOCK = ReentrantLock()
             stochastic_runs                 = sto_runs,
             maxiters                        = maxiters,
             abstol                          = abstol,
+            smooth                          = smooth,
+            smooth_window                   = smooth_window,
             compute_loglin                  = compute_loglin,
             loglin_pt_avg                   = ll_pt_avg,
             loglin_pt_smoothing_derivative  = ll_pt_deriv,
@@ -106,7 +114,13 @@ end
     sto_runs         = max(1, body.stochastic_runs)
     maxiters         = clamp(body.maxiters > 0 ? body.maxiters : DEFAULT_FIT_MAXITERS, 1, MAX_FIT_MAXITERS)
     abstol           = body.abstol > 0.0 ? body.abstol : 0.0
+    smooth           = body.smooth
+    smooth_window    = body.smooth_window
     calibration_file = "./cal_curve_avg.csv"
+
+    if smooth && (smooth_window < 3 || iseven(smooth_window))
+        return json(Dict("error" => "Smoothing window must be an odd integer greater than or equal to 3"); status=400)
+    end
 
     if !haskey(MODEL_REGISTRY, model_name)
         return json(Dict("error" => "Unknown model: $model_name"); status=400)
@@ -162,6 +176,8 @@ end
             stochastic_runs          = sto_runs,
             maxiters                 = maxiters,
             abstol                   = abstol,
+            smooth                   = smooth,
+            smooth_window            = smooth_window,
         )
     catch e
                 return json(Dict("error" => "Replicate fitting failed: $e"); status=500)
@@ -304,11 +320,17 @@ end
     flat_thr        = max(0.0, body.skip_flat_threshold)
     maxiters        = clamp(body.maxiters > 0 ? body.maxiters : DEFAULT_FIT_MAXITERS, 1, MAX_FIT_MAXITERS)
     abstol          = body.abstol > 0.0 ? body.abstol : 0.0
+    smooth          = body.smooth
+    smooth_window   = body.smooth_window
     compute_loglin  = body.compute_loglin
     ll_pt_avg       = max(1, body.loglin_pt_avg)
     ll_pt_deriv     = max(2, body.loglin_pt_smoothing_derivative)
     ll_pt_min_win   = max(3, body.loglin_pt_min_size_of_win)
     ll_thr_exp      = clamp(body.loglin_threshold_of_exp, 0.0, 1.0)
+
+    if smooth && (smooth_window < 3 || iseven(smooth_window))
+        return json(Dict("error" => "Smoothing window must be an odd integer greater than or equal to 3"); status=400)
+    end
 
     if isempty(model_names_req)
         if !haskey(MODEL_REGISTRY, model_name)
@@ -351,6 +373,12 @@ end
             "model_names"  => isempty(model_names_req) ? [model_name] : model_names_req,
             "maxiters"     => maxiters,
             "abstol"       => abstol,
+            "smooth"       => smooth,
+            "smooth_window" => smooth_window,
+            "blank_subtraction" => subtract_blank,
+            "blank_method"      => blank_method,
+            "blank_value"       => blank_value,
+            "blank_timeseries"  => blank_ts,
             "total"        => length(wells_to_fit),
             "completed"    => 0,
             "current_well" => "",
@@ -417,6 +445,8 @@ end
                                         stochastic_runs                 = sto_runs,
                                         maxiters                        = maxiters,
                                         abstol                          = abstol,
+                                        smooth                          = smooth,
+                                        smooth_window                   = smooth_window,
                                         compute_loglin                  = compute_loglin,
                                         loglin_pt_avg                   = ll_pt_avg,
                                         loglin_pt_smoothing_derivative  = ll_pt_deriv,
@@ -480,6 +510,12 @@ end
             resp["model_names"] = job["model_names"]
             resp["maxiters"]    = job["maxiters"]
             resp["abstol"]      = job["abstol"]
+            resp["smooth"]      = job["smooth"]
+            resp["smooth_window"] = job["smooth_window"]
+            resp["blank_subtraction"] = job["blank_subtraction"]
+            resp["blank_method"]      = job["blank_method"]
+            resp["blank_value"]       = job["blank_value"]
+            resp["blank_timeseries"]  = job["blank_timeseries"]
             resp["results"]     = job["results"]
             resp["skipped"]     = job["skipped"]
             resp["summary"]     = job["summary"]
@@ -546,6 +582,10 @@ end
             "model_names"  => ["log_lin"],
             "maxiters"     => 0,
             "abstol"       => 0.0,
+            "blank_subtraction" => subtract_blank,
+            "blank_method"      => blank_method,
+            "blank_value"       => blank_value,
+            "blank_timeseries"  => blank_ts,
             "total"        => length(wells_to_fit),
             "completed"    => 0,
             "current_well" => "",
@@ -828,23 +868,17 @@ end
         t = time_numeric[valid]
         od = od_raw[valid]
 
-        # Blank handling: log-lin needs strictly positive OD. Use the "clip"
-        # method (or shift when the blank pulls OD negative) so log() is safe.
-        od_subtracted_display = nothing
-        if subtract_blank && blank_value > 0.0
-            blank_ts_valid = isempty(blank_timeseries) ? Float64[] : blank_timeseries[valid]
-            corrected = (blank_method == "pointbypoint" && length(blank_ts_valid) == length(od)) ?
-                od .- blank_ts_valid : od .- blank_value
-            od_subtracted_display = max.(corrected, 0.0)
-            if blank_method == "clip"
-                od_for_fit = max.(corrected, 1e-4)
-            else
-                shift = max(-minimum(corrected), 0.0) + 1e-4
-                od_for_fit = corrected .+ shift
-            end
-        else
-            od_for_fit = max.(od, 1e-4)
-        end
+        blank_ts_valid = isempty(blank_timeseries) ? Float64[] : blank_timeseries[valid]
+        prepared = _prepare_fit_curve(
+            t, od, well;
+            blank_value,
+            subtract_blank,
+            blank_method,
+            blank_timeseries=blank_ts_valid,
+            unblanked_floor=1e-4,
+        )
+        od_for_fit = prepared.od_for_fit
+        od_subtracted_display = prepared.od_subtracted_display
 
         data_mat = Matrix(transpose(hcat(t, od_for_fit)))
 
@@ -870,6 +904,9 @@ end
         fit_matrix   = raw[3]
         smoothed     = raw[4]
         ci_band      = raw[5]
+        lag_loglin   = length(params) >= 15 && params[15] !== missing ?
+            Float64(params[15]) : NaN
+        n_max_emp    = _loglin_stationary_nmax(raw, pt_deriv)
 
         # Guard against the "no exp window found" path where matrix is `missing`.
         fit_times    = ismissing(fit_matrix) ? Float64[] :
@@ -900,6 +937,8 @@ end
             "confidence_band_log"   => ci_vals,
             "param_names"           => param_names,
             "parameters"            => params,
+            "lag_loglin"            => lag_loglin,
+            "N_max_emp"             => n_max_emp,
             "blank_value"           => blank_value,
             "blank_subtraction"     => subtract_blank,
             "blank_method"          => blank_method,

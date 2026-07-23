@@ -58,14 +58,26 @@ function ground_truth_log_lin(t::Vector{Float64}, od::Vector{Float64},
     )
     params = raw[2]
     if length(params) < 14 || params[7] === missing
-        return (gr=NaN, dt=NaN, r2=NaN, t0=NaN, t1=NaN, converged=false)
+        return (gr=NaN, dt=NaN, r2=NaN, t0=NaN, t1=NaN,
+                nmax=NaN, converged=false)
     end
+    stationary_opts = FitOptions(
+        stationary_percentile_thr       = 0.05,
+        stationary_pt_smooth_derivative = KW.pt_smoothing_derivative,
+        stationary_win_size             = 5,
+        stationary_thr_od               = 0.02,
+    )
+    smoothed = Matrix{Float64}(raw[4])
+    cutoff = find_stationary_cutoff_from_mu(
+        smoothed, Float64(params[7]), stationary_opts,
+    )
     return (
         gr        = Float64(params[7]),
         dt        = Float64(params[9]),
         r2        = Float64(params[14])^2,
         t0        = Float64(params[3]),
         t1        = Float64(params[4]),
+        nmax      = Float64(smoothed[2, cutoff]),
         converged = true,
     )
 end
@@ -102,6 +114,8 @@ function main()
     max_dgr = 0.0
     max_dr2 = 0.0
     max_dgr_standalone = 0.0
+    max_dnmax = 0.0
+    max_dnmax_standalone = 0.0
     fails = 0
     for tc in test_cases
         # Companion path uses 0.01 floor (parametric); standalone uses 1e-4.
@@ -139,10 +153,15 @@ function main()
         r2   = get(r, "R_squared_loglin", NaN)
         conv = get(r, "loglin_converged", false)
         gr_s = get(s, "gr_loglin", NaN)
+        nmax = get(r, "N_max_emp", NaN)
+        nmax_s = get(s, "N_max_emp", NaN)
 
         dgr  = isfinite(gr)   && isfinite(gt.gr)            ? abs(gr   - gt.gr)            : NaN
         dr2  = isfinite(r2)   && isfinite(gt.r2)            ? abs(r2   - gt.r2)            : NaN
         dgs  = isfinite(gr_s) && isfinite(gt_standalone.gr) ? abs(gr_s - gt_standalone.gr) : NaN
+        dkn  = isfinite(nmax) && isfinite(gt.nmax) ? abs(nmax - gt.nmax) : NaN
+        dkns = isfinite(nmax_s) && isfinite(gt_standalone.nmax) ?
+            abs(nmax_s - gt_standalone.nmax) : NaN
 
         println(
             rpad(tc.gene, 8), rpad(tc.medium, 5),
@@ -155,13 +174,18 @@ function main()
         if isfinite(dgr); max_dgr = max(max_dgr, dgr); end
         if isfinite(dr2); max_dr2 = max(max_dr2, dr2); end
         if isfinite(dgs); max_dgr_standalone = max(max_dgr_standalone, dgs); end
+        if isfinite(dkn); max_dnmax = max(max_dnmax, dkn); end
+        if isfinite(dkns); max_dnmax_standalone = max(max_dnmax_standalone, dkns); end
         if !(conv == gt.converged); fails += 1; end
     end
     @info "Max |Δgr| (companion vs Kinbiont): $max_dgr"
     @info "Max |Δgr| (fit_well_loglin vs Kinbiont, used by /api/batch-fit-loglin): $max_dgr_standalone"
     println("─" ^ 80)
     @info "Convergence mismatches = $fails"
-    if max_dgr < 1e-9 && max_dr2 < 1e-9 && max_dgr_standalone < 1e-9 && fails == 0
+    @info "Max N_max difference (companion): $max_dnmax"
+    @info "Max N_max difference (standalone): $max_dnmax_standalone"
+    if max_dgr < 1e-9 && max_dr2 < 1e-9 && max_dgr_standalone < 1e-9 &&
+       max_dnmax < 1e-9 && max_dnmax_standalone < 1e-9 && fails == 0
         @info "✅ PASS — both GUIbiont log-lin paths match direct Kinbiont call"
     else
         @warn "❌ FAIL — values diverge from direct Kinbiont call"
