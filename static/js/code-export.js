@@ -179,8 +179,13 @@ export function generateFitCode(fitData, withComments) {
             ['deterministic_optimizers', detOpts.length ? juliaStringArray(detOpts) : null],
             ['stochastic_optimizers', stoOpts.length ? juliaStringArray(stoOpts) : null],
             ['stochastic_runs', stoOpts.length ? String(stochasticRuns) : null],
+            ['optimizer_seed', stoOpts.length ? '42' : null],
         ]
-        : [['optimizer', juliaString(optimizer)]];
+        : [
+            ['optimizer', juliaString(optimizer)],
+            ['optimizer_seed', optimizer === 'BBO_adaptive_de_rand_1_bin_radiuslimited' ||
+                optimizer === 'GN_ISRES' ? '42' : null],
+        ];
     const smoothingKeywords = smooth
         ? [['smooth', 'true'], ['smooth_window', String(smoothWindow)]]
         : [];
@@ -325,8 +330,13 @@ export function generateBatchCode(batchData, withComments) {
             ['deterministic_optimizers', detOpts.length ? juliaStringArray(detOpts) : null],
             ['stochastic_optimizers', stoOpts.length ? juliaStringArray(stoOpts) : null],
             ['stochastic_runs', stoOpts.length ? String(stochasticRuns) : null],
+            ['optimizer_seed', stoOpts.length ? '42' : null],
         ]
-        : [['optimizer', juliaString(singleOptimizer)]];
+        : [
+            ['optimizer', juliaString(singleOptimizer)],
+            ['optimizer_seed', singleOptimizer === 'BBO_adaptive_de_rand_1_bin_radiuslimited' ||
+                singleOptimizer === 'GN_ISRES' ? '42' : null],
+        ];
     const smoothingKeywords = smooth
         ? [['smooth', 'true'], ['smooth_window', String(smoothWindow)]]
         : [];
@@ -552,6 +562,7 @@ export function generateClusterCode(clusterData, withComments) {
             clusterMethod === 'kmeans' || clusterMethod === 'kmedoids'
                 ? juliaFloat(tol, 1e-6) : null],
         ['kmeans_seed', clusterMethod === 'kmeans' ? '42' : null],
+        ['kmedoids_seed', clusterMethod === 'kmedoids' ? '42' : null],
         ['cluster_hclust_linkage', clusterMethod === 'hclust' ? `:${hclustLinkage}` : null],
         ['cluster_dbscan_eps', clusterMethod === 'dbscan' ? juliaFloat(dbscanEps, 1.0) : null],
         ['cluster_dbscan_minpts', clusterMethod === 'dbscan' ? String(dbscanMinPts) : null],

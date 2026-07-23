@@ -7,6 +7,7 @@ using OptimizationNLopt: NLopt
 
 const DEFAULT_FIT_MAXITERS = 100000
 const MAX_FIT_MAXITERS     = 200_000
+const DEFAULT_OPTIMIZER_SEED = 42
 
 # Map of optimizer name strings to actual Optimization.jl algorithm instances.
 # Only optimizers that support box constraints (lb/ub) are included.
@@ -377,6 +378,7 @@ function _run_fit_attempt(
     abstol::Float64,
     smooth::Bool,
     smooth_window::Int,
+    optimizer_seed::Int,
 )
     # All optimizers receive the same complete curve and preprocessing options.
     # Kinbiont smooths when requested, then applies the stationary-phase cutoff.
@@ -426,6 +428,7 @@ function _run_fit_attempt(
         stationary_win_size             = 5,
         loss                            = "RE",
         optimizer                       = resolve_optimizer(optimizer),
+        optimizer_seed                  = optimizer_seed,
         opt_params                      = opt_params,
     )
 
@@ -614,18 +617,23 @@ function fit_well_data(
     # Run each attempt, collect outcomes.
     outcomes = NamedTuple[]
     for (opt, run_idx) in attempts
+        attempt_seed = is_stochastic_optimizer(opt) ?
+            DEFAULT_OPTIMIZER_SEED + run_idx - 1 :
+            DEFAULT_OPTIMIZER_SEED
         try
             res = _run_fit_attempt(
                 opt, time_numeric, od_for_fit, shift,
                 subtract_blank, blank_value, label,
                 model_name, model_names, maxiters, abstol,
-                smooth, smooth_window,
+                smooth, smooth_window, attempt_seed,
             )
             push!(outcomes, (optimizer = opt, run = run_idx, status = "ok",
+                              seed = attempt_seed,
                               loss = res.loss_rmse, loss_rmse = res.loss_rmse,
                               loss_re = res.loss_re, aic = res.aic, result = res))
         catch e
             push!(outcomes, (optimizer = opt, run = run_idx, status = "error: $(string(e))",
+                              seed = attempt_seed,
                               loss = Inf, loss_rmse = Inf, loss_re = NaN,
                               aic = NaN, result = nothing))
         end
@@ -691,10 +699,12 @@ function fit_well_data(
         "loss_re"                => win.loss_re,
         "optimizer_used"         => best.optimizer,
         "optimizer_run"          => best.run,
+        "optimizer_seed"         => best.seed,
         "all_attempts"           => [
             Dict(
                 "optimizer" => o.optimizer,
                 "run"       => o.run,
+                "seed"      => o.seed,
                 "status"    => o.status,
                 "loss"      => o.loss,
                 "loss_rmse" => o.loss_rmse,

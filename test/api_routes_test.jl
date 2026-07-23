@@ -317,6 +317,7 @@ end
     export_source = read(joinpath(@__DIR__, "..", "static", "js", "code-export.js"), String)
     @test occursin("const costLabel = 'WCSS';", export_source)
     @test occursin("['kmeans_seed', clusterMethod === 'kmeans' ? '42' : null]", export_source)
+    @test occursin("['kmedoids_seed', clusterMethod === 'kmedoids' ? '42' : null]", export_source)
     @test occursin("prepare_clustering_data(", export_source)
     @test occursin("println(\"\${costLabel}: \", processed.wcss)", export_source)
     @test occursin("excludes the", export_source)
@@ -330,7 +331,7 @@ end
 @testset "Code exporters rebuild workflows from local source paths" begin
     export_source = read(joinpath(@__DIR__, "..", "static", "js", "code-export.js"), String)
     @test occursin("const CLEAN_DATA_PATH = \"path/to/Clean_data\"", export_source)
-    @test length(findall("load_gui_experiment_data(", export_source)) >= 4
+    @test length(findall("load_experiment_data(", export_source)) >= 4
     @test occursin("kinbiont_batch_fit(", export_source)
     @test occursin("kinbiont_batch_loglin(", export_source)
     @test occursin("prepare_clustering_data(", export_source)
