@@ -316,7 +316,7 @@ end
 @testset "Clustering export uses the same WCSS contract" begin
     export_source = read(joinpath(@__DIR__, "..", "static", "js", "code-export.js"), String)
     @test occursin("const costLabel = 'WCSS';", export_source)
-    @test occursin("kmeans_seed = 42,", export_source)
+    @test occursin("['kmeans_seed', clusterMethod === 'kmeans' ? '42' : null]", export_source)
     @test occursin("prepare_clustering_data(", export_source)
     @test occursin("println(\"\${costLabel}: \", processed.wcss)", export_source)
     @test occursin("excludes the", export_source)
