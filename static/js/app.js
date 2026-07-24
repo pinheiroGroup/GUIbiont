@@ -18,7 +18,8 @@ import { setFitMode, onFittingReplicateChange, fitReplicateAverage,
          onBlankMethodChange, useAutoDetectedBlanks, runBlankAnalysis, renderBlankAnalysisCard,
          fitGrowthCurve, displayFittingResults, onFitShowIndividualChange,
          updateFitPlot, plotFittedCurve,
-         fitLogLinCurve, displayLogLinResults, plotLogLinCurve, toggleLogLinOptions } from './fitting.js';
+         fitLogLinCurve, displayLogLinResults, plotLogLinCurve, toggleLogLinOptions,
+         onFitSmoothingChange, onLogLinSmoothingChange, onLogLinWindowTypeChange } from './fitting.js?v=20260724-5';
 import { toggleFullscreen, handleEscapeKey, exportPlot, exportPlotSVG,
          generateFilename, showExportMessage } from './export.js';
 import { debouncedGlobalSearch, globalSearchExperiments, displayGlobalSearchResults,
@@ -27,16 +28,17 @@ import { loadRawExperiments, cleanExperimentData } from './cleaning.js';
 import { initBatchFitTab, loadBatchFitModels, loadBatchFitExperiments,
          onBatchExperimentChange, updateBatchWellCount,
          selectAllBatchWells, clearAllBatchWells,
-         onBatchModeChange, onBatchFitMethodChange,
+         onBatchModeChange, onBatchFitMethodChange, onBatchFitSmoothingChange,
          toggleBatchLogLinOptions, onBatchLogLinCompanionChange,
+         onBatchLogLinSmoothingChange, onBatchLogLinWindowTypeChange,
          selectAllBatchModels, clearAllBatchModels,
          runBatchFit, displayBatchResults, downloadBatchCSV,
-         downloadBatchFittedCurvesCSV } from './batch-fit.js?v=20260722-5';
+         downloadBatchFittedCurvesCSV } from './batch-fit.js?v=20260724-5';
 import { onFitResultsFileChange, onFeatureMatrixFileChange, updateMlRunBtn,
          runMlAnalysis, onCorrParamChange, onCorrZoomToggle, onMlLabelColChange,
          downloadMlResultsCSV } from './ml-analysis.js';
 import { openFitCodeExport, openBatchCodeExport, openClusterCodeExport,
-         closeCodeExportModal, toggleCodeComments, downloadExportedCode } from './code-export.js';
+         closeCodeExportModal, toggleCodeComments, downloadExportedCode } from './code-export.js?v=20260724-3';
 import { loadOptimizers, onFitOptimizerModeChange, onBatchFitOptimizerModeChange,
          buildOptimizerPayload } from './optimizers.js?v=20260722-5';
 import { setClusteringMode, populateClusteringExperiments,
@@ -66,6 +68,7 @@ async function init() {
     await loadExperiments();
     loadFittingExperiments();
     loadFittingModels();
+    onFitSmoothingChange();
     loadRawExperiments();
     initBatchFitTab();
     loadOptimizers();
@@ -257,6 +260,7 @@ Object.assign(window, {
     fitGrowthCurve, displayFittingResults, onFitShowIndividualChange,
     updateFitPlot, plotFittedCurve,
     fitLogLinCurve, displayLogLinResults, plotLogLinCurve, toggleLogLinOptions,
+    onFitSmoothingChange, onLogLinSmoothingChange, onLogLinWindowTypeChange,
     // Export / Fullscreen
     toggleFullscreen, handleEscapeKey, exportPlot, exportPlotSVG,
     generateFilename, showExportMessage,
@@ -280,8 +284,9 @@ Object.assign(window, {
     initBatchFitTab, loadBatchFitModels, loadBatchFitExperiments,
     onBatchExperimentChange, updateBatchWellCount,
     selectAllBatchWells, clearAllBatchWells,
-    onBatchModeChange, onBatchFitMethodChange,
+    onBatchModeChange, onBatchFitMethodChange, onBatchFitSmoothingChange,
     toggleBatchLogLinOptions, onBatchLogLinCompanionChange,
+    onBatchLogLinSmoothingChange, onBatchLogLinWindowTypeChange,
     selectAllBatchModels, clearAllBatchModels,
     runBatchFit, displayBatchResults, downloadBatchCSV, downloadBatchFittedCurvesCSV,
     // ML downstream analysis

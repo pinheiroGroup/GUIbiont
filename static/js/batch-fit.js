@@ -15,7 +15,10 @@ async function initBatchFitTab() {
     const abstolSelect = document.getElementById('batch-fit-abstol');
     if (abstolSelect) abstolSelect.value = DEFAULT_BATCH_FIT_ABSTOL;
     onBatchFitMethodChange();
+    onBatchFitSmoothingChange();
     onBatchLogLinCompanionChange();
+    onBatchLogLinSmoothingChange();
+    onBatchLogLinWindowTypeChange();
     await loadBatchFitModels();
     await loadBatchFitExperiments();
 }
@@ -72,13 +75,10 @@ function onBatchFitMethodChange() {
 
     document.getElementById('batch-parametric-wrap').style.display = isLoglin ? 'none' : 'block';
     document.getElementById('batch-loglin-wrap').style.display     = isLoglin ? 'block' : 'none';
-    document.querySelectorAll('.batch-loglin-standalone-only').forEach(el => {
-        el.style.display = isLoglin ? 'flex' : 'none';
-    });
 
     // Hide optimizer/maxiters/tolerance — irrelevant for log-lin.
-    const optRow = document.getElementById('batch-fit-optimizer-row');
-    if (optRow) optRow.style.display = isLoglin ? 'none' : 'contents';
+    const optimizationPanel = document.getElementById('batch-fit-optimization-options');
+    if (optimizationPanel) optimizationPanel.style.display = isLoglin ? 'none' : 'block';
 
     // Best-of-N is irrelevant for log-lin. Restore its previous mode when the
     // user switches back to parametric fitting.
@@ -99,7 +99,38 @@ function onBatchFitMethodChange() {
 
 function toggleBatchLogLinOptions() {
     const panel = document.getElementById('batch-loglin-options');
+    onBatchLogLinSmoothingChange();
+    onBatchLogLinWindowTypeChange();
     panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+}
+
+function onBatchFitSmoothingChange() {
+    const method = document.getElementById('batch-fit-smooth-method')?.value || 'none';
+    const rolling = document.getElementById('batch-fit-rolling-param');
+    const lowess = document.getElementById('batch-fit-lowess-param');
+    const gaussian = document.getElementById('batch-fit-gaussian-param');
+    if (rolling) rolling.style.display = method === 'rolling_avg' ? 'flex' : 'none';
+    if (lowess) lowess.style.display = method === 'lowess' ? 'flex' : 'none';
+    if (gaussian) gaussian.style.display = method === 'gaussian' ? 'flex' : 'none';
+}
+
+function onBatchLogLinSmoothingChange() {
+    const method = document.getElementById('batch-loglin-smoothing')?.value || 'rolling_avg';
+    const rollingField = document.getElementById('batch-loglin-pt-avg-field');
+    const lowessField = document.getElementById('batch-loglin-lowess-field');
+    const gaussianField = document.getElementById('batch-loglin-gaussian-field');
+    if (rollingField) rollingField.style.display = method === 'rolling_avg' ? 'flex' : 'none';
+    if (lowessField) lowessField.style.display = method === 'lowess' ? 'flex' : 'none';
+    if (gaussianField) gaussianField.style.display = method === 'gaussian' ? 'flex' : 'none';
+}
+
+function onBatchLogLinWindowTypeChange() {
+    const winType = document.getElementById('batch-loglin-win-type')?.value || 'maximum';
+    const startField = document.getElementById('batch-loglin-start-thr-field');
+    if (startField) {
+        startField.style.display =
+            winType === 'global_thr' || winType === 'max_with_min_OD' ? 'flex' : 'none';
+    }
 }
 
 function _placeBatchLogLinOptions(isLoglin) {
@@ -116,9 +147,6 @@ function onBatchLogLinCompanionChange() {
     _placeBatchLogLinOptions(false);
     const optionsBtn = document.getElementById('batch-companion-loglin-options-btn');
     optionsBtn.disabled = !enabled;
-    document.querySelectorAll('.batch-loglin-standalone-only').forEach(el => {
-        el.style.display = 'none';
-    });
     document.getElementById('batch-loglin-options').style.display = enabled ? 'block' : 'none';
 }
 
@@ -224,7 +252,8 @@ function _readLoglinParams() {
         pt_min_size_of_win:      intOr('batch-loglin-pt-min-win', 7),
         threshold_of_exp:        Math.max(0, Math.min(1, fltOr('batch-loglin-thr-exp', 0.9))),
         start_exp_win_thr:       Math.max(0, fltOr('batch-loglin-start-thr', 0.05)),
-        thr_lowess:              0.05,
+        thr_lowess:              Math.max(0.01, Math.min(1, fltOr('batch-loglin-thr-lowess', 0.05))),
+        gaussian_h_mult:         Math.max(0.1, Math.min(20, fltOr('batch-loglin-gaussian-hmult', 2.0))),
     };
 }
 
@@ -291,11 +320,20 @@ async function runBatchFit() {
             const maxiters = Math.max(1, parseInt(document.getElementById('batch-fit-maxiters')?.value || '100000', 10) || 100000);
             const abstol = parseFloat(document.getElementById('batch-fit-abstol')?.value || DEFAULT_BATCH_FIT_ABSTOL) || parseFloat(DEFAULT_BATCH_FIT_ABSTOL);
             const alsoLoglin = document.getElementById('batch-fit-also-loglin')?.checked || false;
-            const smooth = document.getElementById('batch-fit-smoothing')?.checked || false;
-            const smoothWindow = Math.max(
+            const ll = alsoLoglin ? _readLoglinParams() : null;
+            const smoothMethod = document.getElementById('batch-fit-smooth-method')?.value || 'none';
+            const smoothPtAvg = Math.min(99, Math.max(
                 3,
-                parseInt(document.getElementById('batch-fit-smoothing-window')?.value || '3', 10) || 3
-            );
+                parseInt(document.getElementById('batch-fit-smooth-pt-avg')?.value || '7', 10) || 7
+            ));
+            const lowessFrac = Math.min(1, Math.max(
+                0.01,
+                parseFloat(document.getElementById('batch-fit-lowess-frac')?.value || '0.05') || 0.05
+            ));
+            const gaussianHMult = Math.min(20, Math.max(
+                0.1,
+                parseFloat(document.getElementById('batch-fit-gaussian-hmult')?.value || '2.0') || 2.0
+            ));
             endpoint = '/api/batch-fit';
             requestPayload = {
                 experiment,
@@ -306,16 +344,24 @@ async function runBatchFit() {
                 ...buildOptimizerPayload('batch-fit'),
                 maxiters,
                 abstol,
-                smooth,
-                smooth_window: smoothWindow,
+                smooth: smoothMethod !== 'none',
+                smooth_method: smoothMethod,
+                smooth_pt_avg: smoothPtAvg,
+                lowess_frac: lowessFrac,
+                gaussian_h_mult: gaussianHMult,
                 skip_flat_threshold: skipFlat,
                 ...(batchCalFile ? { calibration_file: batchCalFile } : {}),
                 ...(alsoLoglin ? {
                     compute_loglin: true,
-                    loglin_pt_avg:                  _readLoglinParams().pt_avg,
-                    loglin_pt_smoothing_derivative: _readLoglinParams().pt_smoothing_derivative,
-                    loglin_pt_min_size_of_win:      _readLoglinParams().pt_min_size_of_win,
-                    loglin_threshold_of_exp:        _readLoglinParams().threshold_of_exp,
+                    loglin_type_of_smoothing:        ll.type_of_smoothing,
+                    loglin_type_of_win:              ll.type_of_win,
+                    loglin_pt_avg:                   ll.pt_avg,
+                    loglin_pt_smoothing_derivative:  ll.pt_smoothing_derivative,
+                    loglin_pt_min_size_of_win:       ll.pt_min_size_of_win,
+                    loglin_threshold_of_exp:         ll.threshold_of_exp,
+                    loglin_start_exp_win_thr:        ll.start_exp_win_thr,
+                    loglin_thr_lowess:                ll.thr_lowess,
+                    loglin_gaussian_h_mult:           ll.gaussian_h_mult,
                 } : {}),
             };
         }
@@ -710,8 +756,9 @@ export {
     initBatchFitTab, loadBatchFitModels, loadBatchFitExperiments,
     onBatchExperimentChange, updateBatchWellCount,
     selectAllBatchWells, clearAllBatchWells,
-    onBatchModeChange, onBatchFitMethodChange,
+    onBatchModeChange, onBatchFitMethodChange, onBatchFitSmoothingChange,
     toggleBatchLogLinOptions, onBatchLogLinCompanionChange,
+    onBatchLogLinSmoothingChange, onBatchLogLinWindowTypeChange,
     selectAllBatchModels, clearAllBatchModels,
     runBatchFit, displayBatchResults, downloadBatchCSV, downloadBatchFittedCurvesCSV,
 };

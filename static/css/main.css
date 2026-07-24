@@ -1573,6 +1573,48 @@
             min-width: 0;
         }
 
+        .fit-settings-panel > .settings-card-title + .fit-parameter-grid {
+            margin-top: 10px;
+        }
+
+        .fit-options-stack {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .fit-order-blank { order: 1; }
+        .fit-order-calibration { order: 2; }
+        .fit-order-optimization { order: 3; }
+
+        .optimization-field {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .optimization-inline-selects,
+        .optimization-value-with-unit {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .optimization-parameter-grid select,
+        .optimization-parameter-grid input {
+            height: 30px;
+            padding: 3px 7px;
+            font: inherit;
+        }
+
+        .optimization-smoothing-param input {
+            width: 92px;
+        }
+
+        .optimization-value-with-unit span {
+            color: #6c757d;
+            white-space: nowrap;
+        }
+
         .fit-parameter-grid select,
         .fit-parameter-grid input,
         .fit-control-row select,
@@ -1599,8 +1641,10 @@
         #batch-loglin-pt-deriv,
         #batch-loglin-pt-min-win { width: 66px; }
         #loglin-thr-exp,
+        #loglin-thr-lowess,
         #loglin-start-thr,
         #batch-loglin-thr-exp,
+        #batch-loglin-thr-lowess,
         #batch-loglin-start-thr { width: 78px; }
 
         .fit-control-row {
@@ -1640,6 +1684,14 @@
         #batch-fit-maxiters { width: 96px; }
 
         #batch-fit-skip-flat { width: 76px; }
+
+        #fit-smooth-method,
+        #batch-fit-smooth-method { width: 152px; }
+
+        .parametric-smoothing-strip > label {
+            font-weight: 500;
+            color: #495057;
+        }
 
         .fit-control-strip {
             display: flex;
@@ -2140,6 +2192,16 @@
         }
 
         @media (max-width: 640px) {
+            .optimization-inline-selects {
+                flex-wrap: wrap;
+            }
+
+            .optimization-field--optimizer,
+            #fit-optimizer,
+            #batch-fit-optimizer {
+                max-width: 100%;
+            }
+
             .cluster-card-fields {
                 grid-template-columns: 1fr;
             }

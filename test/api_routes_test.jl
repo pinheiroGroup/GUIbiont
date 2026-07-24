@@ -177,6 +177,34 @@ end
     @test length(body[:smoothed_time]) == length(body[:experimental_time])
 end
 
+@testset "POST /api/fit-replicate - selectable smoothing" begin
+    wells = [Dict("experiment" => SINGLE_CH_EXP, "well" => SINGLE_CH_WELL, "channel" => 1)]
+    cases = [
+        ("rolling_avg", Dict("smooth_pt_avg" => 5)),
+        ("lowess", Dict("lowess_frac" => 0.2)),
+        ("gaussian", Dict("gaussian_h_mult" => 1.5)),
+    ]
+    for (method, method_params) in cases
+        payload = Dict{String, Any}(
+            "well_selections" => wells,
+            "experiment" => SINGLE_CH_EXP,
+            "model_name" => "logistic",
+            "smooth" => true,
+            "smooth_method" => method,
+        )
+        merge!(payload, method_params)
+        status, body = post_json("/api/fit-replicate", payload)
+        @test status == 200
+        @test body[:preprocessing][:smooth] == true
+        @test string(body[:preprocessing][:smooth_method]) == method
+        @test !isempty(body[:smoothed_od])
+        if method == "lowess"
+            @test all(isfinite, Float64.(body[:smoothed_od]))
+            @test minimum(Float64.(body[:smoothed_od])) > 0.0
+        end
+    end
+end
+
 @testset "POST /api/fit-replicate — multi-channel wells" begin
     wells = [Dict("experiment" => MULTI_CH_EXP, "well" => MULTI_CH_WELLS[1], "channel" => 1),
              Dict("experiment" => MULTI_CH_EXP, "well" => MULTI_CH_WELLS[2], "channel" => 2)]
@@ -405,6 +433,21 @@ end
     @test string(body[:smooth_method]) == "none"
 end
 
+@testset "POST /api/cluster - rolling-average window is configurable" begin
+    status3, body3 = post_json("/api/cluster",
+        Dict("csv" => CLUSTER_CSV, "k" => 2,
+             "smooth_method" => "rolling_avg", "smooth_pt_avg" => 3))
+    status7, body7 = post_json("/api/cluster",
+        Dict("csv" => CLUSTER_CSV, "k" => 2,
+             "smooth_method" => "rolling_avg", "smooth_pt_avg" => 7))
+    @test status3 == 200
+    @test status7 == 200
+    @test Int(body3[:smooth_pt_avg]) == 3
+    @test Int(body7[:smooth_pt_avg]) == 7
+    @test length(body3[:time]) == 11
+    @test length(body7[:time]) == 7
+end
+
 @testset "POST /api/cluster — k capped at n_series" begin
     # 6 series, k=100 — should produce at most 6 clusters (capped)
     status, body = post_json("/api/cluster", Dict("csv" => CLUSTER_CSV, "k" => 100))
@@ -499,6 +542,15 @@ end
     status, body = post_json("/api/cluster-sweep",
                              Dict("csv" => CLUSTER_CSV, "k_max" => 4,
                                   "smooth_method" => "rolling_avg"))
+    @test status == 200
+    @test !isempty(body[:sweep])
+end
+
+@testset "POST /api/cluster-sweep - accepts rolling-average window" begin
+    status, body = post_json("/api/cluster-sweep",
+                             Dict("csv" => CLUSTER_CSV, "k_max" => 4,
+                                  "smooth_method" => "rolling_avg",
+                                  "smooth_pt_avg" => 3))
     @test status == 200
     @test !isempty(body[:sweep])
 end
@@ -1038,12 +1090,22 @@ end
     # exponential windows agree exactly.)
     _, body_standalone = batch_fit_loglin_and_wait(
                             Dict("experiment" => SINGLE_CH_EXP,
-                                 "wells"      => [SINGLE_CH_WELL]))
+                                 "wells"      => [SINGLE_CH_WELL],
+                                 "type_of_smoothing" => "gaussian",
+                                 "gaussian_h_mult" => 1.5))
     _, body_companion = batch_fit_and_wait(
                             Dict("experiment"     => SINGLE_CH_EXP,
                                  "wells"          => [SINGLE_CH_WELL],
                                  "model_name"     => "logistic",
-                                 "compute_loglin" => true))
+                                 # Parametric Gaussian smoothing must stay
+                                 # isolated from the Log-Lin companion input.
+                                 "smooth" => true,
+                                 "smooth_method" => "gaussian",
+                                 "gaussian_h_mult" => 1.5,
+                                 "compute_loglin" => true,
+                                 "loglin_type_of_smoothing" => "gaussian",
+                                 "loglin_gaussian_h_mult" => 1.5))
+    @test string(first(body_companion[:results])[:preprocessing][:smooth_method]) == "gaussian"
     gr_a = Float64(first(body_standalone[:results])[:gr_loglin])
     gr_b = Float64(first(body_companion[:results])[:gr_loglin])
     @test isfinite(gr_a) && isfinite(gr_b)

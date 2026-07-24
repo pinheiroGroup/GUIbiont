@@ -156,6 +156,12 @@ function _smart_initial_value(param_name, features::Dict{Symbol, Float64})
        ((startswith(compact, "n") || startswith(compact, "x") ||
          startswith(compact, "y") || startswith(compact, "od")) && occursin("lag", compact))
         return max(features[:baseline], 1e-6)
+    elseif compact in ("t0", "tmid", "tmax", "tinf", "tinflection",
+                        "tshift", "tstationary", "tdecaygr", "endsecondlag") ||
+           occursin("inflection", compact) || occursin("midtime", compact)
+        return features[:mid_time]
+    elseif compact == "exitlagrate"
+        return _clip_initial_value(1.0 / max(features[:lag_time], 0.1); upper = 20.0)
     elseif occursin("death", compact) || occursin("decay", compact) ||
        occursin("decline", compact) || occursin("mort", compact)
         return _clip_initial_value(0.05 * features[:growth_rate]; upper = 20.0)
@@ -170,14 +176,14 @@ function _smart_initial_value(param_name, features::Dict{Symbol, Float64})
            occursin("initial", compact) || occursin("inoc", compact) ||
            occursin("baseline", compact)
         return features[:baseline]
+    elseif occursin("mu", compact) || compact in ("r", "gr") ||
+           occursin("growth", compact) || startswith(compact, "gr") ||
+           endswith(compact, "gr")
+        return features[:growth_rate]
     elseif compact in ("lag", "tl", "tlag", "lagtime") ||
            startswith(compact, "tlag") || occursin("lambda", compact) ||
            occursin("delay", compact) || occursin("lag", compact)
         return features[:lag_time]
-    elseif occursin("mu", compact) || compact in ("r", "gr") ||
-           occursin("growth", compact) || occursin("rate", compact) ||
-           occursin("gr", compact)
-        return features[:growth_rate]
     elseif compact == "k" || occursin("nmax", compact) || occursin("ymax", compact) ||
            occursin("xmax", compact) || occursin("maxod", compact) ||
            occursin("carrying", compact) || occursin("capacity", compact) ||
@@ -185,9 +191,6 @@ function _smart_initial_value(param_name, features::Dict{Symbol, Float64})
         return features[:plateau]
     elseif occursin("amplitude", compact) || compact == "amp"
         return features[:amplitude]
-    elseif compact in ("t0", "tmid", "tmax", "tinf", "tinflection") ||
-           occursin("inflection", compact) || occursin("midtime", compact)
-        return features[:mid_time]
     elseif compact in ("q0", "h0")
         return features[:q0]
     elseif occursin("shape", compact) || compact in ("nu", "theta", "beta", "gamma", "m", "v")
@@ -272,6 +275,12 @@ function _smart_param_bounds(param_name, features::Dict{Symbol, Float64})
        ((startswith(compact, "n") || startswith(compact, "x") ||
          startswith(compact, "y") || startswith(compact, "od")) && occursin("lag", compact))
         return (1e-6, max(plateau, 1.0))
+    elseif compact in ("t0", "tmid", "tmax", "tinf", "tinflection",
+                        "tshift", "tstationary", "tdecaygr", "endsecondlag") ||
+           occursin("inflection", compact) || occursin("midtime", compact)
+        return (0.0, time_cap)
+    elseif compact == "exitlagrate"
+        return (0.0, 20.0)
     elseif occursin("death", compact) || occursin("decay", compact) ||
        occursin("decline", compact) || occursin("mort", compact)
         return (0.0, 20.0)
@@ -286,16 +295,14 @@ function _smart_param_bounds(param_name, features::Dict{Symbol, Float64})
            occursin("initial", compact) || occursin("inoc", compact) ||
            occursin("baseline", compact)
         return (1e-6, max(plateau, 1.0))
+    elseif occursin("mu", compact) || compact in ("r", "gr") ||
+           occursin("growth", compact) || startswith(compact, "gr") ||
+           endswith(compact, "gr")
+        return (1e-6, 20.0)
     elseif compact in ("lag", "tl", "tlag", "lagtime") ||
            startswith(compact, "tlag") || occursin("lambda", compact) ||
            occursin("delay", compact) || occursin("lag", compact)
-        # Matches both lag-times and rate-like params (e.g. exit_lag_rate).
-        # Keep wide to accommodate both interpretations.
         return (0.0, max(time_cap, 50.0))
-    elseif occursin("mu", compact) || compact in ("r", "gr") ||
-           occursin("growth", compact) || occursin("rate", compact) ||
-           occursin("gr", compact)
-        return (1e-6, 20.0)
     elseif compact == "k" || occursin("nmax", compact) || occursin("ymax", compact) ||
            occursin("xmax", compact) || occursin("maxod", compact) ||
            occursin("carrying", compact) || occursin("capacity", compact) ||
@@ -303,9 +310,6 @@ function _smart_param_bounds(param_name, features::Dict{Symbol, Float64})
         return (1e-6, plateau_cap)
     elseif occursin("amplitude", compact) || compact == "amp"
         return (1e-6, max(amplitude * 5, 1.0))
-    elseif compact in ("t0", "tmid", "tmax", "tinf", "tinflection") ||
-           occursin("inflection", compact) || occursin("midtime", compact)
-        return (0.0, time_cap)
     elseif compact in ("q0", "h0")
         return (1e-6, 50.0)
     elseif occursin("shape", compact) || compact in ("nu", "theta", "beta", "gamma", "m", "v")
@@ -376,7 +380,10 @@ function _run_fit_attempt(
     model_names::Vector{String},
     maxiters::Int,
     abstol::Float64,
-    smooth::Bool,
+    smooth_method::Symbol,
+    smooth_pt_avg::Int,
+    lowess_frac::Float64,
+    gaussian_h_mult::Float64,
     smooth_window::Int,
     optimizer_seed::Int,
 )
@@ -386,6 +393,33 @@ function _run_fit_attempt(
     od_fit   = od_for_fit
 
     data = GrowthData(reshape(od_fit, 1, :), time_fit, [label])
+
+    # LOWESS is not range-preserving: near the start of a blank-corrected
+    # curve it can overshoot below zero even though every input OD is positive.
+    # The legacy ODE fitter evaluates log(OD) when reporting the empirical
+    # growth rate, so a non-positive smoothed value can make the solver return
+    # an empty trajectory and ultimately raise BoundsError(Base.OneTo(0), (0,)).
+    #
+    # Preprocess LOWESS here so we can restore the positive lower bound before
+    # fitting. Disable smoothing in the subsequent kinbiont_fit call to ensure
+    # LOWESS is still applied exactly once.
+    fit_smooth_method = smooth_method
+    if smooth_method == :lowess
+        lowess_opts = FitOptions(
+            scattering_correction = false,
+            smooth                = true,
+            smooth_method         = :lowess,
+            lowess_frac           = lowess_frac,
+        )
+        data = preprocess(data, lowess_opts)
+        od_floor = max(minimum(od_fit), eps(Float64))
+        data = GrowthData(
+            max.(data.curves, od_floor),
+            data.times,
+            data.labels,
+        )
+        fit_smooth_method = :none
+    end
 
     if !isempty(model_names)
         models = [MODEL_REGISTRY[m] for m in model_names if haskey(MODEL_REGISTRY, m)]
@@ -419,8 +453,11 @@ function _run_fit_attempt(
 
     opts = FitOptions(
         scattering_correction           = false,
-        smooth                          = smooth,
-        smooth_method                   = :boxcar,
+        smooth                          = fit_smooth_method != :none,
+        smooth_method                   = fit_smooth_method,
+        smooth_pt_avg                   = smooth_pt_avg,
+        lowess_frac                     = lowess_frac,
+        gaussian_h_mult                 = gaussian_h_mult,
         boxcar_window                   = smooth_window,
         cut_stationary_phase            = true,
         stationary_percentile_thr       = 0.05,
@@ -564,6 +601,10 @@ function fit_well_data(
     abstol::Float64 = 1e-15,
     smooth::Bool = false,
     smooth_window::Int = 3,
+    smooth_method::Symbol = :none,
+    smooth_pt_avg::Int = 7,
+    lowess_frac::Float64 = 0.05,
+    gaussian_h_mult::Float64 = 2.0,
     # Optional log-linear sliding-window companion fit. When `compute_loglin`
     # is true, the result dict is enriched with `gr_loglin`, `gr_loglin_se`,
     # `gr_max_sliding`, `t_exp_start_loglin`, `t_exp_end_loglin`,
@@ -571,14 +612,29 @@ function fit_well_data(
     # Fit runs on the same `od_for_fit` as the parametric model so the two
     # estimates are directly comparable.
     compute_loglin::Bool = false,
+    loglin_type_of_smoothing::String = "rolling_avg",
     loglin_pt_avg::Int = 7,
     loglin_pt_smoothing_derivative::Int = 7,
     loglin_pt_min_size_of_win::Int = 7,
+    loglin_type_of_win::String = "maximum",
     loglin_threshold_of_exp::Float64 = 0.9,
+    loglin_start_exp_win_thr::Float64 = 0.05,
+    loglin_thr_lowess::Float64 = 0.05,
+    loglin_gaussian_h_mult::Float64 = 2.0,
 )
-    if smooth && (smooth_window < 3 || iseven(smooth_window))
+    resolved_smooth_method = smooth_method == :none && smooth ? :boxcar : smooth_method
+    resolved_smooth_method in (:none, :rolling_avg, :lowess, :gaussian, :boxcar) ||
+        throw(ArgumentError("Unknown smoothing method: $resolved_smooth_method"))
+    if resolved_smooth_method == :boxcar && (smooth_window < 3 || iseven(smooth_window))
         throw(ArgumentError("smooth_window must be an odd integer greater than or equal to 3"))
     end
+    3 <= smooth_pt_avg <= 99 ||
+        throw(ArgumentError("smooth_pt_avg must be between 3 and 99"))
+    0.01 <= lowess_frac <= 1.0 ||
+        throw(ArgumentError("lowess_frac must be between 0.01 and 1.0"))
+    0.1 <= gaussian_h_mult <= 20.0 ||
+        throw(ArgumentError("gaussian_h_mult must be between 0.1 and 20.0"))
+    smooth_enabled = resolved_smooth_method != :none
 
     prepared = _prepare_fit_curve(
         time_numeric, od_raw, label;
@@ -622,7 +678,8 @@ function fit_well_data(
                 opt, time_numeric, od_for_fit, shift,
                 subtract_blank, blank_value, label,
                 model_name, model_names, maxiters, abstol,
-                smooth, smooth_window, attempt_seed,
+                resolved_smooth_method, smooth_pt_avg, lowess_frac,
+                gaussian_h_mult, smooth_window, attempt_seed,
             )
             push!(outcomes, (optimizer = opt, run = run_idx, status = "ok",
                               seed = attempt_seed,
@@ -682,9 +739,12 @@ function fit_well_data(
         "maxiters"               => maxiters,
         "abstol"                 => abstol,
         "preprocessing"          => Dict(
-            "smooth"                          => smooth,
-            "smooth_method"                   => smooth ? "boxcar" : "none",
+            "smooth"                          => smooth_enabled,
+            "smooth_method"                   => String(resolved_smooth_method),
             "smooth_window"                   => smooth_window,
+            "smooth_pt_avg"                   => smooth_pt_avg,
+            "lowess_frac"                     => lowess_frac,
+            "gaussian_h_mult"                 => gaussian_h_mult,
             "cut_stationary_phase"            => true,
             "stationary_percentile_thr"       => 0.05,
             "stationary_pt_smooth_derivative" => 10,
@@ -714,7 +774,7 @@ function fit_well_data(
     if od_subtracted_display !== nothing
         result["experimental_od_subtracted"] = od_subtracted_display
     end
-    if smooth
+    if smooth_enabled
         result["smoothed_time"] = win.preprocessed_time
         result["smoothed_od"] = win.preprocessed_od
     end
@@ -729,8 +789,9 @@ function fit_well_data(
     # ────────────────────────────────────────────────────────────────────
 
     # Optional log-linear sliding-window μ_max companion fit. Runs on the same
-    # od_for_fit data the parametric model saw, so the two estimates are
-    # directly comparable. When the exponential-window detector can't locate
+    # blank-corrected, unsmoothed od_for_fit. Parametric smoothing happens only
+    # inside _run_fit_attempt, so the companion cannot smooth the same data twice.
+    # The estimates remain directly comparable. When the detector can't locate
     # a window (very short curves, noisy data, persistent lag), we mark the
     # log-lin fields as NaN with `loglin_converged = false` rather than
     # failing the whole well — the parametric model fit remains valid.
@@ -758,12 +819,15 @@ function fit_well_data(
                     data_mat,
                     label,
                     experiment;
-                    type_of_smoothing       = "rolling_avg",
+                    type_of_smoothing       = loglin_type_of_smoothing,
                     pt_avg                  = loglin_pt_avg,
                     pt_smoothing_derivative = loglin_pt_smoothing_derivative,
                     pt_min_size_of_win      = loglin_pt_min_size_of_win,
-                    type_of_win             = "maximum",
+                    type_of_win             = loglin_type_of_win,
                     threshold_of_exp        = loglin_threshold_of_exp,
+                    start_exp_win_thr       = loglin_start_exp_win_thr,
+                    thr_lowess              = loglin_thr_lowess,
+                    gaussian_h_mult         = loglin_gaussian_h_mult,
                 )
                 # raw[2] layout (see Kinbiont/src/Fit_one_well_functions.jl):
                 #   [1] label_exp   [2] well        [3] t_start_exp  [4] t_end_exp
@@ -842,6 +906,7 @@ function fit_well_loglin(
     threshold_of_exp::Float64 = 0.9,
     start_exp_win_thr::Float64 = 0.05,
     thr_lowess::Float64 = 0.05,
+    gaussian_h_mult::Float64 = 2.0,
 )
     # Min points before Kinbiont so we surface a clean error.
     min_pts = pt_smoothing_derivative + pt_min_size_of_win + 2
@@ -872,6 +937,7 @@ function fit_well_loglin(
         threshold_of_exp        = threshold_of_exp,
         start_exp_win_thr       = start_exp_win_thr,
         thr_lowess              = thr_lowess,
+        gaussian_h_mult         = gaussian_h_mult,
     )
     params = raw[2]
 

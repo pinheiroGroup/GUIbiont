@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GUIbiont</title>
-    <link rel="stylesheet" href="/static/css/main.css?v=20260722-5">
+    <link rel="stylesheet" href="/static/css/main.css?v=20260724-5">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
     <script src="/static/vendor/plotly-2.29.1.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
@@ -185,42 +185,52 @@
                             </label>
                             <button class="btn" style="padding: 4px 10px; font-size: 0.85em;" onclick="toggleLogLinOptions()">⚙ Log-Lin options</button>
                             <div id="loglin-options" class="fit-settings-panel" style="display:none;">
+                                <div class="settings-card-title">Log-Lin options</div>
                                 <div class="fit-parameter-grid">
                                     <div style="display:flex; flex-direction:column; gap:4px;">
                                         <label>Smoothing</label>
-                                        <select id="loglin-smoothing" style="padding:3px 6px;">
+                                        <select id="loglin-smoothing" style="padding:3px 6px;" onchange="onLogLinSmoothingChange()">
                                             <option value="rolling_avg" selected>Rolling avg</option>
                                             <option value="lowess">LOWESS</option>
+                                            <option value="gaussian">Gaussian</option>
                                             <option value="NO">None</option>
                                         </select>
                                     </div>
                                     <div style="display:flex; flex-direction:column; gap:4px;">
                                         <label>Window type</label>
-                                        <select id="loglin-win-type" style="padding:3px 6px;">
+                                        <select id="loglin-win-type" style="padding:3px 6px;" onchange="onLogLinWindowTypeChange()">
                                             <option value="maximum" selected>Maximum</option>
                                             <option value="global_thr">Global threshold</option>
                                             <option value="max_with_min_OD">Max with min OD</option>
                                         </select>
                                     </div>
-                                    <div style="display:flex; flex-direction:column; gap:4px;">
+                                    <div id="loglin-pt-avg-field" style="display:flex; flex-direction:column; gap:4px;">
                                         <label title="Number of points in smoothing window">pt_avg</label>
-                                        <input type="number" id="loglin-pt-avg" value="7" min="1" max="50" style="width:60px; padding:3px 6px;">
+                                        <input type="number" id="loglin-pt-avg" value="7" min="1" max="99" step="1" style="padding:3px 6px;">
+                                    </div>
+                                    <div id="loglin-lowess-field" style="display:none; flex-direction:column; gap:4px;">
+                                        <label title="Fraction of points used by LOWESS local regression">thr_lowess</label>
+                                        <input type="number" id="loglin-thr-lowess" value="0.05" min="0.01" max="1" step="0.01" style="padding:3px 6px;">
+                                    </div>
+                                    <div id="loglin-gaussian-field" style="display:none; flex-direction:column; gap:4px;">
+                                        <label title="Gaussian bandwidth multiplied by the median time step">gaussian_h_mult</label>
+                                        <input type="number" id="loglin-gaussian-hmult" value="2.0" min="0.1" max="20" step="0.1" style="padding:3px 6px;">
                                     </div>
                                     <div style="display:flex; flex-direction:column; gap:4px;">
                                         <label title="Window size for derivative-based GR estimate">pt_smooth_deriv</label>
-                                        <input type="number" id="loglin-pt-deriv" value="7" min="2" max="50" style="width:60px; padding:3px 6px;">
+                                        <input type="number" id="loglin-pt-deriv" value="7" min="2" max="99" step="1" style="padding:3px 6px;">
                                     </div>
                                     <div style="display:flex; flex-direction:column; gap:4px;">
                                         <label title="Minimum number of points in the exponential window">pt_min_win</label>
-                                        <input type="number" id="loglin-pt-min-win" value="7" min="3" max="50" style="width:60px; padding:3px 6px;">
+                                        <input type="number" id="loglin-pt-min-win" value="7" min="3" max="99" step="1" style="padding:3px 6px;">
                                     </div>
                                     <div style="display:flex; flex-direction:column; gap:4px;">
                                         <label title="Quantile threshold on growth rate to define the exponential window">threshold_exp</label>
-                                        <input type="number" id="loglin-thr-exp" value="0.9" min="0" max="1" step="0.01" style="width:70px; padding:3px 6px;">
+                                        <input type="number" id="loglin-thr-exp" value="0.9" min="0" max="1" step="0.01" style="padding:3px 6px;">
                                     </div>
-                                    <div style="display:flex; flex-direction:column; gap:4px;">
+                                    <div id="loglin-start-thr-field" style="display:none; flex-direction:column; gap:4px;">
                                         <label title="Minimum OD to start the exponential window">start_OD_thr</label>
-                                        <input type="number" id="loglin-start-thr" value="0.05" min="0" step="0.01" style="width:70px; padding:3px 6px;">
+                                        <input type="number" id="loglin-start-thr" value="0.05" min="0" step="0.01" style="padding:3px 6px;">
                                     </div>
                                 </div>
                             </div>
@@ -233,39 +243,73 @@
                             </select>
                         </div>
                         <div id="model-info-card" class="model-info-card"></div>
-                        <div class="fit-settings-panel fit-optimizer-panel">
-                            <div class="fit-control-row">
-                                <label style="white-space: nowrap;">Optimizer:</label>
-                                <select id="fit-optimizer-mode" onchange="onFitOptimizerModeChange()" style="font-size: 0.9em; padding: 2px 6px;">
-                                    <option value="single" selected>Single</option>
-                                    <option value="best">Best of N</option>
-                                </select>
-                                <select id="fit-optimizer" style="font-size: 0.9em; padding: 2px 6px;">
-                                    <option value="LN_BOBYQA" selected>BOBYQA (default)</option>
-                                    <option value="LN_COBYLA">COBYLA</option>
-                                    <option value="GN_ISRES">GN ISRES</option>
-                                    <option value="GN_DIRECT_L">GN DIRECT-L</option>
-                                    <option value="BBO_adaptive_de_rand_1_bin_radiuslimited">BBO Adaptive DE</option>
-                                </select>
-                                <label for="fit-maxiters" style="white-space: nowrap;">Max iterations:</label>
-                                <input type="number" id="fit-maxiters" value="100000" min="1" step="100" style="font-size: 0.9em; padding: 2px 6px; border: 1px solid #ced4da; border-radius: 4px; width: 90px; color: #495057;">
-                                <label for="fit-abstol" style="white-space: nowrap;">Tolerance:</label>
-                                <select id="fit-abstol" style="font-size: 0.9em; padding: 2px 6px; width: 90px;">
-                                    <option value="1e-3">1e-3</option>
-                                    <option value="1e-4">1e-4</option>
-                                    <option value="1e-5">1e-5</option>
-                                    <option value="1e-6">1e-6</option>
-                                    <option value="1e-7">1e-7</option>
-                                    <option value="1e-8">1e-8</option>
-                                    <option value="1e-9">1e-9</option>
-                                    <option value="1e-10">1e-10</option>
-                                    <option value="1e-11">1e-11</option>
-                                    <option value="1e-12">1e-12</option>
-                                    <option value="1e-13">1e-13</option>
-                                    <option value="1e-14">1e-14</option>
-                                    <option value="1e-15" selected>1e-15</option>
-                                    <option value="1e-16">1e-16</option>
-                                </select>
+                        <div class="fit-options-stack">
+                        <div class="fit-settings-panel fit-optimizer-panel fit-order-optimization">
+                            <div class="settings-card-title">Optimization options</div>
+                            <div class="fit-parameter-grid optimization-parameter-grid">
+                                <div class="optimization-field">
+                                    <label for="fit-smooth-method">Smoothing</label>
+                                    <select id="fit-smooth-method" onchange="onFitSmoothingChange()">
+                                        <option value="none" selected>None</option>
+                                        <option value="rolling_avg">Rolling average</option>
+                                        <option value="lowess">LOWESS</option>
+                                        <option value="gaussian">Gaussian</option>
+                                    </select>
+                                </div>
+                                <div id="fit-rolling-param" class="optimization-field optimization-smoothing-param" style="display:none;">
+                                    <label for="fit-smooth-pt-avg" title="Number of points in the rolling-average window">Window (pt_avg)</label>
+                                    <div class="optimization-value-with-unit">
+                                        <input type="number" id="fit-smooth-pt-avg" value="7" min="3" max="99" step="1">
+                                        <span>points</span>
+                                    </div>
+                                </div>
+                                <div id="fit-lowess-param" class="optimization-field optimization-smoothing-param" style="display:none;">
+                                    <label for="fit-lowess-frac" title="Fraction of points used by LOWESS local regression">Bandwidth fraction</label>
+                                    <input type="number" id="fit-lowess-frac" value="0.05" min="0.01" max="1" step="0.01">
+                                </div>
+                                <div id="fit-gaussian-param" class="optimization-field optimization-smoothing-param" style="display:none;">
+                                    <label for="fit-gaussian-hmult" title="Gaussian bandwidth multiplied by the median time step">Bandwidth multiplier</label>
+                                    <input type="number" id="fit-gaussian-hmult" value="2.0" min="0.1" max="20" step="0.1">
+                                </div>
+                                <div class="optimization-field optimization-field--optimizer">
+                                    <label for="fit-optimizer-mode">Optimizer</label>
+                                    <div class="optimization-inline-selects">
+                                        <select id="fit-optimizer-mode" onchange="onFitOptimizerModeChange()">
+                                            <option value="single" selected>Single</option>
+                                            <option value="best">Best of N</option>
+                                        </select>
+                                        <select id="fit-optimizer">
+                                            <option value="LN_BOBYQA" selected>BOBYQA (default)</option>
+                                            <option value="LN_COBYLA">COBYLA</option>
+                                            <option value="GN_ISRES">GN ISRES</option>
+                                            <option value="GN_DIRECT_L">GN DIRECT-L</option>
+                                            <option value="BBO_adaptive_de_rand_1_bin_radiuslimited">BBO Adaptive DE</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="optimization-field">
+                                    <label for="fit-maxiters">Max iterations</label>
+                                    <input type="number" id="fit-maxiters" value="100000" min="1" step="100">
+                                </div>
+                                <div class="optimization-field">
+                                    <label for="fit-abstol">Tolerance</label>
+                                    <select id="fit-abstol">
+                                        <option value="1e-3">1e-3</option>
+                                        <option value="1e-4">1e-4</option>
+                                        <option value="1e-5">1e-5</option>
+                                        <option value="1e-6">1e-6</option>
+                                        <option value="1e-7">1e-7</option>
+                                        <option value="1e-8">1e-8</option>
+                                        <option value="1e-9">1e-9</option>
+                                        <option value="1e-10">1e-10</option>
+                                        <option value="1e-11">1e-11</option>
+                                        <option value="1e-12">1e-12</option>
+                                        <option value="1e-13">1e-13</option>
+                                        <option value="1e-14">1e-14</option>
+                                        <option value="1e-15" selected>1e-15</option>
+                                        <option value="1e-16">1e-16</option>
+                                    </select>
+                                </div>
                             </div>
                             <div id="fit-optimizer-best-panel" style="display: none; margin-top: 6px; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; font-size: 0.85em;">
                                 <div style="color: #6c757d; margin-bottom: 6px;">Each deterministic optimizer runs once; each stochastic runs N times. The fit with lowest RMSE wins.</div>
@@ -275,19 +319,7 @@
                             </div>
                         </div>
 
-                        <div class="fit-control-strip">
-                            <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer;">
-                                <input type="checkbox" id="fit-smoothing" onchange="document.getElementById('fit-smoothing-window').disabled = !this.checked">
-                                Smooth curve before fitting
-                            </label>
-                            <span class="fit-window-control">
-                                <label for="fit-smoothing-window" title="Centered-average window">Window:</label>
-                                <input type="number" id="fit-smoothing-window" value="3" min="3" max="99" step="2" disabled>
-                                <span class="fit-window-unit">points</span>
-                            </span>
-                        </div>
-
-                        <div class="fit-control-strip">
+                        <div class="fit-control-strip fit-order-blank">
                             <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                                 <input type="checkbox" id="fit-blank-subtraction" onchange="onBlankSubtractionChange()">
                                 Blank subtraction
@@ -309,9 +341,10 @@
                                 </span>
                             </div>
                         </div>
-                        <div class="fit-control-strip fit-control-strip--muted">
+                        <div class="fit-control-strip fit-control-strip--muted fit-order-calibration">
                             <label for="fit-calibration-file" style="white-space: nowrap;">Custom calibration file:</label>
                             <input type="text" id="fit-calibration-file" placeholder="auto-detected (leave blank)" style="font-size: 0.9em; padding: 2px 6px; border: 1px solid #ced4da; border-radius: 4px; width: 280px; color: #495057;">
+                        </div>
                         </div>
                         <div id="blank-analysis-card" style="display: none;"></div>
 
@@ -400,6 +433,10 @@
                                             <div id="cluster-gaussian-param" class="settings-field" style="display:none;">
                                                 <label for="cluster-gaussian-hmult">Bandwidth multiplier</label>
                                                 <input type="number" id="cluster-gaussian-hmult" value="2.0" min="0.1" max="20" step="0.1">
+                                            </div>
+                                            <div id="cluster-rolling-param" class="settings-field" style="display:none;">
+                                                <label for="cluster-smooth-pt-avg" title="Number of points in the rolling-average window">Window (pt_avg)</label>
+                                                <input type="number" id="cluster-smooth-pt-avg" value="7" min="1" max="99" step="1">
                                             </div>
                                         </div>
                                     </div>
@@ -893,17 +930,6 @@
                             </div>
                         </div>
 
-                        <div class="fit-control-strip">
-                            <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer;" title="Centered-average preprocessing for the parametric model; Log-Lin pt_avg is configured separately.">
-                                <input type="checkbox" id="batch-fit-smoothing" onchange="document.getElementById('batch-fit-smoothing-window').disabled = !this.checked">
-                                Smooth curves before parametric fitting
-                            </label>
-                            <span class="fit-window-control">
-                                <label for="batch-fit-smoothing-window" title="Centered-average window">Window:</label>
-                                <input type="number" id="batch-fit-smoothing-window" value="3" min="3" max="99" step="2" disabled>
-                                <span class="fit-window-unit">points</span>
-                            </span>
-                        </div>
                         </div>
 
                         <div id="batch-loglin-wrap" style="display:none; margin-top: 14px;">
@@ -917,25 +943,34 @@
                         <div id="batch-loglin-options" class="fit-settings-panel" style="display:none;">
                             <div class="settings-card-title">Log-Lin options</div>
                             <div class="fit-parameter-grid">
-                                <div class="batch-loglin-standalone-only" style="display:flex; flex-direction:column; gap:4px;">
+                                <div style="display:flex; flex-direction:column; gap:4px;">
                                     <label>Smoothing</label>
-                                    <select id="batch-loglin-smoothing" style="padding:3px 6px;">
+                                    <select id="batch-loglin-smoothing" style="padding:3px 6px;" onchange="onBatchLogLinSmoothingChange()">
                                         <option value="rolling_avg" selected>Rolling avg</option>
                                         <option value="lowess">LOWESS</option>
+                                        <option value="gaussian">Gaussian</option>
                                         <option value="NO">None</option>
                                     </select>
                                 </div>
-                                <div class="batch-loglin-standalone-only" style="display:flex; flex-direction:column; gap:4px;">
+                                <div style="display:flex; flex-direction:column; gap:4px;">
                                     <label>Window type</label>
-                                    <select id="batch-loglin-win-type" style="padding:3px 6px;">
+                                    <select id="batch-loglin-win-type" style="padding:3px 6px;" onchange="onBatchLogLinWindowTypeChange()">
                                         <option value="maximum" selected>Maximum</option>
                                         <option value="global_thr">Global threshold</option>
                                         <option value="max_with_min_OD">Max with min OD</option>
                                     </select>
                                 </div>
-                                <div style="display:flex; flex-direction:column; gap:4px;">
+                                <div id="batch-loglin-pt-avg-field" style="display:flex; flex-direction:column; gap:4px;">
                                     <label title="Number of points in smoothing window">pt_avg</label>
                                     <input type="number" id="batch-loglin-pt-avg" value="7" min="1" max="99" step="1" style="padding:3px 6px;">
+                                </div>
+                                <div id="batch-loglin-lowess-field" style="display:none; flex-direction:column; gap:4px;">
+                                    <label title="Fraction of points used by LOWESS local regression">thr_lowess</label>
+                                    <input type="number" id="batch-loglin-thr-lowess" value="0.05" min="0.01" max="1" step="0.01" style="padding:3px 6px;">
+                                </div>
+                                <div id="batch-loglin-gaussian-field" style="display:none; flex-direction:column; gap:4px;">
+                                    <label title="Gaussian bandwidth multiplied by the median time step">gaussian_h_mult</label>
+                                    <input type="number" id="batch-loglin-gaussian-hmult" value="2.0" min="0.1" max="20" step="0.1" style="padding:3px 6px;">
                                 </div>
                                 <div style="display:flex; flex-direction:column; gap:4px;">
                                     <label title="Window size for derivative-based GR estimate">pt_smooth_deriv</label>
@@ -949,7 +984,7 @@
                                     <label title="Quantile threshold on growth rate to define the exponential window">threshold_exp</label>
                                     <input type="number" id="batch-loglin-thr-exp" value="0.9" min="0" max="1" step="0.01" style="padding:3px 6px;">
                                 </div>
-                                <div class="batch-loglin-standalone-only" style="display:flex; flex-direction:column; gap:4px;">
+                                <div id="batch-loglin-start-thr-field" style="display:none; flex-direction:column; gap:4px;">
                                     <label title="Minimum OD to start the exponential window">start_OD_thr</label>
                                     <input type="number" id="batch-loglin-start-thr" value="0.05" min="0" step="0.01" style="padding:3px 6px;">
                                 </div>
@@ -974,50 +1009,83 @@
                             <label for="batch-fit-calibration-file" style="white-space: nowrap;">Custom calibration file:</label>
                             <input type="text" id="batch-fit-calibration-file" placeholder="auto-detected (leave blank)" style="font-size: 0.9em; padding: 2px 6px; border: 1px solid #ced4da; border-radius: 4px; width: 280px; color: #495057;">
                         </div>
-                        <div class="fit-settings-panel fit-optimizer-panel">
-                            <div class="fit-control-row">
-                            <div id="batch-fit-optimizer-row" style="display: contents;">
-                                <label style="white-space: nowrap;">Optimizer:</label>
-                                <select id="batch-fit-optimizer-mode" onchange="onBatchFitOptimizerModeChange()" style="font-size: 0.9em; padding: 2px 6px;">
-                                    <option value="single" selected>Single</option>
-                                    <option value="best">Best of N</option>
-                                </select>
-                                <select id="batch-fit-optimizer" style="font-size: 0.9em; padding: 2px 6px;">
-                                    <option value="LN_BOBYQA" selected>BOBYQA (default)</option>
-                                    <option value="LN_COBYLA">COBYLA</option>
-                                    <option value="GN_ISRES">GN ISRES</option>
-                                    <option value="GN_DIRECT_L">GN DIRECT-L</option>
-                                    <option value="BBO_adaptive_de_rand_1_bin_radiuslimited">BBO Adaptive DE</option>
-                                </select>
-                                <label for="batch-fit-maxiters" style="white-space: nowrap;">Max iterations:</label>
-                                <input type="number" id="batch-fit-maxiters" value="100000" min="1" step="100" style="font-size: 0.9em; padding: 2px 6px; border: 1px solid #ced4da; border-radius: 4px; width: 90px; color: #495057;">
-                                <label for="batch-fit-abstol" style="white-space: nowrap;">Tolerance:</label>
-                                <select id="batch-fit-abstol" style="font-size: 0.9em; padding: 2px 6px;">
-                                    <option value="1e-3">1e-3</option>
-                                    <option value="1e-4">1e-4</option>
-                                    <option value="1e-5">1e-5</option>
-                                    <option value="1e-6">1e-6</option>
-                                    <option value="1e-7">1e-7</option>
-                                    <option value="1e-8">1e-8</option>
-                                    <option value="1e-9">1e-9</option>
-                                    <option value="1e-10">1e-10</option>
-                                    <option value="1e-11">1e-11</option>
-                                    <option value="1e-12" selected>1e-12</option>
-                                    <option value="1e-13">1e-13</option>
-                                    <option value="1e-14">1e-14</option>
-                                    <option value="1e-15">1e-15</option>
-                                    <option value="1e-16">1e-16</option>
-                                </select>
+                        <div id="batch-fit-optimization-options" class="fit-settings-panel fit-optimizer-panel">
+                            <div class="settings-card-title">Optimization options</div>
+                            <div id="batch-fit-optimizer-row" class="fit-parameter-grid optimization-parameter-grid">
+                                <div class="optimization-field">
+                                    <label for="batch-fit-smooth-method">Smoothing</label>
+                                    <select id="batch-fit-smooth-method" onchange="onBatchFitSmoothingChange()">
+                                        <option value="none" selected>None</option>
+                                        <option value="rolling_avg">Rolling average</option>
+                                        <option value="lowess">LOWESS</option>
+                                        <option value="gaussian">Gaussian</option>
+                                    </select>
+                                </div>
+                                <div id="batch-fit-rolling-param" class="optimization-field optimization-smoothing-param" style="display:none;">
+                                    <label for="batch-fit-smooth-pt-avg" title="Number of points in the rolling-average window">Window (pt_avg)</label>
+                                    <div class="optimization-value-with-unit">
+                                        <input type="number" id="batch-fit-smooth-pt-avg" value="7" min="3" max="99" step="1">
+                                        <span>points</span>
+                                    </div>
+                                </div>
+                                <div id="batch-fit-lowess-param" class="optimization-field optimization-smoothing-param" style="display:none;">
+                                    <label for="batch-fit-lowess-frac" title="Fraction of points used by LOWESS local regression">Bandwidth fraction</label>
+                                    <input type="number" id="batch-fit-lowess-frac" value="0.05" min="0.01" max="1" step="0.01">
+                                </div>
+                                <div id="batch-fit-gaussian-param" class="optimization-field optimization-smoothing-param" style="display:none;">
+                                    <label for="batch-fit-gaussian-hmult" title="Gaussian bandwidth multiplied by the median time step">Bandwidth multiplier</label>
+                                    <input type="number" id="batch-fit-gaussian-hmult" value="2.0" min="0.1" max="20" step="0.1">
+                                </div>
+                                <div class="optimization-field optimization-field--optimizer">
+                                    <label for="batch-fit-optimizer-mode">Optimizer</label>
+                                    <div class="optimization-inline-selects">
+                                        <select id="batch-fit-optimizer-mode" onchange="onBatchFitOptimizerModeChange()">
+                                            <option value="single" selected>Single</option>
+                                            <option value="best">Best of N</option>
+                                        </select>
+                                        <select id="batch-fit-optimizer">
+                                            <option value="LN_BOBYQA" selected>BOBYQA (default)</option>
+                                            <option value="LN_COBYLA">COBYLA</option>
+                                            <option value="GN_ISRES">GN ISRES</option>
+                                            <option value="GN_DIRECT_L">GN DIRECT-L</option>
+                                            <option value="BBO_adaptive_de_rand_1_bin_radiuslimited">BBO Adaptive DE</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="optimization-field">
+                                    <label for="batch-fit-maxiters">Max iterations</label>
+                                    <input type="number" id="batch-fit-maxiters" value="100000" min="1" step="100">
+                                </div>
+                                <div class="optimization-field">
+                                    <label for="batch-fit-abstol">Tolerance</label>
+                                    <select id="batch-fit-abstol">
+                                        <option value="1e-3">1e-3</option>
+                                        <option value="1e-4">1e-4</option>
+                                        <option value="1e-5">1e-5</option>
+                                        <option value="1e-6">1e-6</option>
+                                        <option value="1e-7">1e-7</option>
+                                        <option value="1e-8">1e-8</option>
+                                        <option value="1e-9">1e-9</option>
+                                        <option value="1e-10">1e-10</option>
+                                        <option value="1e-11">1e-11</option>
+                                        <option value="1e-12" selected>1e-12</option>
+                                        <option value="1e-13">1e-13</option>
+                                        <option value="1e-14">1e-14</option>
+                                        <option value="1e-15">1e-15</option>
+                                        <option value="1e-16">1e-16</option>
+                                    </select>
+                                </div>
+                                <div class="optimization-field">
+                                    <label for="batch-fit-skip-flat" title="Skip curves whose OD amplitude (max - min) is below this. Typical OD ranges are 0.01 - 1.0; default 0.02 catches blanks. Set to 0 to disable.">Skip if OD range &lt;</label>
+                                    <input type="number" id="batch-fit-skip-flat" value="0.02" min="0" max="2" step="0.01">
+                                </div>
                             </div>
-                            <label for="batch-fit-skip-flat" style="white-space: nowrap;" title="Skip curves whose OD amplitude (max - min) is below this. Typical OD ranges are 0.01 - 1.0; default 0.02 catches blanks. Set to 0 to disable.">Skip if OD range &lt;:</label>
-                            <input type="number" id="batch-fit-skip-flat" value="0.02" min="0" max="2" step="0.01" style="font-size: 0.9em; padding: 2px 6px; border: 1px solid #ced4da; border-radius: 4px; width: 70px; color: #495057;">
+                            <div id="batch-fit-optimizer-best-panel" style="display: none; margin-top: 6px; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; font-size: 0.85em;">
+                                <div style="color: #6c757d; margin-bottom: 6px;">Each deterministic optimizer runs once per well; each stochastic runs N times. Lowest-RMSE fit wins per well.</div>
+                                <div style="margin-bottom: 4px;"><b>Deterministic:</b> <span id="batch-fit-det-optimizers"><label class="optimizer-choice"><input type="checkbox" data-optimizer="GN_DIRECT_L" data-type="deterministic">GN DIRECT-L</label><label class="optimizer-choice"><input type="checkbox" data-optimizer="LN_BOBYQA" data-type="deterministic">BOBYQA</label><label class="optimizer-choice"><input type="checkbox" data-optimizer="LN_COBYLA" data-type="deterministic" checked>COBYLA</label></span></div>
+                                <div style="margin-bottom: 4px;"><b>Stochastic:</b> <span id="batch-fit-sto-optimizers"><label class="optimizer-choice"><input type="checkbox" data-optimizer="BBO_adaptive_de_rand_1_bin_radiuslimited" data-type="stochastic" checked>BBO Adaptive DE</label><label class="optimizer-choice"><input type="checkbox" data-optimizer="GN_ISRES" data-type="stochastic">GN ISRES</label></span></div>
+                                <label style="display: inline-flex; align-items: center; gap: 6px;">Runs per stochastic: <input type="number" id="batch-fit-sto-runs" value="3" min="1" max="20" style="font-size: 0.85em; padding: 2px 6px; width: 50px; border: 1px solid #ced4da; border-radius: 4px;"></label>
                             </div>
-                        </div>
-                        <div id="batch-fit-optimizer-best-panel" style="display: none; margin-top: 6px; padding: 8px; background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; font-size: 0.85em;">
-                            <div style="color: #6c757d; margin-bottom: 6px;">Each deterministic optimizer runs once per well; each stochastic runs N times. Lowest-RMSE fit wins per well.</div>
-                            <div style="margin-bottom: 4px;"><b>Deterministic:</b> <span id="batch-fit-det-optimizers"><label class="optimizer-choice"><input type="checkbox" data-optimizer="GN_DIRECT_L" data-type="deterministic">GN DIRECT-L</label><label class="optimizer-choice"><input type="checkbox" data-optimizer="LN_BOBYQA" data-type="deterministic">BOBYQA</label><label class="optimizer-choice"><input type="checkbox" data-optimizer="LN_COBYLA" data-type="deterministic" checked>COBYLA</label></span></div>
-                            <div style="margin-bottom: 4px;"><b>Stochastic:</b> <span id="batch-fit-sto-optimizers"><label class="optimizer-choice"><input type="checkbox" data-optimizer="BBO_adaptive_de_rand_1_bin_radiuslimited" data-type="stochastic" checked>BBO Adaptive DE</label><label class="optimizer-choice"><input type="checkbox" data-optimizer="GN_ISRES" data-type="stochastic">GN ISRES</label></span></div>
-                            <label style="display: inline-flex; align-items: center; gap: 6px;">Runs per stochastic: <input type="number" id="batch-fit-sto-runs" value="3" min="1" max="20" style="font-size: 0.85em; padding: 2px 6px; width: 50px; border: 1px solid #ced4da; border-radius: 4px;"></label>
                         </div>
 
                         <div style="margin-top: 14px;">
@@ -1224,6 +1292,6 @@
         </div>
     </div>
 
-    <script type="module" src="/static/js/app.js?v=20260722-5"></script>
+    <script type="module" src="/static/js/app.js?v=20260724-5"></script>
 </body>
 </html>
