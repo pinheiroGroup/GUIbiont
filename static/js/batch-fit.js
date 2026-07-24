@@ -77,8 +77,8 @@ function onBatchFitMethodChange() {
     document.getElementById('batch-loglin-wrap').style.display     = isLoglin ? 'block' : 'none';
 
     // Hide optimizer/maxiters/tolerance — irrelevant for log-lin.
-    const optRow = document.getElementById('batch-fit-optimizer-row');
-    if (optRow) optRow.style.display = isLoglin ? 'none' : 'contents';
+    const optimizationPanel = document.getElementById('batch-fit-optimization-options');
+    if (optimizationPanel) optimizationPanel.style.display = isLoglin ? 'none' : 'block';
 
     // Best-of-N is irrelevant for log-lin. Restore its previous mode when the
     // user switches back to parametric fitting.
@@ -109,9 +109,9 @@ function onBatchFitSmoothingChange() {
     const rolling = document.getElementById('batch-fit-rolling-param');
     const lowess = document.getElementById('batch-fit-lowess-param');
     const gaussian = document.getElementById('batch-fit-gaussian-param');
-    if (rolling) rolling.style.display = method === 'rolling_avg' ? 'inline-flex' : 'none';
-    if (lowess) lowess.style.display = method === 'lowess' ? 'inline-flex' : 'none';
-    if (gaussian) gaussian.style.display = method === 'gaussian' ? 'inline-flex' : 'none';
+    if (rolling) rolling.style.display = method === 'rolling_avg' ? 'flex' : 'none';
+    if (lowess) lowess.style.display = method === 'lowess' ? 'flex' : 'none';
+    if (gaussian) gaussian.style.display = method === 'gaussian' ? 'flex' : 'none';
 }
 
 function onBatchLogLinSmoothingChange() {

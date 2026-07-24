@@ -41,9 +41,9 @@ function onFitSmoothingChange() {
     const rolling = document.getElementById('fit-rolling-param');
     const lowess = document.getElementById('fit-lowess-param');
     const gaussian = document.getElementById('fit-gaussian-param');
-    if (rolling) rolling.style.display = method === 'rolling_avg' ? 'inline-flex' : 'none';
-    if (lowess) lowess.style.display = method === 'lowess' ? 'inline-flex' : 'none';
-    if (gaussian) gaussian.style.display = method === 'gaussian' ? 'inline-flex' : 'none';
+    if (rolling) rolling.style.display = method === 'rolling_avg' ? 'flex' : 'none';
+    if (lowess) lowess.style.display = method === 'lowess' ? 'flex' : 'none';
+    if (gaussian) gaussian.style.display = method === 'gaussian' ? 'flex' : 'none';
 }
 
 function setFitMode(mode) {
