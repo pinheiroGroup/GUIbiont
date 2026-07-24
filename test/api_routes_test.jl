@@ -405,6 +405,21 @@ end
     @test string(body[:smooth_method]) == "none"
 end
 
+@testset "POST /api/cluster - rolling-average window is configurable" begin
+    status3, body3 = post_json("/api/cluster",
+        Dict("csv" => CLUSTER_CSV, "k" => 2,
+             "smooth_method" => "rolling_avg", "smooth_pt_avg" => 3))
+    status7, body7 = post_json("/api/cluster",
+        Dict("csv" => CLUSTER_CSV, "k" => 2,
+             "smooth_method" => "rolling_avg", "smooth_pt_avg" => 7))
+    @test status3 == 200
+    @test status7 == 200
+    @test Int(body3[:smooth_pt_avg]) == 3
+    @test Int(body7[:smooth_pt_avg]) == 7
+    @test length(body3[:time]) == 11
+    @test length(body7[:time]) == 7
+end
+
 @testset "POST /api/cluster — k capped at n_series" begin
     # 6 series, k=100 — should produce at most 6 clusters (capped)
     status, body = post_json("/api/cluster", Dict("csv" => CLUSTER_CSV, "k" => 100))
@@ -499,6 +514,15 @@ end
     status, body = post_json("/api/cluster-sweep",
                              Dict("csv" => CLUSTER_CSV, "k_max" => 4,
                                   "smooth_method" => "rolling_avg"))
+    @test status == 200
+    @test !isempty(body[:sweep])
+end
+
+@testset "POST /api/cluster-sweep - accepts rolling-average window" begin
+    status, body = post_json("/api/cluster-sweep",
+                             Dict("csv" => CLUSTER_CSV, "k_max" => 4,
+                                  "smooth_method" => "rolling_avg",
+                                  "smooth_pt_avg" => 3))
     @test status == 200
     @test !isempty(body[:sweep])
 end

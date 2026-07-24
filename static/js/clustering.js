@@ -473,6 +473,7 @@ function onClusterSmoothChange() {
     const method = document.getElementById('cluster-smooth-method').value;
     document.getElementById('cluster-lowess-param').style.display   = method === 'lowess'   ? 'flex' : 'none';
     document.getElementById('cluster-gaussian-param').style.display = method === 'gaussian' ? 'flex' : 'none';
+    document.getElementById('cluster-rolling-param').style.display  = method === 'rolling_avg' ? 'flex' : 'none';
 }
 
 function onClusterMethodChange() {
@@ -495,6 +496,11 @@ async function runClustering() {
     const k          = parseInt(document.getElementById('clustering-k').value) || 3;
     const normalize  = syncClusterNormalizeCheckboxes('bottom');
     const smooth     = document.getElementById('cluster-smooth-method').value;
+    const smoothPtAvg = Math.min(99, Math.max(
+        1,
+        parseInt(document.getElementById('cluster-smooth-pt-avg').value, 10) || 7,
+    ));
+    document.getElementById('cluster-smooth-pt-avg').value = smoothPtAvg;
     const lowessFrac = parseFloat(document.getElementById('cluster-lowess-frac').value);
     const gHmult     = parseFloat(document.getElementById('cluster-gaussian-hmult').value);
     const method     = document.getElementById('cluster-method').value;
@@ -546,6 +552,7 @@ async function runClustering() {
 
     Object.assign(body, {
         smooth_method: smooth,
+        smooth_pt_avg: smoothPtAvg,
         lowess_frac: lowessFrac,
         gaussian_h_mult: gHmult,
         cluster_method: method,
@@ -591,6 +598,7 @@ async function runClustering() {
             k,
             normalize,
             smooth_method:  smooth,
+            smooth_pt_avg:  smoothPtAvg,
             lowess_frac:    lowessFrac,
             gaussian_h_mult: gHmult,
             cluster_method: method,
@@ -1232,6 +1240,11 @@ const SWEEP_METRICS = [
 async function runClusterSweep() {
     const kMax    = parseInt(document.getElementById('cluster-sweep-kmax').value) || 10;
     const smooth  = document.getElementById('cluster-smooth-method').value;
+    const smoothPtAvg = Math.min(99, Math.max(
+        1,
+        parseInt(document.getElementById('cluster-smooth-pt-avg').value, 10) || 7,
+    ));
+    document.getElementById('cluster-smooth-pt-avg').value = smoothPtAvg;
     const method  = document.getElementById('cluster-method').value;
     if (method === 'dbscan') {
         alert('Cluster-number sweep is unavailable for DBSCAN because DBSCAN does not use k.');
@@ -1271,7 +1284,8 @@ async function runClusterSweep() {
     const { qLo: interpQLo, qHi: interpQHi } = getClusterInterpQuantiles();
     const { qLo: preQLo, qHi: preQHi }       = getClusterPrescreenQuantiles();
     Object.assign(body, {
-        smooth_method: smooth, lowess_frac: lowess, gaussian_h_mult: gHmult,
+        smooth_method: smooth, smooth_pt_avg: smoothPtAvg,
+        lowess_frac: lowess, gaussian_h_mult: gHmult,
         cluster_method: method, maxiter, tol, kmeans_n_init: nInit, hclust_linkage: hLink,
         subtract_blank:      document.getElementById('cluster-subtract-blank').checked,
         derive_non_growing_blanks: deriveBlanks,

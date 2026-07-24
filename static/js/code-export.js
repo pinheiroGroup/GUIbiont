@@ -477,6 +477,7 @@ export function generateClusterCode(clusterData, withComments) {
     const req           = clusterData._request || {};
     const k             = req.k ?? 3;
     const smoothMethod  = req.smooth_method ?? 'lowess';
+    const smoothPtAvg   = req.smooth_pt_avg ?? 7;
     const lowessFrac    = req.lowess_frac ?? 0.05;
     const gaussianHmult = req.gaussian_h_mult ?? 2.0;
     const clusterMethod = req.cluster_method ?? 'kmeans';
@@ -521,6 +522,9 @@ export function generateClusterCode(clusterData, withComments) {
         : smoothMethod === 'gaussian'
         ? `    # Gaussian bandwidth multiplier (multiplied by median Δt)
     gaussian_h_mult = ${juliaFloat(gaussianHmult, 2.0)},`
+        : smoothMethod === 'rolling_avg'
+        ? `    # Number of points in the rolling-average window
+    smooth_pt_avg = ${smoothPtAvg},`
         : '';
 
     const prepareKeywords = [

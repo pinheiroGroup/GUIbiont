@@ -145,6 +145,7 @@ end
     k_input        = Int(body.k)
     normalize      = Bool(body.normalize)
     smooth_method  = Symbol(body.smooth_method)
+    smooth_pt_avg  = max(1, Int(body.smooth_pt_avg))
     lowess_frac    = Float64(body.lowess_frac)
     gaussian_hmult = Float64(body.gaussian_h_mult)
     cluster_method = string(body.cluster_method)
@@ -331,6 +332,7 @@ end
         detector_curves, detector_times = _smooth_clustering_curves(
             curves, times, labels_all;
             method=smooth_method,
+            smooth_pt_avg=smooth_pt_avg,
             lowess_frac=lowess_frac,
             gaussian_h_mult=gaussian_hmult,
         )
@@ -381,6 +383,7 @@ end
         smooth_opts = FitOptions(
             smooth          = true,
             smooth_method   = smooth_method,
+            smooth_pt_avg   = smooth_pt_avg,
             lowess_frac     = lowess_frac,
             gaussian_h_mult = gaussian_hmult,
             cluster         = false,
@@ -527,6 +530,7 @@ end
         "wcss"             => something(gd_clustered.wcss, 0.0),
         "cost_metric"      => "wcss",
         "smooth_method"    => string(smooth_method),
+        "smooth_pt_avg"    => smooth_pt_avg,
         "quality"          => quality,
         "assignments"      => cluster_ids,
         "series_labels"    => labels_all,
@@ -547,6 +551,7 @@ end
     body = body.payload
     k_max          = Int(body.k_max)
     smooth_method  = Symbol(body.smooth_method)
+    smooth_pt_avg  = max(1, Int(body.smooth_pt_avg))
     lowess_frac    = Float64(body.lowess_frac)
     gaussian_hmult = Float64(body.gaussian_h_mult)
     cluster_method = string(body.cluster_method)
@@ -708,6 +713,7 @@ end
         detector_curves, detector_times = _smooth_clustering_curves(
             curves, times, labels_all;
             method=smooth_method,
+            smooth_pt_avg=smooth_pt_avg,
             lowess_frac=lowess_frac,
             gaussian_h_mult=gaussian_hmult,
         )
@@ -752,6 +758,7 @@ end
     if smooth_method != :none
         gd_smooth   = GrowthData(curves, times, labels_all)
         smooth_opts = FitOptions(smooth=true, smooth_method=smooth_method,
+                                 smooth_pt_avg=smooth_pt_avg,
                                  lowess_frac=lowess_frac,
                                  gaussian_h_mult=gaussian_hmult, cluster=false)
         gd_proc    = preprocess(gd_smooth, smooth_opts)

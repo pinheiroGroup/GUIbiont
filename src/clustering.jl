@@ -121,6 +121,7 @@ function _smooth_clustering_curves(
     times::Vector{Float64},
     labels::Vector{String};
     method::Symbol=:none,
+    smooth_pt_avg::Int=7,
     lowess_frac::Float64=0.05,
     gaussian_h_mult::Float64=2.0,
 )
@@ -130,6 +131,7 @@ function _smooth_clustering_curves(
         FitOptions(
             smooth=true,
             smooth_method=method,
+            smooth_pt_avg=smooth_pt_avg,
             lowess_frac=lowess_frac,
             gaussian_h_mult=gaussian_h_mult,
             cluster=false,

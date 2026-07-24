@@ -161,6 +161,7 @@ Base.@kwdef mutable struct ClusterRequest
     k::Int = 3
     normalize::Bool = false
     smooth_method::String = "lowess"
+    smooth_pt_avg::Int = 7
     lowess_frac::Float64 = 0.05
     gaussian_h_mult::Float64 = 2.0
     cluster_method::String = "kmeans"
@@ -201,6 +202,7 @@ Base.@kwdef mutable struct ClusterSweepRequest
     csv_path::String = ""
     k_max::Int = 10
     smooth_method::String = "lowess"
+    smooth_pt_avg::Int = 7
     lowess_frac::Float64 = 0.05
     gaussian_h_mult::Float64 = 2.0
     cluster_method::String = "kmeans"
