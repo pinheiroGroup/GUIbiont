@@ -288,7 +288,7 @@ excludes(clusterRollingDerived, 'detection_lowess_frac', 'detection_gaussian_h_m
 const clusterGaussianDerived = generateClusterCode({ _request: {
     _mode: 'file', csv_path: 'data.csv', k: 2,
     smooth_method: 'gaussian', lowess_frac: 0.2, gaussian_h_mult: 2,
-    cluster_method: 'kmedoids', maxiter: 20, tol: 1,
+    cluster_method: 'kmedoids', maxiter: 20, tol: 1, kmedoids_n_init: 7,
     subtract_blank: true, blank_method: 'pointbypoint',
     derive_non_growing_blanks: true, prescreen_constant: true,
     prescreen_tol_const: 2, prescreen_q_low: 0, prescreen_q_high: 1,
@@ -298,7 +298,7 @@ includes(
     clusterGaussianDerived,
     'gaussian_h_mult = 2.0', 'detection_gaussian_h_mult=2.0',
     'blank_prescreen_tol=2.0', 'blank_trend_p_threshold=1.0',
-    'kmeans_tol=1.0', 'kmedoids_seed=42', 'cluster_trend_test=false',
+    'kmedoids_n_init=7', 'kmeans_tol=1.0', 'kmedoids_seed=42', 'cluster_trend_test=false',
 );
 excludes(
     clusterGaussianDerived,

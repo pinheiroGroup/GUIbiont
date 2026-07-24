@@ -637,6 +637,7 @@ export function generateClusterCode(clusterData, withComments) {
     const maxiter       = req.maxiter ?? 300;
     const tol           = req.tol ?? 1e-6;
     const nInit         = req.kmeans_n_init ?? 3;
+    const kmedoidsNInit = req.kmedoids_n_init ?? nInit;
     const blankSub      = req.subtract_blank ?? false;
     const deriveBlanks  = req.derive_non_growing_blanks ?? false;
     const blankMethod   = req.blank_method ?? 'pointbypoint';
@@ -718,6 +719,7 @@ export function generateClusterCode(clusterData, withComments) {
         ['n_clusters', usesK ? 'N_CLUSTER_LABELS' : null],
         ['cluster_method', `:${clusterMethod}`],
         ['kmeans_n_init', clusterMethod === 'kmeans' ? String(nInit) : null],
+        ['kmedoids_n_init', clusterMethod === 'kmedoids' ? String(kmedoidsNInit) : null],
         ['kmeans_max_iters',
             clusterMethod === 'kmeans' || clusterMethod === 'kmedoids' ? String(maxiter) : null],
         ['kmeans_tol',

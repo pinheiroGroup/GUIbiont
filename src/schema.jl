@@ -194,6 +194,7 @@ Base.@kwdef mutable struct ClusterRequest
     maxiter::Int = 300
     tol::Float64 = 1e-15
     kmeans_n_init::Int = 3
+    kmedoids_n_init::Int = 3
     dbscan_eps::Float64 = 1.0
     dbscan_min_pts::Int = 3
     hclust_linkage::String = "ward"
@@ -235,6 +236,7 @@ Base.@kwdef mutable struct ClusterSweepRequest
     maxiter::Int = 300
     tol::Float64 = 1e-15
     kmeans_n_init::Int = 3
+    kmedoids_n_init::Int = 3
     hclust_linkage::String = "ward"
     subtract_blank::Bool = false
     derive_non_growing_blanks::Bool = false

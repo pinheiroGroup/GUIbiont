@@ -152,6 +152,7 @@ end
     maxiter        = Int(body.maxiter)
     tol            = Float64(body.tol)
     kmeans_n_init  = clamp(Int(body.kmeans_n_init), 1, 100)
+    kmedoids_n_init = clamp(Int(body.kmedoids_n_init), 1, 100)
     dbscan_eps     = Float64(body.dbscan_eps)
     dbscan_minpts  = Int(body.dbscan_min_pts)
     hclust_linkage = Symbol(body.hclust_linkage)
@@ -438,6 +439,7 @@ end
         kmeans_seed                = 42,
         kmedoids_seed              = 42,
         kmeans_n_init              = kmeans_n_init,
+        kmedoids_n_init            = kmedoids_n_init,
         kmeans_max_iters           = maxiter,
         kmeans_tol                 = tol,
     )
@@ -561,6 +563,7 @@ end
     maxiter        = Int(body.maxiter)
     tol            = Float64(body.tol)
     kmeans_n_init  = clamp(Int(body.kmeans_n_init), 1, 100)
+    kmedoids_n_init = clamp(Int(body.kmedoids_n_init), 1, 100)
     hclust_linkage = Symbol(body.hclust_linkage)
     subtract_blank = Bool(body.subtract_blank)
     derive_non_growing_blanks = Bool(body.derive_non_growing_blanks)
@@ -787,6 +790,7 @@ end
             kmeans_seed                = 42,
             kmedoids_seed              = 42,
             kmeans_n_init              = kmeans_n_init,
+            kmedoids_n_init            = kmedoids_n_init,
             kmeans_max_iters           = maxiter,
             kmeans_tol                 = tol,
         )

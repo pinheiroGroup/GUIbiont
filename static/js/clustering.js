@@ -486,7 +486,7 @@ function onClusterMethodChange() {
     document.getElementById('cluster-hclust-params').style.display = isHclust ? 'flex' : 'none';
     document.getElementById('cluster-dbscan-params').style.display = isDbscan ? 'flex' : 'none';
     document.getElementById('cluster-iter-params').style.display   = needsIter ? 'flex' : 'none';
-    document.getElementById('cluster-n-init-param').style.display   = method === 'kmeans' ? 'flex' : 'none';
+    document.getElementById('cluster-n-init-param').style.display   = needsIter ? 'flex' : 'none';
     updateClusteringRunBtn();
 }
 
@@ -559,6 +559,7 @@ async function runClustering() {
         maxiter,
         tol,
         kmeans_n_init: nInit,
+        kmedoids_n_init: nInit,
         hclust_linkage: hLinkage,
         dbscan_eps: dbscanEps,
         dbscan_min_pts: dbscanMin,
@@ -605,6 +606,7 @@ async function runClustering() {
             maxiter,
             tol,
             kmeans_n_init: nInit,
+            kmedoids_n_init: nInit,
             hclust_linkage: hLinkage,
             dbscan_eps:     dbscanEps,
             dbscan_min_pts: dbscanMin,
@@ -1286,7 +1288,7 @@ async function runClusterSweep() {
     Object.assign(body, {
         smooth_method: smooth, smooth_pt_avg: smoothPtAvg,
         lowess_frac: lowess, gaussian_h_mult: gHmult,
-        cluster_method: method, maxiter, tol, kmeans_n_init: nInit, hclust_linkage: hLink,
+        cluster_method: method, maxiter, tol, kmeans_n_init: nInit, kmedoids_n_init: nInit, hclust_linkage: hLink,
         subtract_blank:      document.getElementById('cluster-subtract-blank').checked,
         derive_non_growing_blanks: deriveBlanks,
         blank_method:        document.getElementById('cluster-blank-method').value,
