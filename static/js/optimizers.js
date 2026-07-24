@@ -21,15 +21,27 @@ const OPTIMIZER_LABELS = {
 const DEFAULT_BEST_DETERMINISTIC = ['LN_COBYLA'];
 const DEFAULT_BEST_STOCHASTIC    = ['BBO_adaptive_de_rand_1_bin_radiuslimited'];
 
+// Render a usable Best-of-N panel immediately. The API response replaces
+// this list when available, but a slow or failed request must not leave the
+// optimizer selectors empty.
+const FALLBACK_OPTIMIZERS = [
+    { name: 'GN_DIRECT_L',                              type: 'deterministic' },
+    { name: 'LN_BOBYQA',                               type: 'deterministic' },
+    { name: 'LN_COBYLA',                               type: 'deterministic' },
+    { name: 'BBO_adaptive_de_rand_1_bin_radiuslimited', type: 'stochastic' },
+    { name: 'GN_ISRES',                                type: 'stochastic' },
+];
+
 // HTML prefixes for the panels that have a best-of-N UI. Each prefix
 // expects DOM ids: `${prefix}-optimizer-mode`, `${prefix}-optimizer`,
 // `${prefix}-optimizer-best-panel`, `${prefix}-det-optimizers`,
 // `${prefix}-sto-optimizers`, `${prefix}-sto-runs`.
 const PANEL_PREFIXES = ['fit', 'batch-fit'];
 
-let _optimizersCache = null;
+let _optimizersCache = FALLBACK_OPTIMIZERS;
 
 export async function loadOptimizers() {
+    PANEL_PREFIXES.forEach(populatePanel);
     try {
         const response = await fetch(`${API_BASE}/api/optimizers`);
         if (!response.ok) return;

@@ -253,6 +253,53 @@ end
     @test haskey(q, :davies_bouldin)
 end
 
+@testset "POST /api/cluster/annotated-files — Clean_data ZIP from CSV" begin
+    response = HTTP.post(
+        "$BASE_URL/api/cluster/annotated-files",
+        ["Content-Type" => "application/json"],
+        JSON3.write(Dict(
+            "csv" => CLUSTER_CSV,
+            "csv_name" => "example.csv",
+            "blank_wells_used" => ["S1", "S2"],
+        ));
+        status_exception=false,
+    )
+    @test response.status == 200
+    @test startswith(HTTP.header(response, "Content-Type"), "application/zip")
+
+    archive = ZipFile.Reader(IOBuffer(response.body))
+    try
+        paths = Set(file.name for file in archive.files)
+        @test "Clean_data/example/data_channel_1.csv" in paths
+        @test "Clean_data/example/annotation_clean.csv" in paths
+
+        data_file = only(filter(
+            file -> file.name == "Clean_data/example/data_channel_1.csv",
+            archive.files,
+        ))
+        annotation_file = only(filter(
+            file -> file.name == "Clean_data/example/annotation_clean.csv",
+            archive.files,
+        ))
+        @test String(read(data_file)) == CLUSTER_CSV
+
+        annotation = CSV.read(
+            IOBuffer(read(annotation_file)),
+            DataFrame;
+            header=false,
+            stringtype=String,
+        )
+        condition_by_well = Dict(
+            string(row[1]) => string(row[2]) for row in eachrow(annotation)
+        )
+        @test condition_by_well["S1"] == "b"
+        @test condition_by_well["S2"] == "b"
+        @test condition_by_well["S3"] == "sample"
+    finally
+        close(archive)
+    end
+end
+
 @testset "POST /api/cluster — via experiment, k=2" begin
     status, body = post_json("/api/cluster",
                              Dict("experiments" => [SINGLE_CH_EXP], "k" => 2))
