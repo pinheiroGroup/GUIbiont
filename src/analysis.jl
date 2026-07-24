@@ -156,6 +156,12 @@ function _smart_initial_value(param_name, features::Dict{Symbol, Float64})
        ((startswith(compact, "n") || startswith(compact, "x") ||
          startswith(compact, "y") || startswith(compact, "od")) && occursin("lag", compact))
         return max(features[:baseline], 1e-6)
+    elseif compact in ("t0", "tmid", "tmax", "tinf", "tinflection",
+                        "tshift", "tstationary", "tdecaygr", "endsecondlag") ||
+           occursin("inflection", compact) || occursin("midtime", compact)
+        return features[:mid_time]
+    elseif compact == "exitlagrate"
+        return _clip_initial_value(1.0 / max(features[:lag_time], 0.1); upper = 20.0)
     elseif occursin("death", compact) || occursin("decay", compact) ||
        occursin("decline", compact) || occursin("mort", compact)
         return _clip_initial_value(0.05 * features[:growth_rate]; upper = 20.0)
@@ -170,14 +176,14 @@ function _smart_initial_value(param_name, features::Dict{Symbol, Float64})
            occursin("initial", compact) || occursin("inoc", compact) ||
            occursin("baseline", compact)
         return features[:baseline]
+    elseif occursin("mu", compact) || compact in ("r", "gr") ||
+           occursin("growth", compact) || startswith(compact, "gr") ||
+           endswith(compact, "gr")
+        return features[:growth_rate]
     elseif compact in ("lag", "tl", "tlag", "lagtime") ||
            startswith(compact, "tlag") || occursin("lambda", compact) ||
            occursin("delay", compact) || occursin("lag", compact)
         return features[:lag_time]
-    elseif occursin("mu", compact) || compact in ("r", "gr") ||
-           occursin("growth", compact) || occursin("rate", compact) ||
-           occursin("gr", compact)
-        return features[:growth_rate]
     elseif compact == "k" || occursin("nmax", compact) || occursin("ymax", compact) ||
            occursin("xmax", compact) || occursin("maxod", compact) ||
            occursin("carrying", compact) || occursin("capacity", compact) ||
@@ -185,9 +191,6 @@ function _smart_initial_value(param_name, features::Dict{Symbol, Float64})
         return features[:plateau]
     elseif occursin("amplitude", compact) || compact == "amp"
         return features[:amplitude]
-    elseif compact in ("t0", "tmid", "tmax", "tinf", "tinflection") ||
-           occursin("inflection", compact) || occursin("midtime", compact)
-        return features[:mid_time]
     elseif compact in ("q0", "h0")
         return features[:q0]
     elseif occursin("shape", compact) || compact in ("nu", "theta", "beta", "gamma", "m", "v")
@@ -272,6 +275,12 @@ function _smart_param_bounds(param_name, features::Dict{Symbol, Float64})
        ((startswith(compact, "n") || startswith(compact, "x") ||
          startswith(compact, "y") || startswith(compact, "od")) && occursin("lag", compact))
         return (1e-6, max(plateau, 1.0))
+    elseif compact in ("t0", "tmid", "tmax", "tinf", "tinflection",
+                        "tshift", "tstationary", "tdecaygr", "endsecondlag") ||
+           occursin("inflection", compact) || occursin("midtime", compact)
+        return (0.0, time_cap)
+    elseif compact == "exitlagrate"
+        return (0.0, 20.0)
     elseif occursin("death", compact) || occursin("decay", compact) ||
        occursin("decline", compact) || occursin("mort", compact)
         return (0.0, 20.0)
@@ -286,16 +295,14 @@ function _smart_param_bounds(param_name, features::Dict{Symbol, Float64})
            occursin("initial", compact) || occursin("inoc", compact) ||
            occursin("baseline", compact)
         return (1e-6, max(plateau, 1.0))
+    elseif occursin("mu", compact) || compact in ("r", "gr") ||
+           occursin("growth", compact) || startswith(compact, "gr") ||
+           endswith(compact, "gr")
+        return (1e-6, 20.0)
     elseif compact in ("lag", "tl", "tlag", "lagtime") ||
            startswith(compact, "tlag") || occursin("lambda", compact) ||
            occursin("delay", compact) || occursin("lag", compact)
-        # Matches both lag-times and rate-like params (e.g. exit_lag_rate).
-        # Keep wide to accommodate both interpretations.
         return (0.0, max(time_cap, 50.0))
-    elseif occursin("mu", compact) || compact in ("r", "gr") ||
-           occursin("growth", compact) || occursin("rate", compact) ||
-           occursin("gr", compact)
-        return (1e-6, 20.0)
     elseif compact == "k" || occursin("nmax", compact) || occursin("ymax", compact) ||
            occursin("xmax", compact) || occursin("maxod", compact) ||
            occursin("carrying", compact) || occursin("capacity", compact) ||
@@ -303,9 +310,6 @@ function _smart_param_bounds(param_name, features::Dict{Symbol, Float64})
         return (1e-6, plateau_cap)
     elseif occursin("amplitude", compact) || compact == "amp"
         return (1e-6, max(amplitude * 5, 1.0))
-    elseif compact in ("t0", "tmid", "tmax", "tinf", "tinflection") ||
-           occursin("inflection", compact) || occursin("midtime", compact)
-        return (0.0, time_cap)
     elseif compact in ("q0", "h0")
         return (1e-6, 50.0)
     elseif occursin("shape", compact) || compact in ("nu", "theta", "beta", "gamma", "m", "v")

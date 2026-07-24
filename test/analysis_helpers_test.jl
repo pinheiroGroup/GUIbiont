@@ -91,6 +91,12 @@ function _smart_initial_value(param_name, features::Dict{Symbol, Float64})
        ((startswith(compact, "n") || startswith(compact, "x") ||
          startswith(compact, "y") || startswith(compact, "od")) && occursin("lag", compact))
         return max(features[:baseline], 1e-6)
+    elseif compact in ("t0", "tmid", "tmax", "tinf", "tinflection",
+                        "tshift", "tstationary", "tdecaygr", "endsecondlag") ||
+           occursin("inflection", compact) || occursin("midtime", compact)
+        return features[:mid_time]
+    elseif compact == "exitlagrate"
+        return _clip_initial_value(1.0 / max(features[:lag_time], 0.1); upper = 20.0)
     elseif occursin("death", compact) || occursin("decay", compact) ||
            occursin("decline", compact) || occursin("mort", compact)
         return _clip_initial_value(0.05 * features[:growth_rate]; upper = 20.0)
@@ -105,14 +111,14 @@ function _smart_initial_value(param_name, features::Dict{Symbol, Float64})
            occursin("initial", compact) || occursin("inoc", compact) ||
            occursin("baseline", compact)
         return features[:baseline]
+    elseif occursin("mu", compact) || compact in ("r", "gr") ||
+           occursin("growth", compact) || startswith(compact, "gr") ||
+           endswith(compact, "gr")
+        return features[:growth_rate]
     elseif compact in ("lag", "tl", "tlag", "lagtime") ||
            startswith(compact, "tlag") || occursin("lambda", compact) ||
            occursin("delay", compact) || occursin("lag", compact)
         return features[:lag_time]
-    elseif occursin("mu", compact) || compact in ("r", "gr") ||
-           occursin("growth", compact) || occursin("rate", compact) ||
-           occursin("gr", compact)
-        return features[:growth_rate]
     elseif compact == "k" || occursin("nmax", compact) || occursin("ymax", compact) ||
            occursin("xmax", compact) || occursin("maxod", compact) ||
            occursin("carrying", compact) || occursin("capacity", compact) ||
@@ -120,9 +126,6 @@ function _smart_initial_value(param_name, features::Dict{Symbol, Float64})
         return features[:plateau]
     elseif occursin("amplitude", compact) || compact == "amp"
         return features[:amplitude]
-    elseif compact in ("t0", "tmid", "tmax", "tinf", "tinflection") ||
-           occursin("inflection", compact) || occursin("midtime", compact)
-        return features[:mid_time]
     elseif compact in ("q0", "h0")
         return features[:q0]
     elseif occursin("shape", compact) || compact in ("nu", "theta", "beta", "gamma", "m", "v")
@@ -187,8 +190,17 @@ end
     @test _smart_initial_value("r",           TEST_FEATURES) == gr_val
     @test _smart_initial_value("gr",          TEST_FEATURES) == gr_val
     @test _smart_initial_value("growth_rate", TEST_FEATURES) == gr_val
-    @test _smart_initial_value("rate",        TEST_FEATURES) == gr_val
-    @test _smart_initial_value("max_rate",    TEST_FEATURES) == gr_val
+    @test _smart_initial_value("rate",        TEST_FEATURES) != gr_val
+    @test _smart_initial_value("max_rate",    TEST_FEATURES) != gr_val
+end
+
+@testset "_smart_initial_value — model-specific lag/rate semantics" begin
+    @test _smart_initial_value("exit_lag_rate", TEST_FEATURES) ==
+          1.0 / max(TEST_FEATURES[:lag_time], 0.1)
+    @test _smart_initial_value("lag_2_gr", TEST_FEATURES) == TEST_FEATURES[:growth_rate]
+    @test _smart_initial_value("gr_lag", TEST_FEATURES) == TEST_FEATURES[:growth_rate]
+    @test _smart_initial_value("t_decay_gr", TEST_FEATURES) == TEST_FEATURES[:mid_time]
+    @test _smart_initial_value("t_stationary", TEST_FEATURES) == TEST_FEATURES[:mid_time]
 end
 
 # ---------------------------------------------------------------------------
