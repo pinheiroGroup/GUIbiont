@@ -118,8 +118,10 @@ function onBatchLogLinSmoothingChange() {
     const method = document.getElementById('batch-loglin-smoothing')?.value || 'rolling_avg';
     const rollingField = document.getElementById('batch-loglin-pt-avg-field');
     const lowessField = document.getElementById('batch-loglin-lowess-field');
+    const gaussianField = document.getElementById('batch-loglin-gaussian-field');
     if (rollingField) rollingField.style.display = method === 'rolling_avg' ? 'flex' : 'none';
     if (lowessField) lowessField.style.display = method === 'lowess' ? 'flex' : 'none';
+    if (gaussianField) gaussianField.style.display = method === 'gaussian' ? 'flex' : 'none';
 }
 
 function onBatchLogLinWindowTypeChange() {
@@ -251,6 +253,7 @@ function _readLoglinParams() {
         threshold_of_exp:        Math.max(0, Math.min(1, fltOr('batch-loglin-thr-exp', 0.9))),
         start_exp_win_thr:       Math.max(0, fltOr('batch-loglin-start-thr', 0.05)),
         thr_lowess:              Math.max(0.01, Math.min(1, fltOr('batch-loglin-thr-lowess', 0.05))),
+        gaussian_h_mult:         Math.max(0.1, Math.min(20, fltOr('batch-loglin-gaussian-hmult', 2.0))),
     };
 }
 
@@ -358,6 +361,7 @@ async function runBatchFit() {
                     loglin_threshold_of_exp:         ll.threshold_of_exp,
                     loglin_start_exp_win_thr:        ll.start_exp_win_thr,
                     loglin_thr_lowess:                ll.thr_lowess,
+                    loglin_gaussian_h_mult:           ll.gaussian_h_mult,
                 } : {}),
             };
         }

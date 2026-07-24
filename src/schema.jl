@@ -56,6 +56,7 @@ Base.@kwdef mutable struct FitCurveRequest
     loglin_threshold_of_exp::Float64 = 0.9
     loglin_start_exp_win_thr::Float64 = 0.05
     loglin_thr_lowess::Float64 = 0.05
+    loglin_gaussian_h_mult::Float64 = 2.0
 end
 
 Base.@kwdef mutable struct BatchFitRequest
@@ -95,6 +96,7 @@ Base.@kwdef mutable struct BatchFitRequest
     loglin_threshold_of_exp::Float64 = 0.9
     loglin_start_exp_win_thr::Float64 = 0.05
     loglin_thr_lowess::Float64 = 0.05
+    loglin_gaussian_h_mult::Float64 = 2.0
 end
 
 Base.@kwdef mutable struct MLDownstreamRequest
@@ -140,7 +142,7 @@ Base.@kwdef mutable struct LogLinFitRequest
     well::String = ""
     blank_subtraction::Bool = false
     blank_method::String = "pointbypoint"
-    type_of_smoothing::String = "rolling_avg"   # "NO" | "rolling_avg" | "lowess"
+    type_of_smoothing::String = "rolling_avg"   # "NO" | "rolling_avg" | "lowess" | "gaussian"
     pt_avg::Int = 7
     pt_smoothing_derivative::Int = 7
     pt_min_size_of_win::Int = 7
@@ -148,6 +150,7 @@ Base.@kwdef mutable struct LogLinFitRequest
     threshold_of_exp::Float64 = 0.9
     start_exp_win_thr::Float64 = 0.05
     thr_lowess::Float64 = 0.05
+    gaussian_h_mult::Float64 = 2.0
 end
 
 # Batch log-linear fit: same machinery as /api/batch-fit but the per-well
@@ -167,6 +170,7 @@ Base.@kwdef mutable struct BatchLogLinFitRequest
     threshold_of_exp::Float64 = 0.9
     start_exp_win_thr::Float64 = 0.05
     thr_lowess::Float64 = 0.05
+    gaussian_h_mult::Float64 = 2.0
     skip_flat_threshold::Float64 = 0.02
 end
 

@@ -589,6 +589,7 @@ function fit_well_data(
     loglin_threshold_of_exp::Float64 = 0.9,
     loglin_start_exp_win_thr::Float64 = 0.05,
     loglin_thr_lowess::Float64 = 0.05,
+    loglin_gaussian_h_mult::Float64 = 2.0,
 )
     resolved_smooth_method = smooth_method == :none && smooth ? :boxcar : smooth_method
     resolved_smooth_method in (:none, :rolling_avg, :lowess, :gaussian, :boxcar) ||
@@ -795,6 +796,7 @@ function fit_well_data(
                     threshold_of_exp        = loglin_threshold_of_exp,
                     start_exp_win_thr       = loglin_start_exp_win_thr,
                     thr_lowess              = loglin_thr_lowess,
+                    gaussian_h_mult         = loglin_gaussian_h_mult,
                 )
                 # raw[2] layout (see Kinbiont/src/Fit_one_well_functions.jl):
                 #   [1] label_exp   [2] well        [3] t_start_exp  [4] t_end_exp
@@ -873,6 +875,7 @@ function fit_well_loglin(
     threshold_of_exp::Float64 = 0.9,
     start_exp_win_thr::Float64 = 0.05,
     thr_lowess::Float64 = 0.05,
+    gaussian_h_mult::Float64 = 2.0,
 )
     # Min points before Kinbiont so we surface a clean error.
     min_pts = pt_smoothing_derivative + pt_min_size_of_win + 2
@@ -903,6 +906,7 @@ function fit_well_loglin(
         threshold_of_exp        = threshold_of_exp,
         start_exp_win_thr       = start_exp_win_thr,
         thr_lowess              = thr_lowess,
+        gaussian_h_mult         = gaussian_h_mult,
     )
     params = raw[2]
 

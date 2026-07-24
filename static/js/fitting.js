@@ -125,6 +125,7 @@ async function fitReplicateAverage() {
 
         const fitData = await fitResponse.json();
         fitData._request = requestPayload;
+        fitData._workflow = 'parametric';
         state.lastFitData = fitData;
         displayFittingResults(fitData);
         updateFitPlot(fitData);
@@ -506,6 +507,7 @@ async function fitGrowthCurve() {
 
         const fitData = await response.json();
         fitData._request = requestPayload;
+        fitData._workflow = 'parametric';
 
         // Preserve both the result and the exact submitted settings for export.
         state.lastFitData = fitData;
@@ -793,8 +795,10 @@ function onLogLinSmoothingChange() {
     const method = document.getElementById('loglin-smoothing')?.value || 'rolling_avg';
     const rollingField = document.getElementById('loglin-pt-avg-field');
     const lowessField = document.getElementById('loglin-lowess-field');
+    const gaussianField = document.getElementById('loglin-gaussian-field');
     if (rollingField) rollingField.style.display = method === 'rolling_avg' ? 'flex' : 'none';
     if (lowessField) lowessField.style.display = method === 'lowess' ? 'flex' : 'none';
+    if (gaussianField) gaussianField.style.display = method === 'gaussian' ? 'flex' : 'none';
 }
 
 function onLogLinWindowTypeChange() {
@@ -829,6 +833,7 @@ function buildLogLinCompanionPayload() {
         loglin_threshold_of_exp:         num('loglin-thr-exp', 0.9),
         loglin_start_exp_win_thr:         num('loglin-start-thr', 0.05),
         loglin_thr_lowess:                num('loglin-thr-lowess', 0.05),
+        loglin_gaussian_h_mult:           num('loglin-gaussian-hmult', 2.0),
     };
 }
 
@@ -916,6 +921,7 @@ function buildLogLinPayload() {
         threshold_of_exp: num('loglin-thr-exp', 0.9),
         start_exp_win_thr: num('loglin-start-thr', 0.05),
         thr_lowess: num('loglin-thr-lowess', 0.05),
+        gaussian_h_mult: num('loglin-gaussian-hmult', 2.0),
     };
 }
 
@@ -938,16 +944,17 @@ async function fitLogLinCurve() {
     btn.textContent = '⏳ Fitting...';
 
     try {
+        const requestPayload = {
+            experiment,
+            well,
+            blank_subtraction: document.getElementById('fit-blank-subtraction').checked,
+            blank_method: document.getElementById('fit-blank-method').value,
+            ...buildLogLinPayload(),
+        };
         const response = await fetch(`${API_BASE}/api/fit-loglin`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                experiment,
-                well,
-                blank_subtraction: document.getElementById('fit-blank-subtraction').checked,
-                blank_method: document.getElementById('fit-blank-method').value,
-                ...buildLogLinPayload(),
-            })
+            body: JSON.stringify(requestPayload),
         });
 
         if (!response.ok) {
@@ -956,8 +963,13 @@ async function fitLogLinCurve() {
         }
 
         const fitData = await response.json();
+        fitData._request = requestPayload;
+        fitData._workflow = 'loglin';
+        state.lastFitData = fitData;
         displayLogLinResults(fitData);
         plotLogLinCurve(fitData);
+        const exportBtn = document.getElementById('fit-export-btn');
+        if (exportBtn) exportBtn.style.display = '';
     } catch (error) {
         alert(`Error fitting log-linear curve: ${error.message}`);
     } finally {

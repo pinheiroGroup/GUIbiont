@@ -192,6 +192,7 @@
                                         <select id="loglin-smoothing" style="padding:3px 6px;" onchange="onLogLinSmoothingChange()">
                                             <option value="rolling_avg" selected>Rolling avg</option>
                                             <option value="lowess">LOWESS</option>
+                                            <option value="gaussian">Gaussian</option>
                                             <option value="NO">None</option>
                                         </select>
                                     </div>
@@ -210,6 +211,10 @@
                                     <div id="loglin-lowess-field" style="display:none; flex-direction:column; gap:4px;">
                                         <label title="Fraction of points used by LOWESS local regression">thr_lowess</label>
                                         <input type="number" id="loglin-thr-lowess" value="0.05" min="0.01" max="1" step="0.01" style="padding:3px 6px;">
+                                    </div>
+                                    <div id="loglin-gaussian-field" style="display:none; flex-direction:column; gap:4px;">
+                                        <label title="Gaussian bandwidth multiplied by the median time step">gaussian_h_mult</label>
+                                        <input type="number" id="loglin-gaussian-hmult" value="2.0" min="0.1" max="20" step="0.1" style="padding:3px 6px;">
                                     </div>
                                     <div style="display:flex; flex-direction:column; gap:4px;">
                                         <label title="Window size for derivative-based GR estimate">pt_smooth_deriv</label>
@@ -953,6 +958,7 @@
                                     <select id="batch-loglin-smoothing" style="padding:3px 6px;" onchange="onBatchLogLinSmoothingChange()">
                                         <option value="rolling_avg" selected>Rolling avg</option>
                                         <option value="lowess">LOWESS</option>
+                                        <option value="gaussian">Gaussian</option>
                                         <option value="NO">None</option>
                                     </select>
                                 </div>
@@ -971,6 +977,10 @@
                                 <div id="batch-loglin-lowess-field" style="display:none; flex-direction:column; gap:4px;">
                                     <label title="Fraction of points used by LOWESS local regression">thr_lowess</label>
                                     <input type="number" id="batch-loglin-thr-lowess" value="0.05" min="0.01" max="1" step="0.01" style="padding:3px 6px;">
+                                </div>
+                                <div id="batch-loglin-gaussian-field" style="display:none; flex-direction:column; gap:4px;">
+                                    <label title="Gaussian bandwidth multiplied by the median time step">gaussian_h_mult</label>
+                                    <input type="number" id="batch-loglin-gaussian-hmult" value="2.0" min="0.1" max="20" step="0.1" style="padding:3px 6px;">
                                 </div>
                                 <div style="display:flex; flex-direction:column; gap:4px;">
                                     <label title="Window size for derivative-based GR estimate">pt_smooth_deriv</label>
@@ -1259,6 +1269,6 @@
         </div>
     </div>
 
-    <script type="module" src="/static/js/app.js?v=20260724-2"></script>
+    <script type="module" src="/static/js/app.js?v=20260724-3"></script>
 </body>
 </html>

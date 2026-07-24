@@ -48,6 +48,7 @@ end
     ll_thr_exp     = clamp(body.loglin_threshold_of_exp, 0.0, 1.0)
     ll_start_thr   = max(0.0, body.loglin_start_exp_win_thr)
     ll_thr_lowess  = body.loglin_thr_lowess
+    ll_gaussian    = clamp(body.loglin_gaussian_h_mult, 0.1, 20.0)
 
     if smoothing.error !== nothing
         return json(Dict("error" => smoothing.error); status=400)
@@ -130,6 +131,7 @@ end
             loglin_threshold_of_exp         = ll_thr_exp,
             loglin_start_exp_win_thr         = ll_start_thr,
             loglin_thr_lowess                = ll_thr_lowess,
+            loglin_gaussian_h_mult           = ll_gaussian,
         )
     catch e
                 return json(Dict("error" => "Curve fitting failed: $e"); status=500)
@@ -367,6 +369,7 @@ end
     ll_thr_exp      = clamp(body.loglin_threshold_of_exp, 0.0, 1.0)
     ll_start_thr    = max(0.0, body.loglin_start_exp_win_thr)
     ll_thr_lowess   = body.loglin_thr_lowess
+    ll_gaussian     = clamp(body.loglin_gaussian_h_mult, 0.1, 20.0)
 
     if smoothing.error !== nothing
         return json(Dict("error" => smoothing.error); status=400)
@@ -504,6 +507,7 @@ end
                                         loglin_threshold_of_exp         = ll_thr_exp,
                                         loglin_start_exp_win_thr         = ll_start_thr,
                                         loglin_thr_lowess                = ll_thr_lowess,
+                                        loglin_gaussian_h_mult           = ll_gaussian,
                                     )
                                     lock(local_lock) do; push!(results, fit_result); end
                                 end
@@ -604,6 +608,7 @@ end
     thr_exp         = clamp(body.threshold_of_exp, 0.0, 1.0)
     start_thr       = body.start_exp_win_thr
     thr_lowess      = body.thr_lowess
+    gaussian_h_mult = clamp(body.gaussian_h_mult, 0.1, 20.0)
     flat_thr        = max(0.0, body.skip_flat_threshold)
 
     try
@@ -709,6 +714,7 @@ end
                                         threshold_of_exp        = thr_exp,
                                         start_exp_win_thr       = start_thr,
                                         thr_lowess              = thr_lowess,
+                                        gaussian_h_mult         = gaussian_h_mult,
                                     )
                                     lock(local_lock) do; push!(results, fit_result); end
                                 end
@@ -894,6 +900,7 @@ end
     thr_exp         = clamp(body.threshold_of_exp, 0.0, 1.0)
     start_thr       = body.start_exp_win_thr
     thr_lowess      = body.thr_lowess
+    gaussian_h_mult = clamp(body.gaussian_h_mult, 0.1, 20.0)
 
     data_file       = joinpath(CLEAN_DATA_PATH, experiment, "data_channel_1.csv")
     annotation_file = joinpath(CLEAN_DATA_PATH, experiment, "annotation_clean.csv")
@@ -956,6 +963,7 @@ end
             threshold_of_exp        = thr_exp,
             start_exp_win_thr       = start_thr,
             thr_lowess              = thr_lowess,
+            gaussian_h_mult         = gaussian_h_mult,
         )
 
         # raw = (method, params, fit_matrix, smoothed_data, confidence_band)

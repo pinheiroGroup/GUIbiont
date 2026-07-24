@@ -1087,8 +1087,8 @@ end
     _, body_standalone = batch_fit_loglin_and_wait(
                             Dict("experiment" => SINGLE_CH_EXP,
                                  "wells"      => [SINGLE_CH_WELL],
-                                 "type_of_smoothing" => "lowess",
-                                 "thr_lowess" => 0.2))
+                                 "type_of_smoothing" => "gaussian",
+                                 "gaussian_h_mult" => 1.5))
     _, body_companion = batch_fit_and_wait(
                             Dict("experiment"     => SINGLE_CH_EXP,
                                  "wells"          => [SINGLE_CH_WELL],
@@ -1099,8 +1099,8 @@ end
                                  "smooth_method" => "gaussian",
                                  "gaussian_h_mult" => 1.5,
                                  "compute_loglin" => true,
-                                 "loglin_type_of_smoothing" => "lowess",
-                                 "loglin_thr_lowess" => 0.2))
+                                 "loglin_type_of_smoothing" => "gaussian",
+                                 "loglin_gaussian_h_mult" => 1.5))
     @test string(first(body_companion[:results])[:preprocessing][:smooth_method]) == "gaussian"
     gr_a = Float64(first(body_standalone[:results])[:gr_loglin])
     gr_b = Float64(first(body_companion[:results])[:gr_loglin])

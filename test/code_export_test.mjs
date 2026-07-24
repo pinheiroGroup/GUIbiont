@@ -7,6 +7,7 @@ globalThis.document = { getElementById: () => null, createElement: () => ({}) };
 
 const {
     generateFitCode,
+    generateFitLogLinKinbiontCode,
     generateBatchCode,
     generateBatchLogLinKinbiontCode,
     generateClusterCode,
@@ -36,6 +37,20 @@ excludes(
     'smooth=', 'smooth_window=', 'compute_loglin=', 'loglin_pt_', 'blank_subtraction=',
     'blank_method=', 'optimizer_seed=', 'if false', 'const FIT_LABEL', 'load_gui_experiment_data',
 );
+
+const fitLoglinGaussian = generateFitLogLinKinbiontCode({ _request: {
+    experiment: 'exp', well: 'A1',
+    type_of_smoothing: 'gaussian', gaussian_h_mult: 1.5,
+    type_of_win: 'global_thr', start_exp_win_thr: 0.08,
+    blank_subtraction: true, blank_method: 'pointbypoint',
+} }, true);
+includes(
+    fitLoglinGaussian,
+    'result = kinbiont_fit_loglin(', 'type_of_smoothing="gaussian"',
+    'gaussian_h_mult=1.5', 'type_of_win="global_thr"',
+    'start_exp_win_thr=0.08', 'blank_timeseries=source.blank_timeseries',
+);
+excludes(fitLoglinGaussian, 'pt_avg=', 'thr_lowess=', 'kinbiont_batch_fit(');
 
 const fitFull = generateFitCode({ _request: {
     experiment: 'exp', well: 'A1', model_names: ['aHPM', 'logistic'],
@@ -77,6 +92,17 @@ includes(
     'start_exp_win_thr=0.08',
 );
 excludes(fitCompanionNone, 'pt_avg=', 'thr_lowess=', 'companionLogLinSettings');
+
+const fitCompanionGaussian = generateFitCode({ _request: {
+    experiment: 'exp', well: 'A1', model_name: 'logistic',
+    compute_loglin: true, loglin_type_of_smoothing: 'gaussian',
+    loglin_gaussian_h_mult: 1.5,
+} }, true);
+includes(
+    fitCompanionGaussian,
+    'type_of_smoothing="gaussian"', 'gaussian_h_mult=1.5',
+);
+excludes(fitCompanionGaussian, 'pt_avg=', 'thr_lowess=', 'companionLogLinSettings');
 
 const fitRolling = generateFitCode({ _request: {
     experiment: 'exp', well: 'A1', model_name: 'logistic',
@@ -161,6 +187,18 @@ excludes(
     'compute_loglin=', 'thr_lowess=', 'start_exp_win_thr=', 'companionLogLinSettings',
 );
 
+const batchCompanionGaussian = generateBatchCode({ _request: {
+    experiment: 'exp', wells: ['A1'], model_name: 'logistic',
+    compute_loglin: true, loglin_type_of_smoothing: 'gaussian',
+    loglin_gaussian_h_mult: 2.5,
+} }, true);
+includes(
+    batchCompanionGaussian,
+    'loglin_batch = kinbiont_batch_loglin(',
+    'type_of_smoothing="gaussian"', 'gaussian_h_mult=2.5',
+);
+excludes(batchCompanionGaussian, 'pt_avg=', 'thr_lowess=', 'companionLogLinSettings');
+
 const batchLoglinRolling = generateBatchLogLinKinbiontCode({ _request: {
     experiment: 'exp', wells: ['A1'], type_of_smoothing: 'rolling_avg',
     pt_avg: 9, blank_subtraction: false,
@@ -186,6 +224,13 @@ includes(
     'blank_subtraction=true', 'blank_method="shift"', 'blank_value=source.blank_value',
 );
 excludes(batchLoglinLowess, 'pt_avg=', 'start_exp_win_thr=', 'blank_timeseries=');
+
+const batchLoglinGaussian = generateBatchLogLinKinbiontCode({ _request: {
+    experiment: 'exp', wells: ['A1'], type_of_smoothing: 'gaussian',
+    gaussian_h_mult: 1.5,
+} }, true);
+includes(batchLoglinGaussian, 'type_of_smoothing="gaussian"', 'gaussian_h_mult=1.5');
+excludes(batchLoglinGaussian, 'pt_avg=', 'thr_lowess=');
 
 const batchLoglinThreshold = generateBatchLogLinKinbiontCode({ _request: {
     experiment: 'exp', wells: ['A1'], type_of_smoothing: 'NO',
@@ -225,6 +270,20 @@ const clusterRolling = generateClusterCode({ _request: {
 } }, true);
 includes(clusterRolling, 'smooth_method = :rolling_avg', 'smooth_pt_avg = 11');
 excludes(clusterRolling, 'lowess_frac', 'gaussian_h_mult');
+
+const clusterRollingDerived = generateClusterCode({ _request: {
+    _mode: 'file', csv_name: 'uploaded_curves.csv', k: 2,
+    smooth_method: 'rolling_avg', smooth_pt_avg: 11,
+    cluster_method: 'kmeans', maxiter: 100, tol: 1e-6, kmeans_n_init: 3,
+    derive_non_growing_blanks: true, prescreen_constant: true,
+    trend_test_flat: false, blank_method: 'pointbypoint',
+} }, true);
+includes(
+    clusterRollingDerived,
+    'const DATA_PATH = "uploaded_curves.csv"',
+    'detection_smooth_method=:rolling_avg', 'detection_smooth_pt_avg=11',
+);
+excludes(clusterRollingDerived, 'detection_lowess_frac', 'detection_gaussian_h_mult');
 
 const clusterGaussianDerived = generateClusterCode({ _request: {
     _mode: 'file', csv_path: 'data.csv', k: 2,
@@ -302,6 +361,7 @@ if (process.env.CODE_EXPORT_TEST_OUT) {
     const scripts = {
         fit_minimal: fitMinimal,
         fit_full: fitFull,
+        fit_loglin_gaussian: fitLoglinGaussian,
         fit_companion_none: fitCompanionNone,
         fit_bbo: fitBbo,
         batch_minimal: batchMinimal,

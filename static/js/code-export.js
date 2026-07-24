@@ -51,6 +51,7 @@ function companionLogLinSettings(req) {
         threshold: req.loglin_threshold_of_exp ?? 0.9,
         startThreshold: req.loglin_start_exp_win_thr ?? 0.05,
         lowessThreshold: req.loglin_thr_lowess ?? 0.05,
+        gaussianHMult: req.loglin_gaussian_h_mult ?? 2.0,
     };
 }
 
@@ -64,6 +65,11 @@ function companionLogLinKeywordPairs(settings) {
         ? [
             ['type_of_smoothing', juliaString(settings.smoothing)],
             ['thr_lowess', juliaFloat(settings.lowessThreshold, 0.05)],
+        ]
+        : settings.smoothing === 'gaussian'
+        ? [
+            ['type_of_smoothing', juliaString(settings.smoothing)],
+            ['gaussian_h_mult', juliaFloat(settings.gaussianHMult, 2.0)],
         ]
         : [['type_of_smoothing', juliaString(settings.smoothing)]];
     return [
@@ -181,9 +187,11 @@ export function downloadExportedCode() {
 
 export function openFitCodeExport() {
     if (!state.lastFitData) return;
+    const isLoglin = state.lastFitData._workflow === 'loglin';
+    const generator = isLoglin ? generateFitLogLinKinbiontCode : generateFitCode;
     openCodeExportModal(
-        'Export Julia code — Fit Curve',
-        (withComments) => generateFitCode(state.lastFitData, withComments),
+        isLoglin ? 'Export Julia code — Log-Lin Fit' : 'Export Julia code — Fit Curve',
+        (withComments) => generator(state.lastFitData, withComments),
     );
 }
 
@@ -365,6 +373,69 @@ ${loglinBlock}
     return withComments ? code : stripComments(code);
 }
 
+export function generateFitLogLinKinbiontCode(fitData, withComments) {
+    const req = fitData._request || {};
+    const experiment = req.experiment || 'experiment';
+    const well = req.well || 'B2';
+    const blankSub = req.blank_subtraction ?? false;
+    const blankMethod = req.blank_method || 'pointbypoint';
+    const settings = {
+        smoothing: req.type_of_smoothing || 'rolling_avg',
+        ptAvg: req.pt_avg ?? 7,
+        ptDeriv: req.pt_smoothing_derivative ?? 7,
+        ptMinWin: req.pt_min_size_of_win ?? 7,
+        winType: req.type_of_win || 'maximum',
+        threshold: req.threshold_of_exp ?? 0.9,
+        startThreshold: req.start_exp_win_thr ?? 0.05,
+        lowessThreshold: req.thr_lowess ?? 0.05,
+        gaussianHMult: req.gaussian_h_mult ?? 2.0,
+    };
+    const blankKeywords = blankSub
+        ? [
+            ['blank_subtraction', 'true'],
+            ['blank_method', juliaString(blankMethod)],
+            ['blank_value', 'source.blank_value'],
+            ['blank_timeseries', blankMethod === 'pointbypoint' ? 'source.blank_timeseries' : null],
+        ]
+        : [];
+    const loglinKeywords = juliaKeywordLines([
+        ...blankKeywords,
+        ...companionLogLinKeywordPairs(settings),
+    ]);
+
+    const code = `\
+# ================================================================
+# Single-well Log-Lin fit - exported from GUIbiont
+# ================================================================
+
+using Kinbiont
+
+const CLEAN_DATA_PATH = "path/to/Clean_data"
+const EXPERIMENT = ${juliaString(experiment)}
+const WELL = ${juliaString(well)}
+
+source = load_experiment_data(CLEAN_DATA_PATH, EXPERIMENT)
+idx = findfirst(==(WELL), source.data.labels)
+idx === nothing && error("Well $(WELL) not found in $(EXPERIMENT)")
+data = GrowthData(reshape(vec(source.data.curves[idx, :]), 1, :),
+                  source.data.times, [WELL])
+
+result = kinbiont_fit_loglin(
+    data;
+    experiment=EXPERIMENT,
+    label=WELL,
+${loglinKeywords}
+)
+
+println("Log-linear mu_max: ", result["gr_loglin"])
+println("Log-linear lag:    ", result["lag_loglin"])
+println("N_max (cutoff):    ", result["N_max_emp"])
+println("R-squared:         ", result["R_squared_loglin"])
+`;
+
+    return withComments ? code : stripComments(code);
+}
+
 export function generateBatchCode(batchData, withComments) {
     const req = batchData._request || {};
     const experiment = req.experiment || 'experiment';
@@ -494,11 +565,14 @@ export function generateBatchLogLinKinbiontCode(batchData, withComments) {
     const winType = req.type_of_win || 'maximum';
     const startThr = req.start_exp_win_thr ?? 0.05;
     const thrLowess = req.thr_lowess ?? 0.05;
+    const gaussianHMult = req.gaussian_h_mult ?? 2.0;
     const outPrefix = `${experiment}_batch_fit_loglin`;
     const smoothingKeywords = smoothing === 'rolling_avg'
         ? [['type_of_smoothing', juliaString(smoothing)], ['pt_avg', String(ptAvg)]]
         : smoothing === 'lowess'
         ? [['type_of_smoothing', juliaString(smoothing)], ['thr_lowess', juliaFloat(thrLowess, 0.05)]]
+        : smoothing === 'gaussian'
+        ? [['type_of_smoothing', juliaString(smoothing)], ['gaussian_h_mult', juliaFloat(gaussianHMult, 2.0)]]
         : [['type_of_smoothing', juliaString(smoothing)]];
     const blankKeywords = blankSub
         ? [
@@ -594,7 +668,9 @@ export function generateClusterCode(clusterData, withComments) {
         : 'String[]';
     const dataPathLiteral = req.csv_path
         ? juliaString(req.csv_path)
-        : '"path/to/data.csv"';
+        : req.csv_name
+            ? juliaString(req.csv_name)
+            : '"path/to/data.csv"';
     const smoothParam = !smoothEnabled ? '' : smoothMethod === 'lowess'
         ? `    # LOWESS bandwidth: fraction of points used for local regression
     lowess_frac   = ${juliaFloat(lowessFrac, 0.05)},`
@@ -625,6 +701,9 @@ export function generateClusterCode(clusterData, withComments) {
         ['blank_trend_p_threshold', deriveBlanks && trendTest ? juliaFloat(trendPThr, 0.05) : null],
         ['detection_smooth', deriveBlanks && smoothEnabled ? 'true' : null],
         ['detection_smooth_method', deriveBlanks && smoothEnabled ? `:${smoothMethod}` : null],
+        ['detection_smooth_pt_avg',
+            deriveBlanks && smoothEnabled && smoothMethod === 'rolling_avg'
+                ? String(smoothPtAvg) : null],
         ['detection_lowess_frac',
             deriveBlanks && smoothEnabled && smoothMethod === 'lowess'
                 ? juliaFloat(lowessFrac, 0.05) : null],
