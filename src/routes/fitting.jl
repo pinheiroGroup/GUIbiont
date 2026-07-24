@@ -1,6 +1,29 @@
 const BATCH_JOBS      = Dict{String, Dict{String, Any}}()
 const BATCH_JOBS_LOCK = ReentrantLock()
 
+function _resolve_parametric_smoothing(body)
+    raw_method = lowercase(strip(string(body.smooth_method)))
+    method = isempty(raw_method) ? (body.smooth ? :boxcar : :none) : Symbol(raw_method)
+    valid = (:none, :rolling_avg, :lowess, :gaussian, :boxcar)
+    error = method in valid ? nothing : "Unknown smoothing method: $(raw_method)"
+    window = body.smooth_window
+    pt_avg = clamp(body.smooth_pt_avg, 3, 99)
+    lowess_frac = clamp(body.lowess_frac, 0.01, 1.0)
+    gaussian_h_mult = clamp(body.gaussian_h_mult, 0.1, 20.0)
+    if error === nothing && method == :boxcar && (window < 3 || iseven(window))
+        error = "Smoothing window must be an odd integer greater than or equal to 3"
+    end
+    return (
+        method=method,
+        enabled=method != :none,
+        window=window,
+        pt_avg=pt_avg,
+        lowess_frac=lowess_frac,
+        gaussian_h_mult=gaussian_h_mult,
+        error=error,
+    )
+end
+
 @post "/api/fit-curve" function(req::HTTP.Request, body::Json{FitCurveRequest})
     body = body.payload
     experiment     = string(body.experiment)
@@ -15,16 +38,19 @@ const BATCH_JOBS_LOCK = ReentrantLock()
     sto_runs       = max(1, body.stochastic_runs)
     maxiters       = clamp(body.maxiters > 0 ? body.maxiters : DEFAULT_FIT_MAXITERS, 1, MAX_FIT_MAXITERS)
     abstol         = body.abstol > 0.0 ? body.abstol : 0.0
-    smooth         = body.smooth
-    smooth_window  = body.smooth_window
+    smoothing      = _resolve_parametric_smoothing(body)
     compute_loglin = body.compute_loglin
+    ll_smoothing   = string(body.loglin_type_of_smoothing)
     ll_pt_avg      = max(1, body.loglin_pt_avg)
     ll_pt_deriv    = max(2, body.loglin_pt_smoothing_derivative)
     ll_pt_min_win  = max(3, body.loglin_pt_min_size_of_win)
+    ll_win_type    = string(body.loglin_type_of_win)
     ll_thr_exp     = clamp(body.loglin_threshold_of_exp, 0.0, 1.0)
+    ll_start_thr   = max(0.0, body.loglin_start_exp_win_thr)
+    ll_thr_lowess  = body.loglin_thr_lowess
 
-    if smooth && (smooth_window < 3 || iseven(smooth_window))
-        return json(Dict("error" => "Smoothing window must be an odd integer greater than or equal to 3"); status=400)
+    if smoothing.error !== nothing
+        return json(Dict("error" => smoothing.error); status=400)
     end
 
     data_file        = joinpath(CLEAN_DATA_PATH, experiment, "data_channel_1.csv")
@@ -89,13 +115,21 @@ const BATCH_JOBS_LOCK = ReentrantLock()
             stochastic_runs                 = sto_runs,
             maxiters                        = maxiters,
             abstol                          = abstol,
-            smooth                          = smooth,
-            smooth_window                   = smooth_window,
+            smooth                          = smoothing.enabled,
+            smooth_window                   = smoothing.window,
+            smooth_method                   = smoothing.method,
+            smooth_pt_avg                   = smoothing.pt_avg,
+            lowess_frac                     = smoothing.lowess_frac,
+            gaussian_h_mult                 = smoothing.gaussian_h_mult,
             compute_loglin                  = compute_loglin,
+            loglin_type_of_smoothing         = ll_smoothing,
             loglin_pt_avg                   = ll_pt_avg,
             loglin_pt_smoothing_derivative  = ll_pt_deriv,
             loglin_pt_min_size_of_win       = ll_pt_min_win,
+            loglin_type_of_win               = ll_win_type,
             loglin_threshold_of_exp         = ll_thr_exp,
+            loglin_start_exp_win_thr         = ll_start_thr,
+            loglin_thr_lowess                = ll_thr_lowess,
         )
     catch e
                 return json(Dict("error" => "Curve fitting failed: $e"); status=500)
@@ -114,12 +148,11 @@ end
     sto_runs         = max(1, body.stochastic_runs)
     maxiters         = clamp(body.maxiters > 0 ? body.maxiters : DEFAULT_FIT_MAXITERS, 1, MAX_FIT_MAXITERS)
     abstol           = body.abstol > 0.0 ? body.abstol : 0.0
-    smooth           = body.smooth
-    smooth_window    = body.smooth_window
+    smoothing        = _resolve_parametric_smoothing(body)
     calibration_file = "./cal_curve_avg.csv"
 
-    if smooth && (smooth_window < 3 || iseven(smooth_window))
-        return json(Dict("error" => "Smoothing window must be an odd integer greater than or equal to 3"); status=400)
+    if smoothing.error !== nothing
+        return json(Dict("error" => smoothing.error); status=400)
     end
 
     if !haskey(MODEL_REGISTRY, model_name)
@@ -176,8 +209,12 @@ end
             stochastic_runs          = sto_runs,
             maxiters                 = maxiters,
             abstol                   = abstol,
-            smooth                   = smooth,
-            smooth_window            = smooth_window,
+            smooth                   = smoothing.enabled,
+            smooth_window            = smoothing.window,
+            smooth_method            = smoothing.method,
+            smooth_pt_avg            = smoothing.pt_avg,
+            lowess_frac              = smoothing.lowess_frac,
+            gaussian_h_mult          = smoothing.gaussian_h_mult,
         )
     catch e
                 return json(Dict("error" => "Replicate fitting failed: $e"); status=500)
@@ -320,16 +357,19 @@ end
     flat_thr        = max(0.0, body.skip_flat_threshold)
     maxiters        = clamp(body.maxiters > 0 ? body.maxiters : DEFAULT_FIT_MAXITERS, 1, MAX_FIT_MAXITERS)
     abstol          = body.abstol > 0.0 ? body.abstol : 0.0
-    smooth          = body.smooth
-    smooth_window   = body.smooth_window
+    smoothing       = _resolve_parametric_smoothing(body)
     compute_loglin  = body.compute_loglin
+    ll_smoothing    = string(body.loglin_type_of_smoothing)
     ll_pt_avg       = max(1, body.loglin_pt_avg)
     ll_pt_deriv     = max(2, body.loglin_pt_smoothing_derivative)
     ll_pt_min_win   = max(3, body.loglin_pt_min_size_of_win)
+    ll_win_type     = string(body.loglin_type_of_win)
     ll_thr_exp      = clamp(body.loglin_threshold_of_exp, 0.0, 1.0)
+    ll_start_thr    = max(0.0, body.loglin_start_exp_win_thr)
+    ll_thr_lowess   = body.loglin_thr_lowess
 
-    if smooth && (smooth_window < 3 || iseven(smooth_window))
-        return json(Dict("error" => "Smoothing window must be an odd integer greater than or equal to 3"); status=400)
+    if smoothing.error !== nothing
+        return json(Dict("error" => smoothing.error); status=400)
     end
 
     if isempty(model_names_req)
@@ -373,8 +413,12 @@ end
             "model_names"  => isempty(model_names_req) ? [model_name] : model_names_req,
             "maxiters"     => maxiters,
             "abstol"       => abstol,
-            "smooth"       => smooth,
-            "smooth_window" => smooth_window,
+            "smooth"       => smoothing.enabled,
+            "smooth_method" => String(smoothing.method),
+            "smooth_window" => smoothing.window,
+            "smooth_pt_avg" => smoothing.pt_avg,
+            "lowess_frac" => smoothing.lowess_frac,
+            "gaussian_h_mult" => smoothing.gaussian_h_mult,
             "blank_subtraction" => subtract_blank,
             "blank_method"      => blank_method,
             "blank_value"       => blank_value,
@@ -445,13 +489,21 @@ end
                                         stochastic_runs                 = sto_runs,
                                         maxiters                        = maxiters,
                                         abstol                          = abstol,
-                                        smooth                          = smooth,
-                                        smooth_window                   = smooth_window,
+                                        smooth                          = smoothing.enabled,
+                                        smooth_window                   = smoothing.window,
+                                        smooth_method                   = smoothing.method,
+                                        smooth_pt_avg                   = smoothing.pt_avg,
+                                        lowess_frac                     = smoothing.lowess_frac,
+                                        gaussian_h_mult                 = smoothing.gaussian_h_mult,
                                         compute_loglin                  = compute_loglin,
+                                        loglin_type_of_smoothing         = ll_smoothing,
                                         loglin_pt_avg                   = ll_pt_avg,
                                         loglin_pt_smoothing_derivative  = ll_pt_deriv,
                                         loglin_pt_min_size_of_win       = ll_pt_min_win,
+                                        loglin_type_of_win               = ll_win_type,
                                         loglin_threshold_of_exp         = ll_thr_exp,
+                                        loglin_start_exp_win_thr         = ll_start_thr,
+                                        loglin_thr_lowess                = ll_thr_lowess,
                                     )
                                     lock(local_lock) do; push!(results, fit_result); end
                                 end
@@ -511,7 +563,11 @@ end
             resp["maxiters"]    = job["maxiters"]
             resp["abstol"]      = job["abstol"]
             resp["smooth"]      = job["smooth"]
+            resp["smooth_method"] = job["smooth_method"]
             resp["smooth_window"] = job["smooth_window"]
+            resp["smooth_pt_avg"] = job["smooth_pt_avg"]
+            resp["lowess_frac"] = job["lowess_frac"]
+            resp["gaussian_h_mult"] = job["gaussian_h_mult"]
             resp["blank_subtraction"] = job["blank_subtraction"]
             resp["blank_method"]      = job["blank_method"]
             resp["blank_value"]       = job["blank_value"]
@@ -582,6 +638,12 @@ end
             "model_names"  => ["log_lin"],
             "maxiters"     => 0,
             "abstol"       => 0.0,
+            "smooth"       => false,
+            "smooth_method" => "none",
+            "smooth_window" => 0,
+            "smooth_pt_avg" => 7,
+            "lowess_frac" => 0.05,
+            "gaussian_h_mult" => 2.0,
             "blank_subtraction" => subtract_blank,
             "blank_method"      => blank_method,
             "blank_value"       => blank_value,

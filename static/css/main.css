@@ -1599,8 +1599,10 @@
         #batch-loglin-pt-deriv,
         #batch-loglin-pt-min-win { width: 66px; }
         #loglin-thr-exp,
+        #loglin-thr-lowess,
         #loglin-start-thr,
         #batch-loglin-thr-exp,
+        #batch-loglin-thr-lowess,
         #batch-loglin-start-thr { width: 78px; }
 
         .fit-control-row {
@@ -1640,6 +1642,14 @@
         #batch-fit-maxiters { width: 96px; }
 
         #batch-fit-skip-flat { width: 76px; }
+
+        #fit-smooth-method,
+        #batch-fit-smooth-method { width: 152px; }
+
+        .parametric-smoothing-strip > label {
+            font-weight: 500;
+            color: #495057;
+        }
 
         .fit-control-strip {
             display: flex;

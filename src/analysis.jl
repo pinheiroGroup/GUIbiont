@@ -376,7 +376,10 @@ function _run_fit_attempt(
     model_names::Vector{String},
     maxiters::Int,
     abstol::Float64,
-    smooth::Bool,
+    smooth_method::Symbol,
+    smooth_pt_avg::Int,
+    lowess_frac::Float64,
+    gaussian_h_mult::Float64,
     smooth_window::Int,
     optimizer_seed::Int,
 )
@@ -419,8 +422,11 @@ function _run_fit_attempt(
 
     opts = FitOptions(
         scattering_correction           = false,
-        smooth                          = smooth,
-        smooth_method                   = :boxcar,
+        smooth                          = smooth_method != :none,
+        smooth_method                   = smooth_method,
+        smooth_pt_avg                   = smooth_pt_avg,
+        lowess_frac                     = lowess_frac,
+        gaussian_h_mult                 = gaussian_h_mult,
         boxcar_window                   = smooth_window,
         cut_stationary_phase            = true,
         stationary_percentile_thr       = 0.05,
@@ -564,6 +570,10 @@ function fit_well_data(
     abstol::Float64 = 1e-15,
     smooth::Bool = false,
     smooth_window::Int = 3,
+    smooth_method::Symbol = :none,
+    smooth_pt_avg::Int = 7,
+    lowess_frac::Float64 = 0.05,
+    gaussian_h_mult::Float64 = 2.0,
     # Optional log-linear sliding-window companion fit. When `compute_loglin`
     # is true, the result dict is enriched with `gr_loglin`, `gr_loglin_se`,
     # `gr_max_sliding`, `t_exp_start_loglin`, `t_exp_end_loglin`,
@@ -571,14 +581,28 @@ function fit_well_data(
     # Fit runs on the same `od_for_fit` as the parametric model so the two
     # estimates are directly comparable.
     compute_loglin::Bool = false,
+    loglin_type_of_smoothing::String = "rolling_avg",
     loglin_pt_avg::Int = 7,
     loglin_pt_smoothing_derivative::Int = 7,
     loglin_pt_min_size_of_win::Int = 7,
+    loglin_type_of_win::String = "maximum",
     loglin_threshold_of_exp::Float64 = 0.9,
+    loglin_start_exp_win_thr::Float64 = 0.05,
+    loglin_thr_lowess::Float64 = 0.05,
 )
-    if smooth && (smooth_window < 3 || iseven(smooth_window))
+    resolved_smooth_method = smooth_method == :none && smooth ? :boxcar : smooth_method
+    resolved_smooth_method in (:none, :rolling_avg, :lowess, :gaussian, :boxcar) ||
+        throw(ArgumentError("Unknown smoothing method: $resolved_smooth_method"))
+    if resolved_smooth_method == :boxcar && (smooth_window < 3 || iseven(smooth_window))
         throw(ArgumentError("smooth_window must be an odd integer greater than or equal to 3"))
     end
+    3 <= smooth_pt_avg <= 99 ||
+        throw(ArgumentError("smooth_pt_avg must be between 3 and 99"))
+    0.01 <= lowess_frac <= 1.0 ||
+        throw(ArgumentError("lowess_frac must be between 0.01 and 1.0"))
+    0.1 <= gaussian_h_mult <= 20.0 ||
+        throw(ArgumentError("gaussian_h_mult must be between 0.1 and 20.0"))
+    smooth_enabled = resolved_smooth_method != :none
 
     prepared = _prepare_fit_curve(
         time_numeric, od_raw, label;
@@ -622,7 +646,8 @@ function fit_well_data(
                 opt, time_numeric, od_for_fit, shift,
                 subtract_blank, blank_value, label,
                 model_name, model_names, maxiters, abstol,
-                smooth, smooth_window, attempt_seed,
+                resolved_smooth_method, smooth_pt_avg, lowess_frac,
+                gaussian_h_mult, smooth_window, attempt_seed,
             )
             push!(outcomes, (optimizer = opt, run = run_idx, status = "ok",
                               seed = attempt_seed,
@@ -682,9 +707,12 @@ function fit_well_data(
         "maxiters"               => maxiters,
         "abstol"                 => abstol,
         "preprocessing"          => Dict(
-            "smooth"                          => smooth,
-            "smooth_method"                   => smooth ? "boxcar" : "none",
+            "smooth"                          => smooth_enabled,
+            "smooth_method"                   => String(resolved_smooth_method),
             "smooth_window"                   => smooth_window,
+            "smooth_pt_avg"                   => smooth_pt_avg,
+            "lowess_frac"                     => lowess_frac,
+            "gaussian_h_mult"                 => gaussian_h_mult,
             "cut_stationary_phase"            => true,
             "stationary_percentile_thr"       => 0.05,
             "stationary_pt_smooth_derivative" => 10,
@@ -714,7 +742,7 @@ function fit_well_data(
     if od_subtracted_display !== nothing
         result["experimental_od_subtracted"] = od_subtracted_display
     end
-    if smooth
+    if smooth_enabled
         result["smoothed_time"] = win.preprocessed_time
         result["smoothed_od"] = win.preprocessed_od
     end
@@ -729,8 +757,9 @@ function fit_well_data(
     # ────────────────────────────────────────────────────────────────────
 
     # Optional log-linear sliding-window μ_max companion fit. Runs on the same
-    # od_for_fit data the parametric model saw, so the two estimates are
-    # directly comparable. When the exponential-window detector can't locate
+    # blank-corrected, unsmoothed od_for_fit. Parametric smoothing happens only
+    # inside _run_fit_attempt, so the companion cannot smooth the same data twice.
+    # The estimates remain directly comparable. When the detector can't locate
     # a window (very short curves, noisy data, persistent lag), we mark the
     # log-lin fields as NaN with `loglin_converged = false` rather than
     # failing the whole well — the parametric model fit remains valid.
@@ -758,12 +787,14 @@ function fit_well_data(
                     data_mat,
                     label,
                     experiment;
-                    type_of_smoothing       = "rolling_avg",
+                    type_of_smoothing       = loglin_type_of_smoothing,
                     pt_avg                  = loglin_pt_avg,
                     pt_smoothing_derivative = loglin_pt_smoothing_derivative,
                     pt_min_size_of_win      = loglin_pt_min_size_of_win,
-                    type_of_win             = "maximum",
+                    type_of_win             = loglin_type_of_win,
                     threshold_of_exp        = loglin_threshold_of_exp,
+                    start_exp_win_thr       = loglin_start_exp_win_thr,
+                    thr_lowess              = loglin_thr_lowess,
                 )
                 # raw[2] layout (see Kinbiont/src/Fit_one_well_functions.jl):
                 #   [1] label_exp   [2] well        [3] t_start_exp  [4] t_end_exp

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GUIbiont</title>
-    <link rel="stylesheet" href="/static/css/main.css?v=20260722-5">
+    <link rel="stylesheet" href="/static/css/main.css?v=20260724-1">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
     <script src="/static/vendor/plotly-2.29.1.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
@@ -185,10 +185,11 @@
                             </label>
                             <button class="btn" style="padding: 4px 10px; font-size: 0.85em;" onclick="toggleLogLinOptions()">⚙ Log-Lin options</button>
                             <div id="loglin-options" class="fit-settings-panel" style="display:none;">
+                                <div class="settings-card-title">Log-Lin options</div>
                                 <div class="fit-parameter-grid">
                                     <div style="display:flex; flex-direction:column; gap:4px;">
                                         <label>Smoothing</label>
-                                        <select id="loglin-smoothing" style="padding:3px 6px;">
+                                        <select id="loglin-smoothing" style="padding:3px 6px;" onchange="onLogLinSmoothingChange()">
                                             <option value="rolling_avg" selected>Rolling avg</option>
                                             <option value="lowess">LOWESS</option>
                                             <option value="NO">None</option>
@@ -196,31 +197,35 @@
                                     </div>
                                     <div style="display:flex; flex-direction:column; gap:4px;">
                                         <label>Window type</label>
-                                        <select id="loglin-win-type" style="padding:3px 6px;">
+                                        <select id="loglin-win-type" style="padding:3px 6px;" onchange="onLogLinWindowTypeChange()">
                                             <option value="maximum" selected>Maximum</option>
                                             <option value="global_thr">Global threshold</option>
                                             <option value="max_with_min_OD">Max with min OD</option>
                                         </select>
                                     </div>
-                                    <div style="display:flex; flex-direction:column; gap:4px;">
+                                    <div id="loglin-pt-avg-field" style="display:flex; flex-direction:column; gap:4px;">
                                         <label title="Number of points in smoothing window">pt_avg</label>
-                                        <input type="number" id="loglin-pt-avg" value="7" min="1" max="50" style="width:60px; padding:3px 6px;">
+                                        <input type="number" id="loglin-pt-avg" value="7" min="1" max="99" step="1" style="padding:3px 6px;">
+                                    </div>
+                                    <div id="loglin-lowess-field" style="display:none; flex-direction:column; gap:4px;">
+                                        <label title="Fraction of points used by LOWESS local regression">thr_lowess</label>
+                                        <input type="number" id="loglin-thr-lowess" value="0.05" min="0.01" max="1" step="0.01" style="padding:3px 6px;">
                                     </div>
                                     <div style="display:flex; flex-direction:column; gap:4px;">
                                         <label title="Window size for derivative-based GR estimate">pt_smooth_deriv</label>
-                                        <input type="number" id="loglin-pt-deriv" value="7" min="2" max="50" style="width:60px; padding:3px 6px;">
+                                        <input type="number" id="loglin-pt-deriv" value="7" min="2" max="99" step="1" style="padding:3px 6px;">
                                     </div>
                                     <div style="display:flex; flex-direction:column; gap:4px;">
                                         <label title="Minimum number of points in the exponential window">pt_min_win</label>
-                                        <input type="number" id="loglin-pt-min-win" value="7" min="3" max="50" style="width:60px; padding:3px 6px;">
+                                        <input type="number" id="loglin-pt-min-win" value="7" min="3" max="99" step="1" style="padding:3px 6px;">
                                     </div>
                                     <div style="display:flex; flex-direction:column; gap:4px;">
                                         <label title="Quantile threshold on growth rate to define the exponential window">threshold_exp</label>
-                                        <input type="number" id="loglin-thr-exp" value="0.9" min="0" max="1" step="0.01" style="width:70px; padding:3px 6px;">
+                                        <input type="number" id="loglin-thr-exp" value="0.9" min="0" max="1" step="0.01" style="padding:3px 6px;">
                                     </div>
-                                    <div style="display:flex; flex-direction:column; gap:4px;">
+                                    <div id="loglin-start-thr-field" style="display:none; flex-direction:column; gap:4px;">
                                         <label title="Minimum OD to start the exponential window">start_OD_thr</label>
-                                        <input type="number" id="loglin-start-thr" value="0.05" min="0" step="0.01" style="width:70px; padding:3px 6px;">
+                                        <input type="number" id="loglin-start-thr" value="0.05" min="0" step="0.01" style="padding:3px 6px;">
                                     </div>
                                 </div>
                             </div>
@@ -275,15 +280,26 @@
                             </div>
                         </div>
 
-                        <div class="fit-control-strip">
-                            <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer;">
-                                <input type="checkbox" id="fit-smoothing" onchange="document.getElementById('fit-smoothing-window').disabled = !this.checked">
-                                Smooth curve before fitting
-                            </label>
-                            <span class="fit-window-control">
-                                <label for="fit-smoothing-window" title="Centered-average window">Window:</label>
-                                <input type="number" id="fit-smoothing-window" value="3" min="3" max="99" step="2" disabled>
+                        <div class="fit-control-strip parametric-smoothing-strip">
+                            <label for="fit-smooth-method">Parametric smoothing:</label>
+                            <select id="fit-smooth-method" onchange="onFitSmoothingChange()">
+                                <option value="none" selected>None</option>
+                                <option value="rolling_avg">Rolling average</option>
+                                <option value="lowess">LOWESS</option>
+                                <option value="gaussian">Gaussian</option>
+                            </select>
+                            <span id="fit-rolling-param" class="fit-window-control" style="display:none;">
+                                <label for="fit-smooth-pt-avg" title="Number of points in the rolling-average window">Window (pt_avg):</label>
+                                <input type="number" id="fit-smooth-pt-avg" value="7" min="3" max="99" step="1">
                                 <span class="fit-window-unit">points</span>
+                            </span>
+                            <span id="fit-lowess-param" class="fit-window-control" style="display:none;">
+                                <label for="fit-lowess-frac" title="Fraction of points used by LOWESS local regression">Bandwidth fraction:</label>
+                                <input type="number" id="fit-lowess-frac" value="0.05" min="0.01" max="1" step="0.01">
+                            </span>
+                            <span id="fit-gaussian-param" class="fit-window-control" style="display:none;">
+                                <label for="fit-gaussian-hmult" title="Gaussian bandwidth multiplied by the median time step">Bandwidth multiplier:</label>
+                                <input type="number" id="fit-gaussian-hmult" value="2.0" min="0.1" max="20" step="0.1">
                             </span>
                         </div>
 
@@ -897,15 +913,26 @@
                             </div>
                         </div>
 
-                        <div class="fit-control-strip">
-                            <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer;" title="Centered-average preprocessing for the parametric model; Log-Lin pt_avg is configured separately.">
-                                <input type="checkbox" id="batch-fit-smoothing" onchange="document.getElementById('batch-fit-smoothing-window').disabled = !this.checked">
-                                Smooth curves before parametric fitting
-                            </label>
-                            <span class="fit-window-control">
-                                <label for="batch-fit-smoothing-window" title="Centered-average window">Window:</label>
-                                <input type="number" id="batch-fit-smoothing-window" value="3" min="3" max="99" step="2" disabled>
+                        <div class="fit-control-strip parametric-smoothing-strip">
+                            <label for="batch-fit-smooth-method">Parametric smoothing:</label>
+                            <select id="batch-fit-smooth-method" onchange="onBatchFitSmoothingChange()">
+                                <option value="none" selected>None</option>
+                                <option value="rolling_avg">Rolling average</option>
+                                <option value="lowess">LOWESS</option>
+                                <option value="gaussian">Gaussian</option>
+                            </select>
+                            <span id="batch-fit-rolling-param" class="fit-window-control" style="display:none;">
+                                <label for="batch-fit-smooth-pt-avg" title="Number of points in the rolling-average window">Window (pt_avg):</label>
+                                <input type="number" id="batch-fit-smooth-pt-avg" value="7" min="3" max="99" step="1">
                                 <span class="fit-window-unit">points</span>
+                            </span>
+                            <span id="batch-fit-lowess-param" class="fit-window-control" style="display:none;">
+                                <label for="batch-fit-lowess-frac" title="Fraction of points used by LOWESS local regression">Bandwidth fraction:</label>
+                                <input type="number" id="batch-fit-lowess-frac" value="0.05" min="0.01" max="1" step="0.01">
+                            </span>
+                            <span id="batch-fit-gaussian-param" class="fit-window-control" style="display:none;">
+                                <label for="batch-fit-gaussian-hmult" title="Gaussian bandwidth multiplied by the median time step">Bandwidth multiplier:</label>
+                                <input type="number" id="batch-fit-gaussian-hmult" value="2.0" min="0.1" max="20" step="0.1">
                             </span>
                         </div>
                         </div>
@@ -921,25 +948,29 @@
                         <div id="batch-loglin-options" class="fit-settings-panel" style="display:none;">
                             <div class="settings-card-title">Log-Lin options</div>
                             <div class="fit-parameter-grid">
-                                <div class="batch-loglin-standalone-only" style="display:flex; flex-direction:column; gap:4px;">
+                                <div style="display:flex; flex-direction:column; gap:4px;">
                                     <label>Smoothing</label>
-                                    <select id="batch-loglin-smoothing" style="padding:3px 6px;">
+                                    <select id="batch-loglin-smoothing" style="padding:3px 6px;" onchange="onBatchLogLinSmoothingChange()">
                                         <option value="rolling_avg" selected>Rolling avg</option>
                                         <option value="lowess">LOWESS</option>
                                         <option value="NO">None</option>
                                     </select>
                                 </div>
-                                <div class="batch-loglin-standalone-only" style="display:flex; flex-direction:column; gap:4px;">
+                                <div style="display:flex; flex-direction:column; gap:4px;">
                                     <label>Window type</label>
-                                    <select id="batch-loglin-win-type" style="padding:3px 6px;">
+                                    <select id="batch-loglin-win-type" style="padding:3px 6px;" onchange="onBatchLogLinWindowTypeChange()">
                                         <option value="maximum" selected>Maximum</option>
                                         <option value="global_thr">Global threshold</option>
                                         <option value="max_with_min_OD">Max with min OD</option>
                                     </select>
                                 </div>
-                                <div style="display:flex; flex-direction:column; gap:4px;">
+                                <div id="batch-loglin-pt-avg-field" style="display:flex; flex-direction:column; gap:4px;">
                                     <label title="Number of points in smoothing window">pt_avg</label>
                                     <input type="number" id="batch-loglin-pt-avg" value="7" min="1" max="99" step="1" style="padding:3px 6px;">
+                                </div>
+                                <div id="batch-loglin-lowess-field" style="display:none; flex-direction:column; gap:4px;">
+                                    <label title="Fraction of points used by LOWESS local regression">thr_lowess</label>
+                                    <input type="number" id="batch-loglin-thr-lowess" value="0.05" min="0.01" max="1" step="0.01" style="padding:3px 6px;">
                                 </div>
                                 <div style="display:flex; flex-direction:column; gap:4px;">
                                     <label title="Window size for derivative-based GR estimate">pt_smooth_deriv</label>
@@ -953,7 +984,7 @@
                                     <label title="Quantile threshold on growth rate to define the exponential window">threshold_exp</label>
                                     <input type="number" id="batch-loglin-thr-exp" value="0.9" min="0" max="1" step="0.01" style="padding:3px 6px;">
                                 </div>
-                                <div class="batch-loglin-standalone-only" style="display:flex; flex-direction:column; gap:4px;">
+                                <div id="batch-loglin-start-thr-field" style="display:none; flex-direction:column; gap:4px;">
                                     <label title="Minimum OD to start the exponential window">start_OD_thr</label>
                                     <input type="number" id="batch-loglin-start-thr" value="0.05" min="0" step="0.01" style="padding:3px 6px;">
                                 </div>
@@ -1228,6 +1259,6 @@
         </div>
     </div>
 
-    <script type="module" src="/static/js/app.js?v=20260722-5"></script>
+    <script type="module" src="/static/js/app.js?v=20260724-2"></script>
 </body>
 </html>

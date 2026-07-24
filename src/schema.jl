@@ -37,15 +37,25 @@ Base.@kwdef mutable struct FitCurveRequest
     stochastic_runs::Int                    = 3
     maxiters::Int = DEFAULT_FIT_MAXITERS
     abstol::Float64 = 1e-15
+    # An empty method preserves legacy clients that use the centered-average
+    # `smooth` + `smooth_window` pair. New clients send an explicit method.
     smooth::Bool = false
     smooth_window::Int = 3
+    smooth_method::String = ""
+    smooth_pt_avg::Int = 7
+    lowess_frac::Float64 = 0.05
+    gaussian_h_mult::Float64 = 2.0
     # Always-on log-linear companion fit. Provides a model-free μ_max next to
     # the parametric one for sanity checking. Set to false to skip.
     compute_loglin::Bool = true
+    loglin_type_of_smoothing::String = "rolling_avg"
     loglin_pt_avg::Int = 7
     loglin_pt_smoothing_derivative::Int = 7
     loglin_pt_min_size_of_win::Int = 7
+    loglin_type_of_win::String = "maximum"
     loglin_threshold_of_exp::Float64 = 0.9
+    loglin_start_exp_win_thr::Float64 = 0.05
+    loglin_thr_lowess::Float64 = 0.05
 end
 
 Base.@kwdef mutable struct BatchFitRequest
@@ -67,16 +77,24 @@ Base.@kwdef mutable struct BatchFitRequest
     abstol::Float64 = 1e-15
     smooth::Bool = false
     smooth_window::Int = 3
+    smooth_method::String = ""
+    smooth_pt_avg::Int = 7
+    lowess_frac::Float64 = 0.05
+    gaussian_h_mult::Float64 = 2.0
     # Optional log-linear μ_max companion fit. When `compute_loglin` is true,
     # every well also gets a sliding-window log-linear fit (slope of log OD vs
     # time in the auto-detected exponential window) reported alongside the
     # parametric model fit. Provides a physiology-bounded, model-free growth
     # rate that serves as a sanity check on parametric μ from aHPM/Baranyi etc.
     compute_loglin::Bool = false
+    loglin_type_of_smoothing::String = "rolling_avg"
     loglin_pt_avg::Int = 7
     loglin_pt_smoothing_derivative::Int = 7
     loglin_pt_min_size_of_win::Int = 7
+    loglin_type_of_win::String = "maximum"
     loglin_threshold_of_exp::Float64 = 0.9
+    loglin_start_exp_win_thr::Float64 = 0.05
+    loglin_thr_lowess::Float64 = 0.05
 end
 
 Base.@kwdef mutable struct MLDownstreamRequest
@@ -106,6 +124,10 @@ Base.@kwdef mutable struct FitReplicateRequest
     abstol::Float64 = 1e-15
     smooth::Bool = false
     smooth_window::Int = 3
+    smooth_method::String = ""
+    smooth_pt_avg::Int = 7
+    lowess_frac::Float64 = 0.05
+    gaussian_h_mult::Float64 = 2.0
 end
 
 Base.@kwdef mutable struct BlankAnalysisRequest

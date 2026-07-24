@@ -38,6 +38,79 @@ function juliaKeywordLines(entries) {
 }
 
 // ---------------------------------------------------------------------------
+// Dynamic Log-Lin settings used by Fit and Batch Fit exports
+// ---------------------------------------------------------------------------
+
+function companionLogLinSettings(req) {
+    return {
+        smoothing: req.loglin_type_of_smoothing || 'rolling_avg',
+        ptAvg: req.loglin_pt_avg ?? 7,
+        ptDeriv: req.loglin_pt_smoothing_derivative ?? 7,
+        ptMinWin: req.loglin_pt_min_size_of_win ?? 7,
+        winType: req.loglin_type_of_win || 'maximum',
+        threshold: req.loglin_threshold_of_exp ?? 0.9,
+        startThreshold: req.loglin_start_exp_win_thr ?? 0.05,
+        lowessThreshold: req.loglin_thr_lowess ?? 0.05,
+    };
+}
+
+function companionLogLinKeywordPairs(settings) {
+    const smoothingKeywords = settings.smoothing === 'rolling_avg'
+        ? [
+            ['type_of_smoothing', juliaString(settings.smoothing)],
+            ['pt_avg', String(settings.ptAvg)],
+        ]
+        : settings.smoothing === 'lowess'
+        ? [
+            ['type_of_smoothing', juliaString(settings.smoothing)],
+            ['thr_lowess', juliaFloat(settings.lowessThreshold, 0.05)],
+        ]
+        : [['type_of_smoothing', juliaString(settings.smoothing)]];
+    return [
+        ...smoothingKeywords,
+        ['pt_smoothing_derivative', String(settings.ptDeriv)],
+        ['pt_min_size_of_win', String(settings.ptMinWin)],
+        ['type_of_win', juliaString(settings.winType)],
+        ['threshold_of_exp', juliaFloat(settings.threshold, 0.9)],
+        ['start_exp_win_thr',
+            settings.winType === 'global_thr' || settings.winType === 'max_with_min_OD'
+                ? juliaFloat(settings.startThreshold, 0.05) : null],
+    ];
+}
+
+function parametricSmoothingKeywordPairs(req) {
+    const method = req.smooth_method || (req.smooth ? 'boxcar' : 'none');
+    if (method === 'rolling_avg') {
+        return [
+            ['smooth', 'true'],
+            ['smooth_method', ':rolling_avg'],
+            ['smooth_pt_avg', String(req.smooth_pt_avg ?? 7)],
+        ];
+    }
+    if (method === 'lowess') {
+        return [
+            ['smooth', 'true'],
+            ['smooth_method', ':lowess'],
+            ['lowess_frac', juliaFloat(req.lowess_frac, 0.05)],
+        ];
+    }
+    if (method === 'gaussian') {
+        return [
+            ['smooth', 'true'],
+            ['smooth_method', ':gaussian'],
+            ['gaussian_h_mult', juliaFloat(req.gaussian_h_mult, 2.0)],
+        ];
+    }
+    if (method === 'boxcar') {
+        return [
+            ['smooth', 'true'],
+            ['smooth_window', String(req.smooth_window ?? 3)],
+        ];
+    }
+    return [];
+}
+
+// ---------------------------------------------------------------------------
 // CodeMirror instance — created lazily on first modal open
 // ---------------------------------------------------------------------------
 
@@ -151,13 +224,8 @@ export function generateFitCode(fitData, withComments) {
     const blankMethod = req.blank_method ?? 'pointbypoint';
     const maxiters = req.maxiters ?? 100000;
     const abstol = req.abstol ?? 1e-15;
-    const smooth = req.smooth ?? false;
-    const smoothWindow = req.smooth_window ?? 3;
     const computeLoglin = !!req.compute_loglin;
-    const llPtAvg = req.loglin_pt_avg ?? 7;
-    const llPtDeriv = req.loglin_pt_smoothing_derivative ?? 7;
-    const llPtMinWin = req.loglin_pt_min_size_of_win ?? 7;
-    const llThreshold = req.loglin_threshold_of_exp ?? 0.9;
+    const loglinSettings = companionLogLinSettings(req);
     const optimizer = req.optimizer || 'LN_COBYLA';
     const detOpts = Array.isArray(req.deterministic_optimizers) ? req.deterministic_optimizers : [];
     const stoOpts = Array.isArray(req.stochastic_optimizers) ? req.stochastic_optimizers : [];
@@ -186,18 +254,7 @@ export function generateFitCode(fitData, withComments) {
             ['optimizer_seed', optimizer === 'BBO_adaptive_de_rand_1_bin_radiuslimited' ||
                 optimizer === 'GN_ISRES' ? '42' : null],
         ];
-    const smoothingKeywords = smooth
-        ? [['smooth', 'true'], ['smooth_window', String(smoothWindow)]]
-        : [];
-    const loglinKeywords = computeLoglin
-        ? [
-            ['compute_loglin', 'true'],
-            ['loglin_pt_avg', String(llPtAvg)],
-            ['loglin_pt_smoothing_derivative', String(llPtDeriv)],
-            ['loglin_pt_min_size_of_win', String(llPtMinWin)],
-            ['loglin_threshold_of_exp', juliaFloat(llThreshold, 0.9)],
-        ]
-        : [];
+    const smoothingKeywords = parametricSmoothingKeywordPairs(req);
     const blankKeywords = blankSub
         ? [
             ['blank_subtraction', 'true'],
@@ -213,13 +270,26 @@ export function generateFitCode(fitData, withComments) {
         ['abstol', juliaFloat(abstol, 1e-15)],
         ['skip_flat_threshold', '0.0'],
         ...smoothingKeywords,
-        ...loglinKeywords,
         ...blankKeywords,
     ]);
-    const loglinPrintBlock = computeLoglin
-        ? `println("Log-linear mu_max: ", r["gr_loglin"])
-println("Log-linear lag:    ", r["lag_loglin"])
-println("N_max (cutoff):    ", r["N_max_emp"])`
+    const companionKeywords = computeLoglin
+        ? juliaKeywordLines([
+            ...blankKeywords,
+            ['unblanked_floor', '0.01'],
+            ...companionLogLinKeywordPairs(loglinSettings),
+        ])
+        : '';
+    const loglinBlock = computeLoglin
+        ? `# Run the Log-Lin companion with the exact advanced options selected in GUIbiont.
+loglin = kinbiont_fit_loglin(
+    data;
+    experiment=EXPERIMENT,
+    label=${isReplicate ? 'FIT_LABEL' : 'WELL'},
+${companionKeywords}
+)
+println("Log-linear mu_max: ", loglin["gr_loglin"])
+println("Log-linear lag:    ", loglin["lag_loglin"])
+println("N_max (cutoff):    ", loglin["N_max_emp"])`
         : '';
 
     const dataBlock = isReplicate
@@ -289,7 +359,7 @@ println("Parameters:  ", r["parameters"])
 println("AICc:        ", r["aic"])
 println("RMSE:        ", r["loss_rmse"])
 println("Optimizer:   ", r["optimizer_used"])
-${loglinPrintBlock}
+${loglinBlock}
 `;
 
     return withComments ? code : stripComments(code);
@@ -311,13 +381,8 @@ export function generateBatchCode(batchData, withComments) {
     const maxiters = req.maxiters ?? 100000;
     const abstol = req.abstol ?? 1e-15;
     const skipFlat = req.skip_flat_threshold ?? 0.02;
-    const smooth = req.smooth ?? false;
-    const smoothWindow = req.smooth_window ?? 3;
     const computeLoglin = !!req.compute_loglin || rawModels.includes('log_lin');
-    const llPtAvg = req.loglin_pt_avg ?? 7;
-    const llPtDeriv = req.loglin_pt_smoothing_derivative ?? 7;
-    const llPtMinWin = req.loglin_pt_min_size_of_win ?? 7;
-    const llThrExp = req.loglin_threshold_of_exp ?? 0.9;
+    const loglinSettings = companionLogLinSettings(req);
     const blankSub = req.blank_subtraction ?? false;
     const blankMethod = req.blank_method || 'pointbypoint';
     const outPrefix = `${experiment}_batch_fit`;
@@ -337,18 +402,7 @@ export function generateBatchCode(batchData, withComments) {
             ['optimizer_seed', singleOptimizer === 'BBO_adaptive_de_rand_1_bin_radiuslimited' ||
                 singleOptimizer === 'GN_ISRES' ? '42' : null],
         ];
-    const smoothingKeywords = smooth
-        ? [['smooth', 'true'], ['smooth_window', String(smoothWindow)]]
-        : [];
-    const loglinKeywords = computeLoglin
-        ? [
-            ['compute_loglin', 'true'],
-            ['loglin_pt_avg', String(llPtAvg)],
-            ['loglin_pt_smoothing_derivative', String(llPtDeriv)],
-            ['loglin_pt_min_size_of_win', String(llPtMinWin)],
-            ['loglin_threshold_of_exp', juliaFloat(llThrExp, 0.9)],
-        ]
-        : [];
+    const smoothingKeywords = parametricSmoothingKeywordPairs(req);
     const blankKeywords = blankSub
         ? [
             ['blank_subtraction', 'true'],
@@ -364,9 +418,33 @@ export function generateBatchCode(batchData, withComments) {
         ['abstol', juliaFloat(abstol, 1e-15)],
         ['skip_flat_threshold', juliaFloat(skipFlat, 0.02)],
         ...smoothingKeywords,
-        ...loglinKeywords,
         ...blankKeywords,
     ]);
+    const companionKeywords = computeLoglin
+        ? juliaKeywordLines([
+            ...blankKeywords,
+            ...companionLogLinKeywordPairs(loglinSettings),
+            ['skip_flat_threshold', juliaFloat(skipFlat, 0.02)],
+        ])
+        : '';
+    const loglinBlock = computeLoglin
+        ? `
+# Run the Log-Lin companion with the exact advanced options selected in GUIbiont.
+loglin_batch = kinbiont_batch_loglin(
+    data;
+    experiment=EXPERIMENT,
+    labels=WELLS,
+${companionKeywords}
+)
+loglin_paths = save_batch_loglin_results(
+    loglin_batch, "."; prefix=OUT_PREFIX * "_loglin",
+)
+println("Saved ", loglin_paths.summary)
+println("Log-Lin fitted: ", length(loglin_batch.results),
+        "  skipped: ", length(loglin_batch.skipped),
+        "  failed: ", length(loglin_batch.errors))
+`
+        : '';
 
     const code = `\
 # ================================================================
@@ -395,6 +473,7 @@ paths = save_batch_results(batch, "."; prefix=OUT_PREFIX)
 println("Saved ", paths.summary)
 println("Saved ", paths.fitted_curves)
 println("Fitted: ", length(batch.results), "  skipped: ", length(batch.skipped), "  failed: ", length(batch.errors))
+${loglinBlock}
 `;
 
     return withComments ? code : stripComments(code);

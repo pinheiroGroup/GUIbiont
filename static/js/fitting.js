@@ -12,12 +12,38 @@ function buildFitOptionsPayload() {
         parseInt(document.getElementById('fit-maxiters')?.value || `${DEFAULT_FIT_MAXITERS}`, 10) || DEFAULT_FIT_MAXITERS
     );
     const abstol = parseFloat(document.getElementById('fit-abstol')?.value || DEFAULT_FIT_ABSTOL) || parseFloat(DEFAULT_FIT_ABSTOL);
-    const smooth = document.getElementById('fit-smoothing')?.checked || false;
-    const smoothWindow = Math.max(
+    const smoothMethod = document.getElementById('fit-smooth-method')?.value || 'none';
+    const smoothPtAvg = Math.min(99, Math.max(
         3,
-        parseInt(document.getElementById('fit-smoothing-window')?.value || '3', 10) || 3
-    );
-    return { maxiters, abstol, smooth, smooth_window: smoothWindow };
+        parseInt(document.getElementById('fit-smooth-pt-avg')?.value || '7', 10) || 7
+    ));
+    const lowessFrac = Math.min(1, Math.max(
+        0.01,
+        parseFloat(document.getElementById('fit-lowess-frac')?.value || '0.05') || 0.05
+    ));
+    const gaussianHMult = Math.min(20, Math.max(
+        0.1,
+        parseFloat(document.getElementById('fit-gaussian-hmult')?.value || '2.0') || 2.0
+    ));
+    return {
+        maxiters,
+        abstol,
+        smooth: smoothMethod !== 'none',
+        smooth_method: smoothMethod,
+        smooth_pt_avg: smoothPtAvg,
+        lowess_frac: lowessFrac,
+        gaussian_h_mult: gaussianHMult,
+    };
+}
+
+function onFitSmoothingChange() {
+    const method = document.getElementById('fit-smooth-method')?.value || 'none';
+    const rolling = document.getElementById('fit-rolling-param');
+    const lowess = document.getElementById('fit-lowess-param');
+    const gaussian = document.getElementById('fit-gaussian-param');
+    if (rolling) rolling.style.display = method === 'rolling_avg' ? 'inline-flex' : 'none';
+    if (lowess) lowess.style.display = method === 'lowess' ? 'inline-flex' : 'none';
+    if (gaussian) gaussian.style.display = method === 'gaussian' ? 'inline-flex' : 'none';
 }
 
 function setFitMode(mode) {
@@ -678,12 +704,20 @@ function plotFittedCurve(fitData) {
     }
 
     if (Array.isArray(fitData.smoothed_time) && Array.isArray(fitData.smoothed_od) && fitData.smoothed_time.length > 0) {
+        const preprocessing = fitData.preprocessing || {};
+        const smoothingLabel = preprocessing.smooth_method === 'rolling_avg'
+            ? `Rolling average (${preprocessing.smooth_pt_avg || 7} points)`
+            : preprocessing.smooth_method === 'lowess'
+                ? `LOWESS (fraction ${preprocessing.lowess_frac || 0.05})`
+                : preprocessing.smooth_method === 'gaussian'
+                    ? `Gaussian (multiplier ${preprocessing.gaussian_h_mult || 2.0})`
+                    : `Centered average (${preprocessing.smooth_window || 3} points)`;
         data.push({
             x: fitData.smoothed_time,
             y: fitData.smoothed_od,
             mode: 'lines',
             type: 'scatter',
-            name: `Centered average (${fitData.preprocessing?.smooth_window || 3} points)`,
+            name: smoothingLabel,
             line: { color: '#167d8d', width: 2 }
         });
     }
@@ -748,7 +782,28 @@ function plotFittedCurve(fitData) {
 
 function toggleLogLinOptions() {
     const panel = document.getElementById('loglin-options');
-    if (panel) panel.style.display = panel.style.display === 'none' ? '' : 'none';
+    if (panel) {
+        onLogLinSmoothingChange();
+        onLogLinWindowTypeChange();
+        panel.style.display = panel.style.display === 'none' ? '' : 'none';
+    }
+}
+
+function onLogLinSmoothingChange() {
+    const method = document.getElementById('loglin-smoothing')?.value || 'rolling_avg';
+    const rollingField = document.getElementById('loglin-pt-avg-field');
+    const lowessField = document.getElementById('loglin-lowess-field');
+    if (rollingField) rollingField.style.display = method === 'rolling_avg' ? 'flex' : 'none';
+    if (lowessField) lowessField.style.display = method === 'lowess' ? 'flex' : 'none';
+}
+
+function onLogLinWindowTypeChange() {
+    const winType = document.getElementById('loglin-win-type')?.value || 'maximum';
+    const startField = document.getElementById('loglin-start-thr-field');
+    if (startField) {
+        startField.style.display =
+            winType === 'global_thr' || winType === 'max_with_min_OD' ? 'flex' : 'none';
+    }
 }
 
 // Payload for the `compute_loglin` companion fit on /api/fit-curve. Reuses the
@@ -766,10 +821,14 @@ function buildLogLinCompanionPayload() {
     const enabled = document.getElementById('fit-compute-loglin');
     return {
         compute_loglin:                  enabled ? enabled.checked : true,
+        loglin_type_of_smoothing:         document.getElementById('loglin-smoothing')?.value || 'rolling_avg',
+        loglin_type_of_win:               document.getElementById('loglin-win-type')?.value || 'maximum',
         loglin_pt_avg:                   intnum('loglin-pt-avg', 7),
         loglin_pt_smoothing_derivative:  intnum('loglin-pt-deriv', 7),
         loglin_pt_min_size_of_win:       intnum('loglin-pt-min-win', 7),
         loglin_threshold_of_exp:         num('loglin-thr-exp', 0.9),
+        loglin_start_exp_win_thr:         num('loglin-start-thr', 0.05),
+        loglin_thr_lowess:                num('loglin-thr-lowess', 0.05),
     };
 }
 
@@ -856,6 +915,7 @@ function buildLogLinPayload() {
         pt_min_size_of_win: intnum('loglin-pt-min-win', 7),
         threshold_of_exp: num('loglin-thr-exp', 0.9),
         start_exp_win_thr: num('loglin-start-thr', 0.05),
+        thr_lowess: num('loglin-thr-lowess', 0.05),
     };
 }
 
@@ -1071,5 +1131,6 @@ export {
     fitGrowthCurve, displayFittingResults, onFitShowIndividualChange,
     updateFitPlot, plotFittedCurve,
     fitLogLinCurve, displayLogLinResults, plotLogLinCurve, toggleLogLinOptions,
+    onFitSmoothingChange, onLogLinSmoothingChange, onLogLinWindowTypeChange,
     buildLogLinCompanionPayload, renderLogLinCompanion,
 };
