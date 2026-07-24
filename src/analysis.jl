@@ -394,6 +394,33 @@ function _run_fit_attempt(
 
     data = GrowthData(reshape(od_fit, 1, :), time_fit, [label])
 
+    # LOWESS is not range-preserving: near the start of a blank-corrected
+    # curve it can overshoot below zero even though every input OD is positive.
+    # The legacy ODE fitter evaluates log(OD) when reporting the empirical
+    # growth rate, so a non-positive smoothed value can make the solver return
+    # an empty trajectory and ultimately raise BoundsError(Base.OneTo(0), (0,)).
+    #
+    # Preprocess LOWESS here so we can restore the positive lower bound before
+    # fitting. Disable smoothing in the subsequent kinbiont_fit call to ensure
+    # LOWESS is still applied exactly once.
+    fit_smooth_method = smooth_method
+    if smooth_method == :lowess
+        lowess_opts = FitOptions(
+            scattering_correction = false,
+            smooth                = true,
+            smooth_method         = :lowess,
+            lowess_frac           = lowess_frac,
+        )
+        data = preprocess(data, lowess_opts)
+        od_floor = max(minimum(od_fit), eps(Float64))
+        data = GrowthData(
+            max.(data.curves, od_floor),
+            data.times,
+            data.labels,
+        )
+        fit_smooth_method = :none
+    end
+
     if !isempty(model_names)
         models = [MODEL_REGISTRY[m] for m in model_names if haskey(MODEL_REGISTRY, m)]
         model_keys = [m for m in model_names if haskey(MODEL_REGISTRY, m)]
@@ -426,8 +453,8 @@ function _run_fit_attempt(
 
     opts = FitOptions(
         scattering_correction           = false,
-        smooth                          = smooth_method != :none,
-        smooth_method                   = smooth_method,
+        smooth                          = fit_smooth_method != :none,
+        smooth_method                   = fit_smooth_method,
         smooth_pt_avg                   = smooth_pt_avg,
         lowess_frac                     = lowess_frac,
         gaussian_h_mult                 = gaussian_h_mult,

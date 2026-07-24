@@ -198,6 +198,10 @@ end
         @test body[:preprocessing][:smooth] == true
         @test string(body[:preprocessing][:smooth_method]) == method
         @test !isempty(body[:smoothed_od])
+        if method == "lowess"
+            @test all(isfinite, Float64.(body[:smoothed_od]))
+            @test minimum(Float64.(body[:smoothed_od])) > 0.0
+        end
     end
 end
 
