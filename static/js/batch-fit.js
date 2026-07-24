@@ -554,6 +554,15 @@ function displayBatchResults(data) {
 // CSV download (client-side)
 // ---------------------------------------------------------------------------
 
+// Extract a well name and reason from a batch error string such as
+// "Well 'A3': insufficient data points". Falls back to the whole string.
+function _parseBatchError(e) {
+    const s = String(e);
+    const m = s.match(/Well\s+'([^']+)'\s*:?\s*(.*)$/i);
+    if (m) return { well: m[1], reason: (m[2] || '').trim() || s };
+    return { well: '', reason: s };
+}
+
 function downloadBatchCSV() {
     const data = state.lastBatchFitData;
     if (!data || !data.results || data.results.length === 0) return;
@@ -636,6 +645,31 @@ function downloadBatchCSV() {
         });
         filenameSuffix = 'batch_fit';
     }
+
+    // Append status columns and rows for skipped (flat) and failed wells, so the
+    // downloaded CSV is a complete record rather than successful fits only.
+    const statusCols = ['status', 'status_reason'];
+    const nDataCols = headers.length;
+    headers = [...headers, ...statusCols];
+    rows = rows.map(r => [...r, 'ok', '']);
+
+    const skippedList = Array.isArray(data.skipped) ? data.skipped : [];
+    skippedList.forEach(s => {
+        const row = new Array(nDataCols).fill('');
+        row[0] = experiment;
+        row[1] = s.well ?? '';
+        rows.push([...row, 'skipped', s.reason ?? '']);
+    });
+
+    const errorList = (data.summary && Array.isArray(data.summary.errors))
+        ? data.summary.errors : [];
+    errorList.forEach(e => {
+        const { well, reason } = _parseBatchError(e);
+        const row = new Array(nDataCols).fill('');
+        row[0] = experiment;
+        row[1] = well;
+        rows.push([...row, 'failed', reason]);
+    });
 
     const csvContent = [headers, ...rows]
         .map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))

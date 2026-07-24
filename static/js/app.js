@@ -33,7 +33,7 @@ import { initBatchFitTab, loadBatchFitModels, loadBatchFitExperiments,
          onBatchLogLinSmoothingChange, onBatchLogLinWindowTypeChange,
          selectAllBatchModels, clearAllBatchModels,
          runBatchFit, displayBatchResults, downloadBatchCSV,
-         downloadBatchFittedCurvesCSV } from './batch-fit.js?v=20260724-3';
+         downloadBatchFittedCurvesCSV } from './batch-fit.js?v=20260724-4';
 import { onFitResultsFileChange, onFeatureMatrixFileChange, updateMlRunBtn,
          runMlAnalysis, onCorrParamChange, onCorrZoomToggle, onMlLabelColChange,
          downloadMlResultsCSV } from './ml-analysis.js';

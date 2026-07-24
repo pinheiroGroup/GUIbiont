@@ -561,23 +561,27 @@ end
             "current_well" => job["current_well"],
         )
         if job["status"] == "done"
+            # Log-linear jobs do not populate every parametric-fit metadata key
+            # (e.g. `smooth`, `smooth_window`, optimizer tolerances, blank
+            # fields), so read optional metadata with defaults rather than
+            # bracket access, which would raise a KeyError and 500 the endpoint.
             resp["experiment"]  = job["experiment"]
             resp["model"]       = job["model"]
             resp["model_names"] = job["model_names"]
-            resp["maxiters"]    = job["maxiters"]
-            resp["abstol"]      = job["abstol"]
-            resp["smooth"]      = job["smooth"]
-            resp["smooth_method"] = job["smooth_method"]
-            resp["smooth_window"] = job["smooth_window"]
-            resp["smooth_pt_avg"] = job["smooth_pt_avg"]
-            resp["lowess_frac"] = job["lowess_frac"]
-            resp["gaussian_h_mult"] = job["gaussian_h_mult"]
-            resp["blank_subtraction"] = job["blank_subtraction"]
-            resp["blank_method"]      = job["blank_method"]
-            resp["blank_value"]       = job["blank_value"]
-            resp["blank_timeseries"]  = job["blank_timeseries"]
+            resp["maxiters"]    = get(job, "maxiters", 0)
+            resp["abstol"]      = get(job, "abstol", 0.0)
+            resp["smooth"]      = get(job, "smooth", false)
+            resp["smooth_method"] = get(job, "smooth_method", "none")
+            resp["smooth_window"] = get(job, "smooth_window", 0)
+            resp["smooth_pt_avg"] = get(job, "smooth_pt_avg", 7)
+            resp["lowess_frac"] = get(job, "lowess_frac", 0.05)
+            resp["gaussian_h_mult"] = get(job, "gaussian_h_mult", 2.0)
+            resp["blank_subtraction"] = get(job, "blank_subtraction", false)
+            resp["blank_method"]      = get(job, "blank_method", "")
+            resp["blank_value"]       = get(job, "blank_value", 0.0)
+            resp["blank_timeseries"]  = get(job, "blank_timeseries", Float64[])
             resp["results"]     = job["results"]
-            resp["skipped"]     = job["skipped"]
+            resp["skipped"]     = get(job, "skipped", Any[])
             resp["summary"]     = job["summary"]
             delete!(BATCH_JOBS, job_id)
         end
