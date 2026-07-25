@@ -1018,23 +1018,24 @@ function renderClusterGrid(data) {
         let nearestToggleBtn = null;
         let nearestCountInput = null;
         if (cluster.is_non_growing) {
-            nearestCountInput = document.createElement('input');
-            nearestCountInput.type = 'number';
-            nearestCountInput.min = '1';
-            nearestCountInput.value = '5';
-            nearestCountInput.className = 'cluster-nearest-count-input';
-            nearestCountInput.title = 'Number of nearest curves to pull from other clusters';
-            nearestCountInput.addEventListener('click', event => event.stopPropagation());
-            nearestCountInput.addEventListener('mousedown', event => event.stopPropagation());
-
             nearestToggleBtn = document.createElement('button');
             nearestToggleBtn.type = 'button';
             nearestToggleBtn.className = 'cluster-drill-nav-btn';
             nearestToggleBtn.textContent = '🔎 Nearest curves';
             nearestToggleBtn.title = 'Plot the nearest curves from other clusters (incl. noise, for DBSCAN) to check for growth-negative candidates';
 
-            drillNav.appendChild(nearestCountInput);
+            nearestCountInput = document.createElement('input');
+            nearestCountInput.type = 'number';
+            nearestCountInput.min = '1';
+            nearestCountInput.value = '5';
+            nearestCountInput.className = 'cluster-nearest-count-input';
+            nearestCountInput.title = 'Number of nearest curves to pull from other clusters';
+            nearestCountInput.style.display = 'none';
+            nearestCountInput.addEventListener('click', event => event.stopPropagation());
+            nearestCountInput.addEventListener('mousedown', event => event.stopPropagation());
+
             drillNav.appendChild(nearestToggleBtn);
+            drillNav.appendChild(nearestCountInput);
         }
 
         cell.appendChild(drillNav);
@@ -1155,7 +1156,7 @@ function renderClusterGrid(data) {
                 nearestToggleBtn.classList.remove('active');
                 nearestToggleBtn.textContent = '🔎 Nearest curves';
             }
-            if (nearestCountInput) nearestCountInput.disabled = false;
+            if (nearestCountInput) nearestCountInput.style.display = 'none';
         }
 
         function moveClusterDrill(offset) {
@@ -1237,6 +1238,18 @@ function renderClusterGrid(data) {
             resetClusterZoom();
         };
 
+        function applyNearestCount() {
+            const requested = Math.max(1, parseInt(nearestCountInput.value, 10) || 5);
+            const candidates = computeNonGrowingNearestCandidates(data, clusterRegistry, cluster.id, requested);
+            if (!candidates.length) {
+                alert('No curves available in other clusters to compare against.');
+                return false;
+            }
+            nearestState.candidates = candidates;
+            renderClusterPlot();
+            return true;
+        }
+
         if (nearestToggleBtn) {
             nearestToggleBtn.onclick = event => {
                 event.stopPropagation();
@@ -1245,20 +1258,24 @@ function renderClusterGrid(data) {
                     renderClusterPlot();
                     return;
                 }
-                const requested = Math.max(1, parseInt(nearestCountInput.value, 10) || 5);
-                const candidates = computeNonGrowingNearestCandidates(data, clusterRegistry, cluster.id, requested);
-                if (!candidates.length) {
-                    alert('No curves available in other clusters to compare against.');
+                nearestState.active = true;
+                if (!applyNearestCount()) {
+                    nearestState.active = false;
                     return;
                 }
-                nearestCountInput.value = candidates.length;
-                nearestState.active = true;
-                nearestState.candidates = candidates;
                 nearestToggleBtn.classList.add('active');
                 nearestToggleBtn.textContent = '🔎 Exit nearest mode';
-                nearestCountInput.disabled = true;
-                renderClusterPlot();
+                nearestCountInput.style.display = '';
             };
+        }
+
+        if (nearestCountInput) {
+            // Live-editable while the mode is active: every change recomputes
+            // and redraws the candidate curves immediately.
+            nearestCountInput.addEventListener('input', () => {
+                if (!nearestState.active) return;
+                applyNearestCount();
+            });
         }
 
         exportCsvBtn.onclick = () => exportClusterCSV(cluster);

@@ -533,11 +533,6 @@
             text-align: center;
         }
 
-        .cluster-nearest-count-input:disabled {
-            color: #adb5bd;
-            background: #f1f3f5;
-        }
-
         .cluster-transfer-reference {
             display: flex;
             align-items: center;
