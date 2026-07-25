@@ -418,6 +418,13 @@ end
     non_growing_mask[non_growing_indices] .= true
     do_prescreen = !derive_non_growing_blanks && Bool(body.prescreen_constant) &&
                    !isempty(non_growing_indices)
+    # The user asked for a non-growing screen (pre-screen and/or trend test)
+    # but it matched nothing, so clustering silently fell back to running the
+    # selected algorithm on every curve with no sentinel reserved. Surface
+    # that so the GUI can tell the user why there's no non-growing cluster.
+    non_growing_screen_empty = !derive_non_growing_blanks &&
+        (Bool(body.prescreen_constant) || Bool(body.trend_test_flat)) &&
+        isempty(non_growing_indices)
 
     # ------------------------------------------------------------------
     # Clustering — delegate entirely to KinBiont preprocess
@@ -537,6 +544,8 @@ end
         "assignments"      => cluster_ids,
         "series_labels"    => labels_all,
         "prescreen_applied" => do_prescreen,
+        "non_growing_screen_empty" => non_growing_screen_empty,
+        "k_used"           => k_eff,
         "derived_non_growing_blanks" => derive_non_growing_blanks,
         "blank_subtracted" => blank_subtraction_applied,
         "blank_source"     => blank_source,

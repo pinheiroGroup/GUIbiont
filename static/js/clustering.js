@@ -548,6 +548,16 @@ function renderClusterBlankNotice(data) {
     notice.style.display = 'flex';
 }
 
+function renderNonGrowingEmptyNotice(data) {
+    const notice = document.getElementById('cluster-nongrowing-empty-notice');
+    if (!data.non_growing_screen_empty) { notice.style.display = 'none'; return; }
+    const method = data.cluster_method || 'the selected method';
+    const kNote = method === 'dbscan' ? '' : ` (k=${data.k_used ?? '?'})`;
+    notice.textContent =
+        `No curves matched the non-growing criteria — clustering ran ${method}${kNote} on all curves.`;
+    notice.style.display = 'flex';
+}
+
 async function downloadClusterAnnotatedFiles(button) {
     const data = state._lastClusterData;
     const source = data?._annotatedExportSource;
@@ -862,6 +872,7 @@ async function runClustering() {
         renderClusterGrid(data);
         renderQualityPanel(data);
         renderClusterBlankNotice(data);
+        renderNonGrowingEmptyNotice(data);
         // Reset panels that depend on a new run
         document.getElementById('cluster-sweep-panel').style.display = 'none';
         document.getElementById('cluster-compare-panel').style.display = state._savedClusterings.length ? 'block' : 'none';
