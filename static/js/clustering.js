@@ -4,7 +4,12 @@ import { state, API_BASE, CLUSTER_PALETTE } from './state.js';
 // K-means Clustering
 // ----------------------------------------------------------------
 
-
+// NaN-safe float read: unlike `parseFloat(v) || fallback`, this keeps a
+// legitimately entered 0 (e.g. tol_const=0) instead of clobbering it.
+function floatFieldOr(elementId, fallback) {
+    const parsed = parseFloat(document.getElementById(elementId).value);
+    return Number.isNaN(parsed) ? fallback : parsed;
+}
 
 function hexToRgba(hex, alpha) {
     const r = parseInt(hex.slice(1, 3), 16);
@@ -813,7 +818,7 @@ async function runClustering() {
         interp_quantile_lo:    interpQLo,
         interp_quantile_hi:    interpQHi,
         prescreen_constant:    usePrescreen,
-        prescreen_tol_const:   parseFloat(document.getElementById('cluster-prescreen-tol').value) || 1.5,
+        prescreen_tol_const:   floatFieldOr('cluster-prescreen-tol', 0.5),
         prescreen_q_low:       preQLo,
         prescreen_q_high:      preQHi,
         trend_test_flat:       useTrendTest,
@@ -860,7 +865,7 @@ async function runClustering() {
             interp_quantile_lo:  interpQLo,
             interp_quantile_hi:  interpQHi,
             prescreen_constant:  usePrescreen,
-            prescreen_tol_const: parseFloat(document.getElementById('cluster-prescreen-tol').value) || 1.5,
+            prescreen_tol_const: floatFieldOr('cluster-prescreen-tol', 0.5),
             prescreen_q_low:     preQLo,
             prescreen_q_high:    preQHi,
             trend_test_flat:     useTrendTest,
@@ -1666,7 +1671,7 @@ async function runClusterSweep() {
         interp_quantile_lo:  interpQLo,
         interp_quantile_hi:  interpQHi,
         prescreen_constant:  usePrescreen,
-        prescreen_tol_const: parseFloat(document.getElementById('cluster-prescreen-tol').value) || 1.5,
+        prescreen_tol_const: floatFieldOr('cluster-prescreen-tol', 0.5),
         prescreen_q_low:     preQLo,
         prescreen_q_high:    preQHi,
         trend_test_flat:     useTrendTest,

@@ -646,7 +646,7 @@ export function generateClusterCode(clusterData, withComments) {
     const interpQLo     = req.interp_quantile_lo ?? 0.05;
     const interpQHi     = req.interp_quantile_hi ?? 0.95;
     const prescreen     = req.prescreen_constant ?? false;
-    const prescreenTol  = req.prescreen_tol_const ?? 1.5;
+    const prescreenTol  = req.prescreen_tol_const ?? 0.5;
     const prescreenQLo  = req.prescreen_q_low ?? 0.05;
     const prescreenQHi  = req.prescreen_q_high ?? 0.95;
     const trendTest     = req.trend_test_flat ?? false;
@@ -702,7 +702,7 @@ export function generateClusterCode(clusterData, withComments) {
         ['blank_floor', (blankSub || deriveBlanks) ? '1e-4' : null],
         ['derive_non_growing_blanks', deriveBlanks ? 'true' : null],
         ['blank_prescreen_constant', deriveBlanks && prescreen ? 'true' : null],
-        ['blank_prescreen_tol', deriveBlanks && prescreen ? juliaFloat(prescreenTol, 1.5) : null],
+        ['blank_prescreen_tol', deriveBlanks && prescreen ? juliaFloat(prescreenTol, 0.5) : null],
         ['blank_prescreen_q_low', deriveBlanks && prescreen ? juliaFloat(prescreenQLo, 0.05) : null],
         ['blank_prescreen_q_high', deriveBlanks && prescreen ? juliaFloat(prescreenQHi, 0.95) : null],
         ['blank_trend_test', deriveBlanks && trendTest ? 'true' : null],
@@ -738,7 +738,7 @@ export function generateClusterCode(clusterData, withComments) {
         ['cluster_dbscan_eps', clusterMethod === 'dbscan' ? juliaFloat(dbscanEps, 1.0) : null],
         ['cluster_dbscan_minpts', clusterMethod === 'dbscan' ? String(dbscanMinPts) : null],
         ['cluster_prescreen_constant', prescreenApplied ? 'true' : null],
-        ['cluster_tol_const', prescreenApplied ? juliaFloat(prescreenTol, 1.5) : null],
+        ['cluster_tol_const', prescreenApplied ? juliaFloat(prescreenTol, 0.5) : null],
         ['cluster_q_low', prescreenApplied ? juliaFloat(prescreenQLo, 0.05) : null],
         ['cluster_q_high', prescreenApplied ? juliaFloat(prescreenQHi, 0.95) : null],
         // FitOptions defaults this to true, so false is an active override.

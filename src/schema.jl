@@ -208,7 +208,7 @@ Base.@kwdef mutable struct ClusterRequest
     interp_quantile_lo::Float64 = 0.05
     interp_quantile_hi::Float64 = 0.95
     prescreen_constant::Bool = false
-    prescreen_tol_const::Float64 = 1.5
+    prescreen_tol_const::Float64 = 0.5
     prescreen_q_low::Float64 = 0.05
     prescreen_q_high::Float64 = 0.95
     trend_test_flat::Bool = false
@@ -248,7 +248,7 @@ Base.@kwdef mutable struct ClusterSweepRequest
     interp_quantile_lo::Float64 = 0.05
     interp_quantile_hi::Float64 = 0.95
     prescreen_constant::Bool = false
-    prescreen_tol_const::Float64 = 1.5
+    prescreen_tol_const::Float64 = 0.5
     prescreen_q_low::Float64 = 0.05
     prescreen_q_high::Float64 = 0.95
     trend_test_flat::Bool = false

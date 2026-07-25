@@ -594,14 +594,14 @@
                                     <section class="cluster-detection-section">
                                         <div class="cluster-detection-heading">Quantile pre-screen</div>
                                         <p>
-                                            Before clustering, flag non-growing curves with <code>q-high &lt;= &tau; &times; q-low</code> and assign them to a dedicated sentinel cluster. Wider quantiles (q05/q95) protect weak growers; narrower quantiles make the screen more aggressive.
+                                            Before clustering, flag non-growing curves with <code>q-high &lt;= q-low + &tau; &times; |q-low|</code> and assign them to a dedicated sentinel cluster. Wider quantiles (q05/q95) protect weak growers; narrower quantiles make the screen more aggressive.
                                         </p>
                                         <div class="cluster-detection-controls">
                                             <label class="cluster-enable-control">
                                                 <input type="checkbox" id="cluster-prescreen"> Enable
                                             </label>
                                             <label for="cluster-prescreen-tol">τ (tolerance)</label>
-                                            <input type="number" id="cluster-prescreen-tol" value="1.5" min="1.0" max="10.0" step="0.1">
+                                            <input type="number" id="cluster-prescreen-tol" value="0.5" min="0.0" max="9.0" step="0.1">
                                             <label for="cluster-prescreen-qlo">q-low</label>
                                             <input type="number" id="cluster-prescreen-qlo" value="0.05" min="0" max="0.99" step="0.01">
                                             <label for="cluster-prescreen-qhi">q-high</label>
