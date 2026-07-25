@@ -1292,6 +1292,21 @@
         </div>
     </div>
 
+    <!-- Cluster: transfer curve into non-growing modal -->
+    <div id="cluster-transfer-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:10002; align-items:center; justify-content:center;">
+        <div style="background:#fff; border-radius:12px; width:min(380px,92vw); box-shadow:0 20px 60px rgba(0,0,0,0.35); padding:20px 22px;">
+            <h3 style="margin:0 0 14px; color:#343a40; font-size:1.05em;">Transfer into non-growing?</h3>
+            <div class="cluster-transfer-reference">
+                <span id="cluster-transfer-swatch" class="cluster-transfer-swatch"></span>
+                <span id="cluster-transfer-label" class="cluster-transfer-label"></span>
+            </div>
+            <div style="display:flex; justify-content:flex-end; gap:10px;">
+                <button id="cluster-transfer-no" class="btn" style="background:#e9ecef; color:#495057;">No</button>
+                <button id="cluster-transfer-yes" class="btn">Yes</button>
+            </div>
+        </div>
+    </div>
+
     <script type="module" src="/static/js/app.js?v=20260724-5"></script>
 </body>
 </html>

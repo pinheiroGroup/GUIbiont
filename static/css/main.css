@@ -522,6 +522,48 @@
             cursor: crosshair !important;
         }
 
+        .cluster-nearest-count-input {
+            width: 48px;
+            height: 28px;
+            padding: 0 6px;
+            border: 1px solid #ced4da;
+            border-radius: 5px;
+            font-size: 0.82em;
+            color: #495057;
+            text-align: center;
+        }
+
+        .cluster-nearest-count-input:disabled {
+            color: #adb5bd;
+            background: #f1f3f5;
+        }
+
+        .cluster-transfer-reference {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 18px;
+            padding: 8px 10px;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            background: #f8f9fa;
+        }
+
+        .cluster-transfer-swatch {
+            display: inline-block;
+            width: 28px;
+            height: 4px;
+            border-radius: 2px;
+            flex: 0 0 auto;
+        }
+
+        .cluster-transfer-label {
+            font-size: 0.9em;
+            color: #495057;
+            font-weight: 600;
+            word-break: break-word;
+        }
+
         .stats-title {
             font-size: 1.5em;
             font-weight: 600;
