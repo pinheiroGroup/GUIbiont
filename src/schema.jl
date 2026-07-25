@@ -266,6 +266,12 @@ Base.@kwdef mutable struct ClusterCompareRequest
     assignments2::Vector{Int} = Int[]
 end
 
+Base.@kwdef mutable struct ClusterQualityRequest
+    curves::Vector{Vector{Float64}} = Vector{Vector{Float64}}()
+    assignments::Vector{Int} = Int[]
+    series_labels::Vector{String} = String[]
+end
+
 # Register all structs with StructTypes for JSON deserialization + OpenAPI schema generation
 StructTypes.StructType(::Type{MultiExperimentInfoRequest}) = StructTypes.Mutable()
 StructTypes.StructType(::Type{GlobalSearchRequest}) = StructTypes.Mutable()
@@ -281,6 +287,7 @@ StructTypes.StructType(::Type{ClusterRequest}) = StructTypes.Mutable()
 StructTypes.StructType(::Type{ClusterAnnotatedFilesRequest}) = StructTypes.Mutable()
 StructTypes.StructType(::Type{ClusterSweepRequest}) = StructTypes.Mutable()
 StructTypes.StructType(::Type{ClusterCompareRequest}) = StructTypes.Mutable()
+StructTypes.StructType(::Type{ClusterQualityRequest}) = StructTypes.Mutable()
 StructTypes.StructType(::Type{BatchAverageRequest})   = StructTypes.Mutable()
 StructTypes.StructType(::Type{LogLinFitRequest})      = StructTypes.Mutable()
 StructTypes.StructType(::Type{BatchLogLinFitRequest}) = StructTypes.Mutable()

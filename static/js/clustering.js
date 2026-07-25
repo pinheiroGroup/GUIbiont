@@ -223,6 +223,238 @@ function nearestClusterSeriesIndices(time, seriesData, point, xRange, yRange, co
         .map(item => item.seriesIndex);
 }
 
+// ----------------------------------------------------------------
+// Non-growing cluster: pull nearest curves from other clusters and
+// allow transferring them in after manual review.
+// ----------------------------------------------------------------
+
+function computeNonGrowingNearestCandidates(data, clusterRegistry, nonGrowingId, count) {
+    const nonGrowingEntry = clusterRegistry.get(nonGrowingId);
+    if (!nonGrowingEntry) return [];
+    const { centroid } = getClusterCentroidData(nonGrowingEntry.cluster);
+    if (!Array.isArray(centroid) || !centroid.length) return [];
+    const time = data.time || [];
+    const candidates = [];
+    clusterRegistry.forEach((entry, id) => {
+        if (id === nonGrowingId) return;
+        const cluster = entry.cluster;
+        const seriesData = getClusterSeriesData(cluster);
+        seriesData.forEach((y, idx) => {
+            if (!Array.isArray(y)) return;
+            let sumSq = 0;
+            let n = 0;
+            const len = Math.min(time.length, y.length, centroid.length);
+            for (let i = 0; i < len; i += 1) {
+                const cv = Number(centroid[i]);
+                const yv = Number(y[i]);
+                if (!Number.isFinite(cv) || !Number.isFinite(yv)) continue;
+                const d = yv - cv;
+                sumSq += d * d;
+                n += 1;
+            }
+            if (!n) return;
+            candidates.push({
+                originClusterId: id,
+                originLabel: cluster.label || String(id),
+                originIndex: idx,
+                seriesId: getClusterSeriesId(cluster, idx),
+                distance: sumSq / n,
+            });
+        });
+    });
+    candidates.sort((a, b) => a.distance - b.distance);
+    return candidates.slice(0, count);
+}
+
+function buildNonGrowingCandidateTraces(data, clusterRegistry, cluster, candidates) {
+    const time = data.time;
+    const traces = [];
+    const ownSeries = getClusterSeriesData(cluster);
+    ownSeries.forEach(y => {
+        if (!Array.isArray(y)) return;
+        traces.push({
+            x: time,
+            y,
+            mode: 'lines',
+            type: 'scatter',
+            name: '',
+            line: { width: 0.6, color: 'rgba(170,170,170,0.32)' },
+            showlegend: false,
+            hoverinfo: 'skip',
+        });
+    });
+
+    candidates.forEach((candidate, i) => {
+        const originEntry = clusterRegistry.get(candidate.originClusterId);
+        const y = originEntry ? getClusterSeriesData(originEntry.cluster)[candidate.originIndex] : null;
+        if (!Array.isArray(y)) return;
+        const color = CLUSTER_DRILL_COLORS[i % CLUSTER_DRILL_COLORS.length];
+        candidate.color = color;
+        traces.push({
+            x: time,
+            y,
+            mode: 'lines',
+            type: 'scatter',
+            name: `${candidate.seriesId} (cl. ${candidate.originLabel})`,
+            customdata: time.map(() => candidate.seriesId),
+            line: { width: 2.5, color },
+            showlegend: true,
+            hovertemplate: 'ID: %{customdata}<br>Cluster: ' + candidate.originLabel + '<br>Time: %{x}<br>Value: %{y}<extra></extra>',
+        });
+    });
+
+    return traces;
+}
+
+function buildNonGrowingCandidateLayout(data, candidates, lensActive) {
+    return {
+        margin: { t: 28, r: 10, b: 40, l: 50 },
+        xaxis: { title: data.time_normalized ? 'Normalized time [0-1]' : 'Time' },
+        yaxis: { title: clusterPlotsUseNormalized() ? 'Normalized value (z-score)' : 'Value' },
+        legend: { x: 0, y: 1, orientation: 'h' },
+        title: { text: `${candidates.length} nearest curves from other clusters — click one to review`, font: { size: 14 } },
+        dragmode: lensActive ? 'zoom' : false,
+    };
+}
+
+function openClusterTransferModal(candidate, onConfirm) {
+    const modal = document.getElementById('cluster-transfer-modal');
+    if (!modal) return;
+    const swatch = document.getElementById('cluster-transfer-swatch');
+    const label = document.getElementById('cluster-transfer-label');
+    swatch.style.background = candidate.color || '#888';
+    label.textContent = `ID: ${candidate.seriesId}  ·  from Cluster ${candidate.originLabel}`;
+    modal.style.display = 'flex';
+
+    const yesBtn = document.getElementById('cluster-transfer-yes');
+    const noBtn = document.getElementById('cluster-transfer-no');
+    const cleanup = () => {
+        modal.style.display = 'none';
+        modal.onclick = null;
+        yesBtn.onclick = null;
+        noBtn.onclick = null;
+    };
+    modal.onclick = event => { if (event.target === modal) cleanup(); };
+    yesBtn.onclick = () => { cleanup(); onConfirm(); };
+    noBtn.onclick = () => { cleanup(); };
+}
+
+function computeCentroidAndSd(seriesArrays) {
+    if (!seriesArrays.length) return { centroid: [], sd: [] };
+    const len = Math.max(...seriesArrays.map(s => s.length));
+    const centroid = new Array(len).fill(null);
+    const sd = new Array(len).fill(null);
+    for (let t = 0; t < len; t += 1) {
+        const vals = seriesArrays.map(s => Number(s[t])).filter(Number.isFinite);
+        if (!vals.length) continue;
+        const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+        const variance = vals.length > 1
+            ? vals.reduce((a, b) => a + (b - mean) * (b - mean), 0) / (vals.length - 1)
+            : 0;
+        centroid[t] = mean;
+        sd[t] = Math.sqrt(variance);
+    }
+    return { centroid, sd };
+}
+
+function recomputeClusterCentroids(cluster) {
+    if (Array.isArray(cluster.series_data_raw) && cluster.series_data_raw.length) {
+        const { centroid, sd } = computeCentroidAndSd(cluster.series_data_raw);
+        cluster.centroid_raw = centroid;
+        cluster.centroid_raw_sd = sd;
+    }
+    if (Array.isArray(cluster.series_data_normalized) && cluster.series_data_normalized.length) {
+        const { centroid, sd } = computeCentroidAndSd(cluster.series_data_normalized);
+        cluster.centroid_normalized = centroid;
+        cluster.centroid_normalized_sd = sd;
+    }
+    cluster.centroid = clusterPlotsUseNormalized() ? cluster.centroid_normalized : cluster.centroid_raw;
+    cluster.centroid_sd = clusterPlotsUseNormalized() ? cluster.centroid_normalized_sd : cluster.centroid_raw_sd;
+}
+
+function transferCandidateToNonGrowing(data, clusterRegistry, nonGrowingId, candidate, nearestState) {
+    const originEntry = clusterRegistry.get(candidate.originClusterId);
+    const nonGrowingEntry = clusterRegistry.get(nonGrowingId);
+    if (!originEntry || !nonGrowingEntry) return;
+    const originCluster = originEntry.cluster;
+    const nonGrowingCluster = nonGrowingEntry.cluster;
+    const idx = candidate.originIndex;
+    if (idx < 0 || idx >= originCluster.series_labels.length) return;
+
+    const label = originCluster.series_labels[idx];
+    originCluster.series_labels.splice(idx, 1);
+    nonGrowingCluster.series_labels.push(label);
+
+    ['series_data_raw', 'series_data_normalized', 'series_metadata', 'series_meta'].forEach(key => {
+        if (Array.isArray(originCluster[key]) && originCluster[key].length > idx) {
+            const [item] = originCluster[key].splice(idx, 1);
+            if (!Array.isArray(nonGrowingCluster[key])) nonGrowingCluster[key] = [];
+            nonGrowingCluster[key].push(item);
+        }
+    });
+
+    if (Array.isArray(data.assignments) && Array.isArray(data.series_labels)) {
+        const globalIdx = data.series_labels.indexOf(label);
+        if (globalIdx >= 0) data.assignments[globalIdx] = nonGrowingCluster.id;
+    }
+
+    recomputeClusterCentroids(originCluster);
+    recomputeClusterCentroids(nonGrowingCluster);
+
+    nearestState.candidates = nearestState.candidates.filter(c => c !== candidate);
+    nearestState.candidates.forEach(c => {
+        if (c.originClusterId === candidate.originClusterId && c.originIndex > idx) {
+            c.originIndex -= 1;
+        }
+    });
+
+    // Tracked for the Julia code export, which reproduces this manual
+    // reassignment via Kinbiont.reassign_non_growing after re-clustering.
+    if (!Array.isArray(data._transferredToNonGrowing)) data._transferredToNonGrowing = [];
+    if (!data._transferredToNonGrowing.includes(label)) data._transferredToNonGrowing.push(label);
+    data._nonGrowingClusterId = nonGrowingCluster.id;
+
+    originEntry.refreshMeta();
+    nonGrowingEntry.refreshMeta();
+    originEntry.renderClusterPlot();
+    nonGrowingEntry.renderClusterPlot();
+
+    // Quality indices (silhouette, Dunn, ...) depend on full cluster
+    // membership, so they're recomputed server-side rather than duplicating
+    // Clustering.jl's numerics in JS.
+    refreshClusterQualityAfterTransfer(data);
+}
+
+async function refreshClusterQualityAfterTransfer(data) {
+    const curves = [];
+    const labels = [];
+    const ids = [];
+    data.clusters.forEach(cluster => {
+        const raw = cluster.series_data_raw || [];
+        raw.forEach((y, idx) => {
+            if (!Array.isArray(y)) return;
+            curves.push(y);
+            labels.push(cluster.series_labels[idx]);
+            ids.push(cluster.id);
+        });
+    });
+    if (!curves.length) return;
+    try {
+        const response = await fetch(`${API_BASE}/api/cluster-quality`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ curves, assignments: ids, series_labels: labels }),
+        });
+        if (!response.ok) return;
+        const result = await response.json();
+        data.quality = result.quality;
+        data.assignments = result.assignments;
+        renderQualityPanel(data);
+    } catch (err) {
+        console.error('Cluster quality recompute failed:', err);
+    }
+}
+
 function cloneClusterView(view) {
     return {
         selected: Array.isArray(view?.selected) ? [...view.selected] : null,
@@ -313,6 +545,16 @@ function renderClusterBlankNotice(data) {
         downloadClusterAnnotatedFiles(downloadButton));
 
     notice.replaceChildren(message, downloadButton);
+    notice.style.display = 'flex';
+}
+
+function renderNonGrowingEmptyNotice(data) {
+    const notice = document.getElementById('cluster-nongrowing-empty-notice');
+    if (!data.non_growing_screen_empty) { notice.style.display = 'none'; return; }
+    const method = data.cluster_method || 'the selected method';
+    const kNote = method === 'dbscan' ? '' : ` (k=${data.k_used ?? '?'})`;
+    notice.textContent =
+        `No curves matched the non-growing criteria — clustering ran ${method}${kNote} on all curves.`;
     notice.style.display = 'flex';
 }
 
@@ -630,6 +872,7 @@ async function runClustering() {
         renderClusterGrid(data);
         renderQualityPanel(data);
         renderClusterBlankNotice(data);
+        renderNonGrowingEmptyNotice(data);
         // Reset panels that depend on a new run
         document.getElementById('cluster-sweep-panel').style.display = 'none';
         document.getElementById('cluster-compare-panel').style.display = state._savedClusterings.length ? 'block' : 'none';
@@ -647,6 +890,7 @@ function renderClusterGrid(data) {
 
     const time = data.time;
     const clusters = data.clusters;
+    const clusterRegistry = new Map();
 
     // Build experiment → color map (labels may be "ExpName/WellName")
     const expColorMap = {};
@@ -661,6 +905,42 @@ function renderClusterGrid(data) {
     });
     const hasExperiments = Object.keys(expColorMap).length > 0;
 
+    // Rebuilds a cell's title count + series list from its (possibly mutated)
+    // cluster object — used on initial render and after a curve transfer.
+    function refreshClusterCellMeta(entry) {
+        const { cluster, titleText, seriesList } = entry;
+        const total = cluster.n_total ?? cluster.series_labels.length;
+        const shown = cluster.series_labels.length;
+        const clusterLabel = cluster.label || String(cluster.id);
+        titleText.textContent = total > shown
+            ? `Cluster ${clusterLabel}  (${total} series, showing ${shown})`
+            : `Cluster ${clusterLabel}  (${total} series)`;
+
+        seriesList.innerHTML = '';
+        if (hasExperiments) {
+            const byExp = {};
+            cluster.series_labels.forEach(label => {
+                const slash = label.indexOf('/');
+                const exp  = slash >= 0 ? label.slice(0, slash) : '';
+                const well = slash >= 0 ? label.slice(slash + 1) : label;
+                if (!byExp[exp]) byExp[exp] = [];
+                byExp[exp].push(well);
+            });
+            Object.entries(byExp).forEach(([exp, wells]) => {
+                const line = document.createElement('div');
+                line.className = 'series-line';
+                const color = expColorMap[exp] || '#888';
+                line.innerHTML = `<span style="color:${color};font-weight:600;">${exp}:</span> ${wells.join(', ')}`;
+                seriesList.appendChild(line);
+            });
+        } else {
+            const line = document.createElement('div');
+            line.className = 'series-line';
+            line.textContent = cluster.series_labels.join(', ');
+            seriesList.appendChild(line);
+        }
+    }
+
     clusters.forEach(cluster => {
         const cell = document.createElement('div');
         cell.className = 'cluster-cell';
@@ -670,12 +950,6 @@ function renderClusterGrid(data) {
         title.className = 'cluster-cell-title';
         const titleText = document.createElement('span');
         titleText.className = 'cluster-title-text';
-        const clusterLabel = cluster.label || String(cluster.id);
-        const total = cluster.n_total ?? cluster.series_labels.length;
-        const shown = cluster.series_labels.length;
-        titleText.textContent = total > shown
-            ? `Cluster ${clusterLabel}  (${total} series, showing ${shown})`
-            : `Cluster ${clusterLabel}  (${total} series)`;
         title.appendChild(titleText);
 
         if (cluster.is_non_growing) {
@@ -751,6 +1025,30 @@ function renderClusterGrid(data) {
         drillNav.appendChild(zoomBtn);
         drillNav.appendChild(resetZoomBtn);
         drillNav.appendChild(fsNormalizeLabel);
+
+        let nearestToggleBtn = null;
+        let nearestCountInput = null;
+        if (cluster.is_non_growing) {
+            nearestToggleBtn = document.createElement('button');
+            nearestToggleBtn.type = 'button';
+            nearestToggleBtn.className = 'cluster-drill-nav-btn';
+            nearestToggleBtn.textContent = '🔎 Nearest curves';
+            nearestToggleBtn.title = 'Plot the nearest curves from other clusters (incl. noise, for DBSCAN) to check for growth-negative candidates';
+
+            nearestCountInput = document.createElement('input');
+            nearestCountInput.type = 'number';
+            nearestCountInput.min = '1';
+            nearestCountInput.value = '5';
+            nearestCountInput.className = 'cluster-nearest-count-input';
+            nearestCountInput.title = 'Number of nearest curves to pull from other clusters';
+            nearestCountInput.style.display = 'none';
+            nearestCountInput.addEventListener('click', event => event.stopPropagation());
+            nearestCountInput.addEventListener('mousedown', event => event.stopPropagation());
+
+            drillNav.appendChild(nearestToggleBtn);
+            drillNav.appendChild(nearestCountInput);
+        }
+
         cell.appendChild(drillNav);
 
         // Plot div
@@ -763,33 +1061,14 @@ function renderClusterGrid(data) {
         // Series list — group by experiment
         const seriesList = document.createElement('div');
         seriesList.className = 'cluster-series-list';
-        if (hasExperiments) {
-            // Group wells by experiment
-            const byExp = {};
-            cluster.series_labels.forEach(label => {
-                const slash = label.indexOf('/');
-                const exp  = slash >= 0 ? label.slice(0, slash) : '';
-                const well = slash >= 0 ? label.slice(slash + 1) : label;
-                if (!byExp[exp]) byExp[exp] = [];
-                byExp[exp].push(well);
-            });
-            Object.entries(byExp).forEach(([exp, wells]) => {
-                const line = document.createElement('div');
-                line.className = 'series-line';
-                const color = expColorMap[exp] || '#888';
-                line.innerHTML = `<span style="color:${color};font-weight:600;">${exp}:</span> ${wells.join(', ')}`;
-                seriesList.appendChild(line);
-            });
-        } else {
-            // File mode — just list all labels
-            const line = document.createElement('div');
-            line.className = 'series-line';
-            line.textContent = cluster.series_labels.join(', ');
-            seriesList.appendChild(line);
-        }
         cell.appendChild(seriesList);
 
         grid.appendChild(cell);
+
+        const entry = { cluster, cell, titleText, seriesList };
+        clusterRegistry.set(cluster.id, entry);
+        refreshClusterCellMeta(entry);
+        entry.refreshMeta = () => refreshClusterCellMeta(entry);
 
         const viewState = {
             history: [{ selected: null, xRange: null, yRange: null }],
@@ -798,6 +1077,10 @@ function renderClusterGrid(data) {
             suppressRelayout: false,
             displayNormalized: clusterPlotsUseNormalized(),
         };
+        entry.viewState = viewState;
+
+        const nearestState = { active: false, candidates: [] };
+        entry.nearestState = nearestState;
 
         function currentView() {
             return viewState.history[viewState.index] || { selected: null, xRange: null, yRange: null };
@@ -806,11 +1089,13 @@ function renderClusterGrid(data) {
         function updateDrillNav() {
             const isFs = cell.classList.contains('fullscreen');
             const view = currentView();
+            const nearestActive = nearestState.active;
             drillNav.hidden = !isFs;
-            drillPrevBtn.disabled = viewState.index <= 0;
-            drillHomeBtn.disabled = viewState.index === 0;
-            drillNextBtn.disabled = viewState.index >= viewState.history.length - 1;
-            resetZoomBtn.disabled = !view.xRange && !view.yRange;
+            drillPrevBtn.disabled = nearestActive || viewState.index <= 0;
+            drillHomeBtn.disabled = nearestActive || viewState.index === 0;
+            drillNextBtn.disabled = nearestActive || viewState.index >= viewState.history.length - 1;
+            resetZoomBtn.disabled = nearestActive || (!view.xRange && !view.yRange);
+            zoomBtn.disabled = nearestActive;
             zoomBtn.classList.toggle('active', viewState.lensActive);
             fsNormalizeInput.checked = clusterPlotsUseNormalized();
             plotDiv.classList.toggle('cluster-zoom-active', isFs && viewState.lensActive);
@@ -829,6 +1114,19 @@ function renderClusterGrid(data) {
         }
 
         function renderClusterPlot() {
+            if (nearestState.active) {
+                const traces = buildNonGrowingCandidateTraces(data, clusterRegistry, cluster, nearestState.candidates);
+                const layout = buildNonGrowingCandidateLayout(data, nearestState.candidates, viewState.lensActive);
+                viewState.suppressRelayout = true;
+                return Plotly.react(plotDiv, traces, layout, { responsive: true, displayModeBar: false }).then(() => {
+                    Plotly.Plots.resize(plotDiv);
+                    viewState.suppressRelayout = false;
+                    updateDrillNav();
+                }).catch((err) => {
+                    viewState.suppressRelayout = false;
+                    console.error('Cluster nearest-curves render failed:', err);
+                });
+            }
             const displayNormalized = clusterPlotsUseNormalized();
             if (viewState.displayNormalized !== displayNormalized) {
                 viewState.history = viewState.history.map(view => ({
@@ -852,12 +1150,24 @@ function renderClusterGrid(data) {
             });
         }
         state._clusterPlotRefreshers.push(renderClusterPlot);
+        entry.renderClusterPlot = renderClusterPlot;
 
         function resetClusterDrill() {
             viewState.history = [{ selected: null, xRange: null, yRange: null }];
             viewState.index = 0;
             viewState.lensActive = false;
             return renderClusterPlot();
+        }
+
+        function exitNearestMode() {
+            if (!nearestState.active) return;
+            nearestState.active = false;
+            nearestState.candidates = [];
+            if (nearestToggleBtn) {
+                nearestToggleBtn.classList.remove('active');
+                nearestToggleBtn.textContent = '🔎 Nearest curves';
+            }
+            if (nearestCountInput) nearestCountInput.style.display = 'none';
         }
 
         function moveClusterDrill(offset) {
@@ -910,6 +1220,7 @@ function renderClusterGrid(data) {
                 updateDrillNav();
             Plotly.Plots.resize(plotDiv);
             } else {
+                exitNearestMode();
                 resetClusterDrill();
             }
         };
@@ -938,10 +1249,50 @@ function renderClusterGrid(data) {
             resetClusterZoom();
         };
 
+        function applyNearestCount() {
+            const requested = Math.max(1, parseInt(nearestCountInput.value, 10) || 5);
+            const candidates = computeNonGrowingNearestCandidates(data, clusterRegistry, cluster.id, requested);
+            if (!candidates.length) {
+                alert('No curves available in other clusters to compare against.');
+                return false;
+            }
+            nearestState.candidates = candidates;
+            renderClusterPlot();
+            return true;
+        }
+
+        if (nearestToggleBtn) {
+            nearestToggleBtn.onclick = event => {
+                event.stopPropagation();
+                if (nearestState.active) {
+                    exitNearestMode();
+                    renderClusterPlot();
+                    return;
+                }
+                nearestState.active = true;
+                if (!applyNearestCount()) {
+                    nearestState.active = false;
+                    return;
+                }
+                nearestToggleBtn.classList.add('active');
+                nearestToggleBtn.textContent = '🔎 Exit nearest mode';
+                nearestCountInput.style.display = '';
+            };
+        }
+
+        if (nearestCountInput) {
+            // Live-editable while the mode is active: every change recomputes
+            // and redraws the candidate curves immediately.
+            nearestCountInput.addEventListener('input', () => {
+                if (!nearestState.active) return;
+                applyNearestCount();
+            });
+        }
+
         exportCsvBtn.onclick = () => exportClusterCSV(cluster);
         exportPngBtn.onclick = () => Plotly.downloadImage(plotDiv, {
             format: 'png', width: 900, height: 500,
-            filename: `cluster_${clusterLabel}`
+            filename: `cluster_${cluster.label || cluster.id}`
         });
 
         plotDiv.addEventListener('click', event => {
@@ -951,6 +1302,24 @@ function renderClusterGrid(data) {
             const point = getPlotClickPoint(plotDiv, event);
             if (!point) return;
             const currentRange = getCurrentClusterPlotRange(plotDiv);
+
+            if (nearestState.active) {
+                const candidateSeries = nearestState.candidates.map(candidate => {
+                    const originEntry = clusterRegistry.get(candidate.originClusterId);
+                    const y = originEntry ? getClusterSeriesData(originEntry.cluster)[candidate.originIndex] : null;
+                    return Array.isArray(y) ? y : [];
+                });
+                const nearestIdx = nearestClusterSeriesIndices(
+                    time, candidateSeries, point, currentRange.xRange, currentRange.yRange, 1
+                );
+                if (!nearestIdx.length) return;
+                const candidate = nearestState.candidates[nearestIdx[0]];
+                openClusterTransferModal(candidate, () => {
+                    transferCandidateToNonGrowing(data, clusterRegistry, cluster.id, candidate, nearestState);
+                });
+                return;
+            }
+
             const selected = nearestClusterSeriesIndices(
                 time,
                 getClusterSeriesData(cluster),

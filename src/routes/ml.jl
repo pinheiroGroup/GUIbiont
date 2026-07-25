@@ -418,6 +418,13 @@ end
     non_growing_mask[non_growing_indices] .= true
     do_prescreen = !derive_non_growing_blanks && Bool(body.prescreen_constant) &&
                    !isempty(non_growing_indices)
+    # The user asked for a non-growing screen (pre-screen and/or trend test)
+    # but it matched nothing, so clustering silently fell back to running the
+    # selected algorithm on every curve with no sentinel reserved. Surface
+    # that so the GUI can tell the user why there's no non-growing cluster.
+    non_growing_screen_empty = !derive_non_growing_blanks &&
+        (Bool(body.prescreen_constant) || Bool(body.trend_test_flat)) &&
+        isempty(non_growing_indices)
 
     # ------------------------------------------------------------------
     # Clustering — delegate entirely to KinBiont preprocess
@@ -537,6 +544,8 @@ end
         "assignments"      => cluster_ids,
         "series_labels"    => labels_all,
         "prescreen_applied" => do_prescreen,
+        "non_growing_screen_empty" => non_growing_screen_empty,
+        "k_used"           => k_eff,
         "derived_non_growing_blanks" => derive_non_growing_blanks,
         "blank_subtracted" => blank_subtraction_applied,
         "blank_source"     => blank_source,
@@ -856,6 +865,65 @@ end
     end
 
     return _cluster_comparison(ids1, ids2)
+end
+
+# ------------------------------------------------------------------
+# /api/cluster-quality — recompute quality indices for an arbitrary
+# curves/assignment pairing (used after a manual non-growing transfer in the
+# GUI, which mutates cluster membership without rerunning the algorithm).
+# ------------------------------------------------------------------
+@post "/api/cluster-quality" function(req::HTTP.Request, body::Json{ClusterQualityRequest})
+    body   = body.payload
+    curves = body.curves
+    ids    = body.assignments
+    labels = body.series_labels
+
+    (length(curves) == length(ids) == length(labels)) ||
+        return json(Dict("error" => "curves, assignments, and series_labels must have the same length"); status=400)
+    isempty(curves) && return json(Dict("error" => "curves must not be empty"); status=400)
+
+    ncols = length(curves[1])
+    all(c -> length(c) == ncols, curves) ||
+        return json(Dict("error" => "all curves must have the same length"); status=400)
+    X = Matrix{Float64}(undef, length(curves), ncols)
+    for (i, c) in enumerate(curves)
+        X[i, :] = c
+    end
+
+    # Quality indices exclude DBSCAN noise (id 0), matching /api/cluster.
+    noise_mask   = ids .!= 0
+    ids_for_qual = ids[noise_mask]
+    X_for_qual   = X[noise_mask, :]
+
+    ids_remapped, _ = _remap_ids(ids_for_qual)
+    X_for_qual_z = _zscore_rows(X_for_qual)
+    quality = _cluster_quality_indices(X_for_qual_z, ids_remapped)
+
+    sil_per_cluster = Dict{String,Any}()
+    if quality["silhouettes"] !== nothing
+        sil_vals = quality["silhouettes"]
+        for (orig_id, remap_id) in zip(ids_for_qual, ids_remapped)
+            mask_c = ids_for_qual .== orig_id
+            sil_per_cluster[string(orig_id)] = mean(sil_vals[mask_c])
+        end
+    end
+    quality["silhouette_per_cluster"] = sil_per_cluster
+
+    if quality["silhouettes"] !== nothing
+        sil_vals       = quality["silhouettes"]
+        sil_per_series = Vector{Union{Float64,Nothing}}(nothing, length(ids))
+        nonnoise_i     = findall(noise_mask)
+        for (j, gi) in enumerate(nonnoise_i)
+            sil_per_series[gi] = sil_vals[j]
+        end
+        quality["silhouettes"] = sil_per_series
+    end
+    quality["series_labels"] = labels
+
+    return sanitize_for_json(Dict(
+        "quality"     => quality,
+        "assignments" => ids,
+    ))
 end
 
 @post "/api/ml-downstream" function(req::HTTP.Request, body::Json{MLDownstreamRequest})

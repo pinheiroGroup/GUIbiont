@@ -658,6 +658,13 @@ export function generateClusterCode(clusterData, withComments) {
     const dbscanMinPts  = req.dbscan_min_pts ?? 3;
     const isFileMode    = req._mode === 'file';
     const smoothEnabled = smoothMethod !== 'none';
+    // Curves manually moved into the non-growing cluster via GUIbiont's
+    // "Nearest curves" review after clustering. Only emitted when used.
+    const transferredLabels  = Array.isArray(clusterData._transferredToNonGrowing)
+        ? clusterData._transferredToNonGrowing : [];
+    const nonGrowingClusterId = clusterData._nonGrowingClusterId;
+    const hasTransfers = transferredLabels.length > 0 && Number.isFinite(nonGrowingClusterId);
+    const clusterIdsExpr = hasTransfers ? 'cluster_ids' : 'processed.clusters';
     // Export the selected workflow, not a decision inferred from its result.
     // Re-running the detector on the source data determines whether a sentinel
     // is actually populated.
@@ -807,6 +814,19 @@ const N_CLUSTER_LABELS = min(N_REQUESTED_CLUSTERS, size(cluster_data.curves, 1))
 `
         : '';
 
+    const transferBlock = hasTransfers
+        ? `
+
+# Curves manually reviewed with "Nearest curves" on the non-growing cluster in
+# GUIbiont and confirmed as non-growing after clustering.
+TRANSFERRED_TO_NON_GROWING = ${juliaStringArray(transferredLabels)}
+NON_GROWING_CLUSTER_ID = ${nonGrowingClusterId}
+cluster_ids = reassign_non_growing(
+    processed.clusters, cluster_data.labels, TRANSFERRED_TO_NON_GROWING, NON_GROWING_CLUSTER_ID,
+)
+`
+        : '';
+
     const code = `\
 # ================================================================
 # Growth curve clustering — exported from GUIbiont
@@ -829,9 +849,9 @@ cluster_opts = FitOptions(
 ${juliaKeywordLines(clusterKeywords)}
 )
 
-processed = preprocess(cluster_data, cluster_opts)
+processed = preprocess(cluster_data, cluster_opts)${transferBlock}
 # Quality indices are computed on the same data that was passed to clustering.
-quality = cluster_quality_indices(cluster_data.curves, processed.clusters)
+quality = cluster_quality_indices(cluster_data.curves, ${clusterIdsExpr})
 quality_summary = Dict(
     "silhouette_mean"   => quality["silhouette_mean"],
     "dunn"              => quality["dunn"],
@@ -840,11 +860,11 @@ quality_summary = Dict(
     "xie_beni"          => quality["xie_beni"],
 )
 
-cluster_counts_all = Dict(k => count(==(k), processed.clusters)
-                          for k in sort(unique(processed.clusters)))
+cluster_counts_all = Dict(k => count(==(k), ${clusterIdsExpr})
+                          for k in sort(unique(${clusterIdsExpr})))
 
 # Optional diagnostics:
-#println("Cluster assignments: ", processed.clusters)
+#println("Cluster assignments: ", ${clusterIdsExpr})
 println("Cluster counts:      ", cluster_counts_all)
 println("${costLabel}: ", processed.wcss)
 println("Quality summary:     ", quality_summary)
