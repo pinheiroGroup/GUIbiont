@@ -788,10 +788,14 @@ function fit_well_data(
     # — keep these in sync if you tune blank handling here.
     # ────────────────────────────────────────────────────────────────────
 
-    # Optional log-linear sliding-window μ_max companion fit. Runs on the same
-    # blank-corrected, unsmoothed od_for_fit. Parametric smoothing happens only
-    # inside _run_fit_attempt, so the companion cannot smooth the same data twice.
-    # The estimates remain directly comparable. When the detector can't locate
+    # Optional log-linear sliding-window μ_max companion fit. Runs on a curve
+    # preprocessed exactly as the standalone /api/fit-curve-loglin route does,
+    # i.e. with the log-linear unblanked floor of 1e-4 rather than the 0.01
+    # floor the parametric relative-error loss needs. Keeping the two floors
+    # apart is what makes these columns reproduce the exported
+    # kinbiont_batch_loglin call; sharing od_for_fit silently diverged for any
+    # unblanked curve dipping below 0.01. Parametric smoothing happens only
+    # inside _run_fit_attempt, so the companion cannot smooth the same data twice. When the detector can't locate
     # a window (very short curves, noisy data, persistent lag), we mark the
     # log-lin fields as NaN with `loglin_converged = false` rather than
     # failing the whole well — the parametric model fit remains valid.
@@ -812,9 +816,17 @@ function fit_well_data(
         # log-lin needs ≥ pt_deriv + pt_min_win + 2 points; guard so we don't
         # raise from inside Kinbiont and pollute the error channel.
         min_pts = loglin_pt_smoothing_derivative + loglin_pt_min_size_of_win + 2
-        if length(od_for_fit) >= max(10, min_pts)
+        od_for_loglin = _prepare_fit_curve(
+            time_numeric, od_raw, label;
+            blank_value,
+            subtract_blank,
+            blank_method,
+            blank_timeseries,
+            unblanked_floor=1e-4,
+        ).od_for_fit
+        if length(od_for_loglin) >= max(10, min_pts)
             try
-                data_mat = Matrix(transpose(hcat(time_numeric, od_for_fit)))
+                data_mat = Matrix(transpose(hcat(time_numeric, od_for_loglin)))
                 raw = Kinbiont.fitting_one_well_Log_Lin(
                     data_mat,
                     label,
