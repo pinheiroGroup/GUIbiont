@@ -283,7 +283,11 @@ export function generateFitCode(fitData, withComments) {
     const companionKeywords = computeLoglin
         ? juliaKeywordLines([
             ...blankKeywords,
-            ['unblanked_floor', '0.01'],
+            // The companion is a log-linear fit, so it takes the log-linear
+            // floor (1e-4), not the 0.01 the parametric relative-error loss
+            // needs. src/analysis.jl preprocesses it the same way; using 0.01
+            // here made the export disagree with the GUI for low-OD curves.
+            ['unblanked_floor', '1e-4'],
             ...companionLogLinKeywordPairs(loglinSettings),
         ])
         : '';
