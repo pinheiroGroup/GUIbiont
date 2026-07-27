@@ -313,6 +313,7 @@ async function runBatchFit() {
                 wells,
                 blank_subtraction: document.getElementById('batch-fit-blank-subtraction').checked,
                 blank_method:      document.getElementById('batch-fit-blank-method').value,
+                override_blank_wells: state._acceptedBlankWells || [],
                 skip_flat_threshold: skipFlat,
                 ...ll,
             };
@@ -341,6 +342,7 @@ async function runBatchFit() {
                 ...modelPayload,
                 blank_subtraction: document.getElementById('batch-fit-blank-subtraction').checked,
                 blank_method: document.getElementById('batch-fit-blank-method').value,
+                override_blank_wells: state._acceptedBlankWells || [],
                 ...buildOptimizerPayload('batch-fit'),
                 maxiters,
                 abstol,

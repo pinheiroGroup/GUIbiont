@@ -283,6 +283,7 @@ async function onFittingExperimentChange() {
         return;
     }
     state._lastBlankAnalysis = null;
+    state._acceptedBlankWells = [];
     document.getElementById('blank-analysis-card').style.display = 'none';
     
     try {
@@ -354,7 +355,9 @@ function onBlankMethodChange() {
 }
 
 // Called when user accepts auto-detected blank wells.
-// Injects them into _lastBlankAnalysis so the full card renders.
+// Injects them into _lastBlankAnalysis so the full card renders, and records
+// them in _acceptedBlankWells so the fit requests below carry them as
+// override_blank_wells — otherwise accepting would only restyle the card.
 async function useAutoDetectedBlanks(wells) {
     if (!wells || !wells.length) return;
     const experiment = document.getElementById('fitting-experiment').value;
@@ -368,7 +371,8 @@ async function useAutoDetectedBlanks(wells) {
         });
         if (!resp.ok) return;
         const data = await resp.json();
-        state._lastBlankAnalysis = data;
+        state._lastBlankAnalysis  = data;
+        state._acceptedBlankWells = wells.slice();
         renderBlankAnalysisCard(data);
     } catch (e) {
         console.error('useAutoDetectedBlanks failed:', e);
@@ -486,6 +490,7 @@ async function fitGrowthCurve() {
             well,
             blank_subtraction: document.getElementById('fit-blank-subtraction').checked,
             blank_method: document.getElementById('fit-blank-method').value,
+            override_blank_wells: state._acceptedBlankWells || [],
             model_name: document.getElementById('fitting-model').value || 'aHPM',
             ...buildOptimizerPayload('fit'),
             ...buildFitOptionsPayload(),
@@ -949,6 +954,7 @@ async function fitLogLinCurve() {
             well,
             blank_subtraction: document.getElementById('fit-blank-subtraction').checked,
             blank_method: document.getElementById('fit-blank-method').value,
+            override_blank_wells: state._acceptedBlankWells || [],
             ...buildLogLinPayload(),
         };
         const response = await fetch(`${API_BASE}/api/fit-loglin`, {

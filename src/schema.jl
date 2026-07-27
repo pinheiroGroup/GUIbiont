@@ -25,6 +25,10 @@ Base.@kwdef mutable struct FitCurveRequest
     well::String = ""
     blank_subtraction::Bool = false
     blank_method::String = "pointbypoint"
+    # Wells to use as blanks instead of the annotation file's "b" wells.
+    # Populated by the Fit Curve tab when the user accepts auto-detected
+    # blank candidates; empty means "fall back to the annotations".
+    override_blank_wells::Vector{String} = String[]
     calibration_file::String = ""
     model_name::String = "aHPM"
     model_names::Vector{String} = String[]
@@ -65,6 +69,10 @@ Base.@kwdef mutable struct BatchFitRequest
     model_names::Vector{String} = String[]
     blank_subtraction::Bool = false
     blank_method::String = "pointbypoint"
+    # Wells to use as blanks instead of the annotation file's "b" wells.
+    # Populated by the Fit Curve tab when the user accepts auto-detected
+    # blank candidates; empty means "fall back to the annotations".
+    override_blank_wells::Vector{String} = String[]
     calibration_file::String = ""
     wells::Vector{String} = String[]
     optimizer::String = "LN_BOBYQA"
@@ -142,6 +150,10 @@ Base.@kwdef mutable struct LogLinFitRequest
     well::String = ""
     blank_subtraction::Bool = false
     blank_method::String = "pointbypoint"
+    # Wells to use as blanks instead of the annotation file's "b" wells.
+    # Populated by the Fit Curve tab when the user accepts auto-detected
+    # blank candidates; empty means "fall back to the annotations".
+    override_blank_wells::Vector{String} = String[]
     type_of_smoothing::String = "rolling_avg"   # "NO" | "rolling_avg" | "lowess" | "gaussian"
     pt_avg::Int = 7
     pt_smoothing_derivative::Int = 7
@@ -162,6 +174,10 @@ Base.@kwdef mutable struct BatchLogLinFitRequest
     wells::Vector{String} = String[]
     blank_subtraction::Bool = false
     blank_method::String = "pointbypoint"
+    # Wells to use as blanks instead of the annotation file's "b" wells.
+    # Populated by the Fit Curve tab when the user accepts auto-detected
+    # blank candidates; empty means "fall back to the annotations".
+    override_blank_wells::Vector{String} = String[]
     type_of_smoothing::String = "rolling_avg"
     pt_avg::Int = 7
     pt_smoothing_derivative::Int = 7

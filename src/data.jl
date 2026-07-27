@@ -123,6 +123,21 @@ function compute_blank_timeseries(growth_data::DataFrame, annotations::DataFrame
     return _mean_across_blanks(columns, n)
 end
 
+# Resolve which wells act as blanks for a fitting request. An explicit override
+# (auto-detected candidates the user accepted in the Fit Curve tab) wins over the
+# annotation file's "b" wells; an empty override falls back to the annotations.
+# Names not present in the data file are dropped, so a stale client cannot inject
+# columns that do not exist. If nothing survives that filter the annotations are
+# used instead, so a bad override degrades to the documented default rather than
+# to a zero blank while the caller asked for subtraction.
+function resolve_blank_wells(growth_data::DataFrame, annotations::DataFrame,
+                             override::Vector{String})::Vector{String}
+    isempty(override) && return get_blank_well_names(annotations)
+    col_names = string.(names(growth_data))
+    usable = String[w for w in override if w in col_names]
+    return isempty(usable) ? get_blank_well_names(annotations) : usable
+end
+
 # Overloads that take an explicit list of blank well names instead of an annotation DataFrame.
 function compute_blank_value(growth_data::DataFrame, blank_wells::Vector{String})::Float64
     vals = Float64[]

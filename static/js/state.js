@@ -29,6 +29,10 @@ export const state = {
     _lastClusterSweep:     [],
     _savedClusterings:     [],
     _lastBlankAnalysis:    null,
+    // Blank wells the user accepted from auto-detection in the Fit Curve tab.
+    // Sent as override_blank_wells so the fit uses them instead of the
+    // annotation file's "b" wells. Cleared when the experiment changes.
+    _acceptedBlankWells:   [],
     legendFontSize:        parseInt(localStorage.getItem('legendFontSize')     || '14'),
     axisTitleFontSize:     parseInt(localStorage.getItem('axisTitleFontSize')  || '14'),
     axisTickFontSize:      parseInt(localStorage.getItem('axisTickFontSize')   || '12'),

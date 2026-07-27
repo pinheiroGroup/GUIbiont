@@ -9,6 +9,7 @@
 const FIXTURES_DIR  = joinpath(@__DIR__, "fixtures")
 const SINGLE_CH_DIR = joinpath(FIXTURES_DIR, "test_single")
 const MULTI_CH_DIR  = joinpath(FIXTURES_DIR, "test_multi")
+const LG166_DIR     = joinpath(FIXTURES_DIR, "clean", "LG166")
 
 @testset "find_annotation_file" begin
     # Channel-specific file present: must return it
@@ -197,4 +198,41 @@ end
     ts_nan = compute_blank_timeseries(gd_nan, ["A1"])
     @test length(ts_nan) == nrow(gd_nan)
     @test all(isfinite, ts_nan)
+end
+
+# ---------------------------------------------------------------------------
+# resolve_blank_wells — accepted auto-detected blanks must reach the fit.
+#
+# Regression guard: "Use these as blanks" in the Fit Curve tab used to update
+# only the advisory card, because every fitting route re-derived blanks from
+# the annotation file and the request schema had no override field. These
+# tests pin the resolver the routes now call, and show that overriding really
+# changes the blank value the fit subtracts.
+# ---------------------------------------------------------------------------
+
+@testset "resolve_blank_wells" begin
+    gd  = CSV.read(joinpath(LG166_DIR, "data_channel_1.csv"), DataFrame,
+                   header=1, stringtype=String, silencewarnings=true)
+    ann = read_annotation_file(joinpath(LG166_DIR, "annotation_clean.csv"))
+
+    annotated = get_blank_well_names(ann)
+    @test !isempty(annotated)
+
+    # Empty override falls back to the annotation file's "b" wells.
+    @test resolve_blank_wells(gd, ann, String[]) == annotated
+
+    # A non-empty override wins.
+    override = ["A5", "A6"]
+    @test resolve_blank_wells(gd, ann, override) == override
+
+    # Names absent from the data file are dropped rather than trusted.
+    @test resolve_blank_wells(gd, ann, ["A5", "NOPE_1", "ZZ99"]) == ["A5"]
+    # Nothing usable in the override -> fall back rather than leave the fit blankless.
+    @test resolve_blank_wells(gd, ann, ["NOPE_1"]) == annotated
+
+    # The override must actually move the number the fit subtracts, otherwise
+    # accepting candidates would still be a no-op.
+    @test compute_blank_value(gd, override) != compute_blank_value(gd, annotated)
+    @test length(compute_blank_timeseries(gd, override)) ==
+          length(compute_blank_timeseries(gd, annotated))
 end

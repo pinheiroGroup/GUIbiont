@@ -1113,3 +1113,69 @@ end
     # near-blank tails of this particular curve.
     @test abs(gr_a - gr_b) / max(gr_a, 1e-6) < 0.05
 end
+
+# ---------------------------------------------------------------------------
+# override_blank_wells — accepted auto-detected blanks must reach the fit.
+#
+# The Fit Curve tab's "Use these as blanks" button used to POST the accepted
+# wells to /api/blank-analysis only, so the advisory card changed but the fit
+# did not. These tests pin the end-to-end path for both single-curve routes:
+# the override must replace the annotation file's "b" wells in the blank value
+# the route subtracts, and must therefore move the fitted parameters.
+# ---------------------------------------------------------------------------
+
+@testset "POST /api/fit-loglin — override_blank_wells changes the correction" begin
+    base = Dict("experiment" => SINGLE_CH_EXP, "well" => "A3",
+                "blank_subtraction" => true, "blank_method" => "shift")
+
+    st_a, annotated = post_json("/api/fit-loglin", base)
+    st_b, override  = post_json("/api/fit-loglin",
+                                merge(base, Dict("override_blank_wells" => ["A5", "A6"])))
+    @test st_a == 200
+    @test st_b == 200
+
+    # The route reports which wells it actually used.
+    @test Set(String.(annotated[:blank_wells])) != Set(["A5", "A6"])
+    @test Set(String.(override[:blank_wells]))  == Set(["A5", "A6"])
+
+    # And the blank value it subtracted really differs.
+    @test !isapprox(Float64(annotated[:blank_value]), Float64(override[:blank_value]);
+                    atol=1e-9)
+
+    # Which must move the fit, otherwise the override is cosmetic.
+    slope_of(b) = Float64(Dict(zip(String.(b[:param_names]), b[:parameters]))["slope"])
+    @test !isapprox(slope_of(annotated), slope_of(override); rtol=1e-6)
+end
+
+@testset "POST /api/fit-curve — override_blank_wells changes the correction" begin
+    base = Dict("experiment" => SINGLE_CH_EXP, "well" => "A3",
+                "blank_subtraction" => true, "blank_method" => "shift",
+                "model_name" => "logistic", "optimizer" => "LN_BOBYQA",
+                "maxiters" => 2000)
+
+    st_a, annotated = post_json("/api/fit-curve", base)
+    st_b, override  = post_json("/api/fit-curve",
+                                merge(base, Dict("override_blank_wells" => ["A5", "A6"])))
+    @test st_a == 200
+    @test st_b == 200
+    @test Set(String.(override[:blank_wells])) == Set(["A5", "A6"])
+    @test !isapprox(Float64(annotated[:blank_value]), Float64(override[:blank_value]);
+                    atol=1e-9)
+    @test collect(Float64.(annotated[:parameters])) != collect(Float64.(override[:parameters]))
+end
+
+@testset "override_blank_wells — unknown well names are ignored, not trusted" begin
+    base = Dict("experiment" => SINGLE_CH_EXP, "well" => "A3",
+                "blank_subtraction" => true, "blank_method" => "shift")
+
+    _, only_bogus = post_json("/api/fit-loglin",
+                              merge(base, Dict("override_blank_wells" => ["NOPE_1"])))
+    _, annotated  = post_json("/api/fit-loglin", base)
+
+    # No usable override → fall back to the annotation file rather than error.
+    @test Set(String.(only_bogus[:blank_wells])) == Set(String.(annotated[:blank_wells]))
+
+    _, mixed = post_json("/api/fit-loglin",
+                         merge(base, Dict("override_blank_wells" => ["A5", "NOPE_1"])))
+    @test Set(String.(mixed[:blank_wells])) == Set(["A5"])
+end

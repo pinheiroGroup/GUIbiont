@@ -30,6 +30,7 @@ end
     well           = string(body.well)
     subtract_blank = body.blank_subtraction
     blank_method   = string(body.blank_method)
+    override_blank_wells = String[string(w) for w in body.override_blank_wells]
     model_name     = string(body.model_name)
     model_names    = String[string(m) for m in body.model_names]
     optimizer      = string(body.optimizer)
@@ -77,8 +78,8 @@ end
         growth_data      = CSV.read(data_file, DataFrame, header=1, silencewarnings=true)
         annotations      = read_annotation_file(annotation_file)
         excluded_wells   = get_blank_wells(annotations)   # "b" + "X"
-        blank_well_names = get_blank_well_names(annotations)  # "b" only
         column_names_str = string.(names(growth_data))
+        blank_well_names = resolve_blank_wells(growth_data, annotations, override_blank_wells)
 
         if !(well in column_names_str)
             return json(Dict("error" => "Well '$well' not found"); status=404)
@@ -89,9 +90,9 @@ end
 
         time_numeric     = parse_time_column(growth_data)
         od_raw           = parse_od_column(growth_data, Symbol(well))
-        blank_value      = compute_blank_value(growth_data, annotations)
+        blank_value      = compute_blank_value(growth_data, blank_well_names)
         blank_timeseries = (subtract_blank && blank_method == "pointbypoint") ?
-            compute_blank_timeseries(growth_data, annotations) : Float64[]
+            compute_blank_timeseries(growth_data, blank_well_names) : Float64[]
 
         valid_indices = findall(.!isnan.(od_raw))
         if length(valid_indices) < 10
@@ -350,6 +351,7 @@ end
     model_names_req = String[string(m) for m in body.model_names]
     subtract_blank  = body.blank_subtraction
     blank_method    = string(body.blank_method)
+    override_blank_wells = String[string(w) for w in body.override_blank_wells]
     cal_override    = string(body.calibration_file)
     requested_wells = isempty(body.wells) ? nothing : String[string(w) for w in body.wells]
     optimizer       = string(body.optimizer)
@@ -398,12 +400,12 @@ end
         growth_data      = CSV.read(data_file, DataFrame, header=1, silencewarnings=true)
         annotations      = read_annotation_file(annotation_file)
         excluded_wells   = get_blank_wells(annotations)
-        blank_well_names = get_blank_well_names(annotations)
         column_names_str = string.(names(growth_data))
+        blank_well_names = resolve_blank_wells(growth_data, annotations, override_blank_wells)
         time_numeric     = parse_time_column(growth_data)
-        blank_value      = compute_blank_value(growth_data, annotations)
+        blank_value      = compute_blank_value(growth_data, blank_well_names)
         blank_ts         = subtract_blank && blank_method == "pointbypoint" ?
-            compute_blank_timeseries(growth_data, annotations) : Float64[]
+            compute_blank_timeseries(growth_data, blank_well_names) : Float64[]
 
         wells_to_fit = requested_wells !== nothing ? requested_wells :
             filter(w -> w in column_names_str && !(w in excluded_wells), column_names_str[2:end])
@@ -604,6 +606,7 @@ end
     requested_wells = isempty(body.wells) ? nothing : String[string(w) for w in body.wells]
     subtract_blank  = body.blank_subtraction
     blank_method    = string(body.blank_method)
+    override_blank_wells = String[string(w) for w in body.override_blank_wells]
     smoothing       = string(body.type_of_smoothing)
     pt_avg          = max(1, body.pt_avg)
     pt_deriv        = max(2, body.pt_smoothing_derivative)
@@ -626,12 +629,12 @@ end
         growth_data      = CSV.read(data_file, DataFrame, header=1, silencewarnings=true)
         annotations      = read_annotation_file(annotation_file)
         excluded_wells   = get_blank_wells(annotations)
-        blank_well_names = get_blank_well_names(annotations)
         column_names_str = string.(names(growth_data))
+        blank_well_names = resolve_blank_wells(growth_data, annotations, override_blank_wells)
         time_numeric     = parse_time_column(growth_data)
-        blank_value      = compute_blank_value(growth_data, annotations)
+        blank_value      = compute_blank_value(growth_data, blank_well_names)
         blank_ts         = subtract_blank && blank_method == "pointbypoint" ?
-            compute_blank_timeseries(growth_data, annotations) : Float64[]
+            compute_blank_timeseries(growth_data, blank_well_names) : Float64[]
 
         wells_to_fit = requested_wells !== nothing ? requested_wells :
             filter(w -> w in column_names_str && !(w in excluded_wells), column_names_str[2:end])
@@ -896,6 +899,7 @@ end
     well            = string(body.well)
     subtract_blank  = body.blank_subtraction
     blank_method    = string(body.blank_method)
+    override_blank_wells = String[string(w) for w in body.override_blank_wells]
     smoothing       = string(body.type_of_smoothing)
     pt_avg          = max(1, body.pt_avg)
     pt_deriv        = max(2, body.pt_smoothing_derivative)
@@ -917,8 +921,8 @@ end
         growth_data      = CSV.read(data_file, DataFrame, header=1, silencewarnings=true)
         annotations      = read_annotation_file(annotation_file)
         excluded_wells   = get_blank_wells(annotations)
-        blank_well_names = get_blank_well_names(annotations)
         column_names_str = string.(names(growth_data))
+        blank_well_names = resolve_blank_wells(growth_data, annotations, override_blank_wells)
 
         if !(well in column_names_str)
             return json(Dict("error" => "Well '$well' not found"); status=404)
@@ -929,9 +933,9 @@ end
 
         time_numeric     = parse_time_column(growth_data)
         od_raw           = parse_od_column(growth_data, Symbol(well))
-        blank_value      = compute_blank_value(growth_data, annotations)
+        blank_value      = compute_blank_value(growth_data, blank_well_names)
         blank_timeseries = (subtract_blank && blank_method == "pointbypoint") ?
-            compute_blank_timeseries(growth_data, annotations) : Float64[]
+            compute_blank_timeseries(growth_data, blank_well_names) : Float64[]
 
         valid = findall(.!isnan.(od_raw))
         if length(valid) < max(10, pt_deriv + pt_min_win + 2)
