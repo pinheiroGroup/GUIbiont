@@ -24,7 +24,7 @@
             <button class="tab-button" onclick="switchTab('clustering')">🔵 Clustering</button>
             <button class="tab-button" onclick="switchTab('fit-curve')">🧮 Fit Curve</button>
             <button class="tab-button" onclick="switchTab('batch-fit')">⚡ Batch Fit</button>
-            <button class="tab-button" onclick="switchTab('ml-analysis')">🔬 ML Analysis</button>
+            <button class="tab-button" onclick="switchTab('ml-analysis')">🔬 Downstream Analysis</button>
         </div>
 
         <div class="controls">
@@ -329,14 +329,14 @@
                                 <select id="fit-blank-method" style="font-size: 0.9em; padding: 2px 6px;" onchange="onBlankMethodChange()">
                                     <option value="pointbypoint" selected>Point-by-point</option>
                                     <option value="shift">Shift minimum</option>
-                                    <option value="clip">Clip to zero</option>
+                                    <option value="clip">Clip to floor</option>
                                 </select>
                                 <span class="tooltip-wrap">
                                     <button class="tooltip-btn" tabindex="-1">?</button>
                                     <div class="tooltip-box">
                                         <strong>Point-by-point</strong> — subtracts the mean blank OD at each individual time point. Best choice when blank drifts over time (evaporation, temperature). Recommended default.<br><br>
                                         <strong>Shift minimum</strong> — subtracts a single global blank mean, then shifts the entire corrected series up so all values are positive. Preserves growth curve shape. Works well when blank is stable and the well OD is mostly above blank. Can produce a visible discontinuity at the fit start for wells that are mostly below blank.<br><br>
-                                        <strong>Clip to zero</strong> — subtracts a single global blank mean and clips any negative values to zero. Simple and safe. Some distortion of the early growth phase if many points are negative.
+                                        <strong>Clip to floor</strong> — subtracts a single global blank mean and replaces any corrected value below the positive floor of 10<sup>-4</sup> with that floor. Simple and safe. Some distortion of the early growth phase if many points fall below the floor.
                                     </div>
                                 </span>
                             </div>
@@ -518,7 +518,7 @@
                                             <select id="cluster-blank-method" style="padding:4px 8px;">
                                                 <option value="pointbypoint" selected>Point-by-point</option>
                                                 <option value="shift">Shift minimum</option>
-                                                <option value="clip">Clip to zero</option>
+                                                <option value="clip">Clip to floor</option>
                                             </select>
                                         </div>
                                         <div style="display:none; gap:10px; flex-wrap:wrap;" aria-hidden="true">
@@ -1002,7 +1002,7 @@
                                 <select id="batch-fit-blank-method" style="font-size: 0.9em; padding: 2px 6px;">
                                     <option value="pointbypoint" selected>Point-by-point</option>
                                     <option value="shift">Shift minimum</option>
-                                    <option value="clip">Clip to zero</option>
+                                    <option value="clip">Clip to floor</option>
                                 </select>
                             </div>
                         </div>
@@ -1116,7 +1116,7 @@
                 <div id="batch-fit-results" style="display: none; margin-top: 20px; padding: 0 5px;"></div>
             </div>
 
-            <!-- ML Analysis Tab Content -->
+            <!-- Downstream Analysis Tab Content -->
             <div id="ml-analysis-content" class="tab-content">
                 <div class="control-group" style="padding: 20px;">
                     <p class="fitting-description">
@@ -1214,7 +1214,7 @@
                     <div style="margin-top:16px;">
                         <button class="btn fit-btn" id="ml-run-btn"
                                 onclick="runMlAnalysis()" disabled>
-                            🔬 Run ML Analysis
+                            🔬 Run Downstream Analysis
                         </button>
                         <button class="btn fit-btn ml-export-btn" id="ml-export-btn"
                                 onclick="downloadMlResultsCSV()" disabled>

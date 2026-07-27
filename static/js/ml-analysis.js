@@ -1,13 +1,13 @@
 import { state, API_BASE } from './state.js';
 
 // ---------------------------------------------------------------------------
-// ML Downstream Analysis tab
+// Downstream Analysis tab
 // ---------------------------------------------------------------------------
 // Workflow:
 //   1. User uploads batch-fit CSV  (any label column + numeric param columns)
 //   2. User uploads feature CSV    (any label column + numeric feature columns)
 //   3. User selects label column (default: first column) and growth params
-//   4. Click "Run ML Analysis" → POST /api/ml-downstream
+//   4. Click "Run Downstream Analysis" → POST /api/ml-downstream
 //   5. Render: Spearman correlation bar chart + RF feature importance + PDPs
 
 // ---------------------------------------------------------------------------
@@ -183,7 +183,7 @@ function enableMlExport(data) {
 }
 
 // ---------------------------------------------------------------------------
-// Main: run ML analysis
+// Main: run downstream analysis
 // ---------------------------------------------------------------------------
 
 function getSelectedParams() {
@@ -239,7 +239,7 @@ async function runMlAnalysis() {
         resultsEl.style.display = 'block';
 
     } catch (e) {
-        console.error('ML analysis error:', e);
+        console.error('Downstream analysis error:', e);
         statusEl.textContent = `Error: ${e.message}`;
     }
 }
@@ -480,7 +480,7 @@ function _mlResultRows(data, selectedParams) {
 
 function downloadMlResultsCSV() {
     if (!state._mlResults) return;
-    _downloadCSV(_mlResultRows(state._mlResults, getSelectedParams()), 'ml_analysis_results.csv');
+    _downloadCSV(_mlResultRows(state._mlResults, getSelectedParams()), 'downstream_analysis_results.csv');
 }
 
 function renderImportanceCharts(importance, selectedParams, cvR2) {

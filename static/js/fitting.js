@@ -423,7 +423,7 @@ function renderBlankAnalysisCard(data) {
 
     const currentMethod = document.getElementById('fit-blank-method').value;
     const notes = data.method_notes || {};
-    const methodLabels = { pointbypoint: 'Point-by-point', shift: 'Shift minimum', clip: 'Clip to zero' };
+    const methodLabels = { pointbypoint: 'Point-by-point', shift: 'Shift minimum', clip: 'Clip to floor' };
     const statusIcon = { good: '✓', ok: '~', warning: '✗', not_recommended: '✗' };
 
     // Auto-select recommended method if user hasn't manually changed it
@@ -555,7 +555,7 @@ function displayFittingResults(fitData) {
         ${fitData.blank_subtraction ? `
         <div class="parameter-row">
             <span class="parameter-name">Blank Subtraction:</span>
-            <span class="parameter-value" style="color: #4caf50;">${fitData.blank_method === 'pointbypoint' ? 'Point-by-point' : fitData.blank_method === 'clip' ? 'Clip to zero' : 'Shift minimum'}</span>
+            <span class="parameter-value" style="color: #4caf50;">${fitData.blank_method === 'pointbypoint' ? 'Point-by-point' : fitData.blank_method === 'clip' ? 'Clip to floor' : 'Shift minimum'}</span>
         </div>` : ''}
         <div class="parameter-row">
             <span class="parameter-name">Stationary Phase Start:</span>
@@ -1027,7 +1027,7 @@ function displayLogLinResults(fitData) {
         ${fitData.blank_subtraction ? `
         <div class="parameter-row">
             <span class="parameter-name">Blank subtraction:</span>
-            <span class="parameter-value" style="color:#4caf50;">${fitData.blank_method === 'pointbypoint' ? 'Point-by-point' : fitData.blank_method === 'clip' ? 'Clip to zero' : 'Shift minimum'}</span>
+            <span class="parameter-value" style="color:#4caf50;">${fitData.blank_method === 'pointbypoint' ? 'Point-by-point' : fitData.blank_method === 'clip' ? 'Clip to floor' : 'Shift minimum'}</span>
         </div>` : ''}
         <div class="parameter-row">
             <span class="parameter-name">Exponential window:</span>

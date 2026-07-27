@@ -312,10 +312,10 @@ end
                 "note" => "Few points below blank — clipping will have minimal effect on the fit.")
         elseif frac_below_global > 0.5
             method_notes["clip"] = Dict("status" => "warning",
-                "note" => "$(round(Int, frac_below_global*100))% of points below blank — clipping to zero may distort the initial phase of the fit.")
+                "note" => "$(round(Int, frac_below_global*100))% of points below blank — clipping to the positive floor may distort the initial phase of the fit.")
         else
             method_notes["clip"] = Dict("status" => "ok",
-                "note" => "$(round(Int, frac_below_global*100))% of points below blank — clipping will set early points to zero.")
+                "note" => "$(round(Int, frac_below_global*100))% of points below blank — clipping will set early points to the positive floor.")
         end
 
         # Overall recommendation
