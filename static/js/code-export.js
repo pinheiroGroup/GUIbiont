@@ -176,7 +176,7 @@ export function downloadExportedCode() {
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
     a.href     = url;
-    a.download = 'kinbiont_analysis.jl';
+    a.download = 'guibiont_analysis.jl';
     a.click();
     URL.revokeObjectURL(url);
 }
