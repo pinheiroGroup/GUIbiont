@@ -888,7 +888,7 @@ end
 # Distinct from /api/fit-curve: instead of optimising an ODE/NL model, this
 # identifies the exponential window from the smoothed specific growth rate
 # and runs a closed-form linear regression of log(OD) vs time. Returns the
-# regression statistics (slope = µ_max, doubling time, R², 2σ CIs) plus the
+# regression statistics (slope = µ_max, doubling time, R², 1σ standard errors) plus the
 # fitted segment for plotting.
 @post "/api/fit-loglin" function(req::HTTP.Request, body::Json{LogLinFitRequest})
     body = body.payload
@@ -992,9 +992,9 @@ end
 
         param_names = [
             "label_exp", "well", "t_start_exp", "t_end_exp", "t_max_gr",
-            "gr_max", "slope", "2_sigma_slope", "doubling_time",
-            "doubling_time_minus_2sigma", "doubling_time_plus_2sigma",
-            "intercept", "2_sigma_intercept", "R_squared",
+            "gr_max", "slope", "slope_se", "doubling_time",
+            "doubling_time_minus_se", "doubling_time_plus_se",
+            "intercept", "intercept_se", "R_squared",
         ]
 
         result = Dict{String, Any}(

@@ -995,16 +995,16 @@ function displayLogLinResults(fitData) {
     };
 
     const muMax = get('slope');
-    const muSigma = get('2_sigma_slope');
+    const muSigma = get('slope_se');
     const dt = get('doubling_time');
-    const dtMinus = get('doubling_time_minus_2sigma');
-    const dtPlus = get('doubling_time_plus_2sigma');
+    const dtMinus = get('doubling_time_minus_se');
+    const dtPlus = get('doubling_time_plus_se');
     const grMax = get('gr_max');
     const tStart = get('t_start_exp');
     const tEnd = get('t_end_exp');
     const tMaxGr = get('t_max_gr');
     const intercept = get('intercept');
-    const interceptSigma = get('2_sigma_intercept');
+    const interceptSigma = get('intercept_se');
     const r2 = get('R_squared');
 
     let html = `
@@ -1038,7 +1038,7 @@ function displayLogLinResults(fitData) {
             <span class="parameter-value">${_fmt(tMaxGr, 3)} h</span>
         </div>
         <div class="parameter-row">
-            <span class="parameter-name">µ (slope, ±2σ):</span>
+            <span class="parameter-name">µ (slope, ±1 SE):</span>
             <span class="parameter-value">${_fmt(muMax, 5)} ± ${_fmt(muSigma, 5)} /h</span>
         </div>
         <div class="parameter-row">
@@ -1046,11 +1046,11 @@ function displayLogLinResults(fitData) {
             <span class="parameter-value">${_fmt(grMax, 5)} /h</span>
         </div>
         <div class="parameter-row">
-            <span class="parameter-name">Doubling time (±2σ):</span>
+            <span class="parameter-name">Doubling time (±1 SE):</span>
             <span class="parameter-value">${_fmt(dt, 4)} h  (${_fmt(dtMinus, 4)} … ${_fmt(dtPlus, 4)})</span>
         </div>
         <div class="parameter-row">
-            <span class="parameter-name">Intercept (±2σ):</span>
+            <span class="parameter-name">Intercept (±1 SE):</span>
             <span class="parameter-value">${_fmt(intercept, 4)} ± ${_fmt(interceptSigma, 4)}</span>
         </div>
         <div class="parameter-row">
