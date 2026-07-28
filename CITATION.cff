@@ -1,0 +1,30 @@
+cff-version: 1.2.0
+title: GUIbiont
+message: >-
+  If you use this software, please cite it using the metadata from this file.
+type: software
+abstract: >-
+  A no-code browser application for microbial growth phenotyping: quality
+  control, curve fitting, trajectory clustering and metadata-linked analysis,
+  built on Kinbiont.jl. Interactive sessions export as executable Julia scripts.
+authors:
+  - family-names: Zanella Alvarenga
+    given-names: Edgar
+    affiliation: Fuzuê Tech, Kraków, Poland
+    orcid: https://orcid.org/0009-0002-7506-2540
+  - family-names: Oltolini
+    given-names: Edoardo
+    affiliation: Human Technopole, Milan, Italy
+  - family-names: Pinheiro
+    given-names: Fernanda
+    affiliation: Human Technopole, Milan, Italy
+    orcid: https://orcid.org/0000-0002-0132-0562
+repository-code: https://github.com/pinheiroGroup/GUIbiont
+license: MIT
+version: 1.0.0
+keywords:
+  - microbial growth
+  - growth curves
+  - no-code
+  - clustering
+  - Julia

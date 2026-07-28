@@ -1,0 +1,29 @@
+{
+  "title": "GUIbiont",
+  "description": "A no-code browser application for microbial growth phenotyping: quality control, curve fitting, trajectory clustering and metadata-linked analysis, built on Kinbiont.jl. Interactive sessions export as executable Julia scripts.",
+  "upload_type": "software",
+  "license": "MIT",
+  "creators": [
+    {
+      "name": "Zanella Alvarenga, Edgar",
+      "affiliation": "Fuzuê Tech, Kraków, Poland",
+      "orcid": "0009-0002-7506-2540"
+    },
+    {
+      "name": "Oltolini, Edoardo",
+      "affiliation": "Human Technopole, Milan, Italy"
+    },
+    {
+      "name": "Pinheiro, Fernanda",
+      "affiliation": "Human Technopole, Milan, Italy",
+      "orcid": "0000-0002-0132-0562"
+    }
+  ],
+  "keywords": [
+    "microbial growth",
+    "growth curves",
+    "no-code",
+    "clustering",
+    "Julia"
+  ]
+}
