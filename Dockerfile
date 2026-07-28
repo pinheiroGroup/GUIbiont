@@ -1,7 +1,10 @@
 # GUIbiont — precompiled Julia image.
 # All heavy dependency precompilation (Kinbiont, NLopt, BlackBoxOptim, …) happens
 # HERE, at build time, so end users never wait 5–15 min on first launch.
-FROM julia:1.11-bookworm
+# Must match the Julia version the published results were produced with
+# (Methods reports 1.12.6); a different minor version re-resolves the
+# environment and is no longer the tested one.
+FROM julia:1.12-bookworm
 
 # GR/Plots is a dependency; force its headless backend so precompilation never
 # needs an X display, even though we don't render server-side.
@@ -11,10 +14,12 @@ ENV GKSwstype=nul \
 
 WORKDIR /app
 
-# --- Layer 1: dependencies only (cached until Project.toml changes) ----------
+# --- Layer 1: dependencies only (cached until the environment changes) -------
 # Copy just the environment spec first so the expensive instantiate+precompile
-# layer is reused across source-only edits.
-COPY Project.toml ./
+# layer is reused across source-only edits. The Manifest is copied too, so the
+# image installs the exact resolution the results were produced with instead of
+# re-resolving to whatever satisfies the compat bounds at build time.
+COPY Project.toml Manifest.toml ./
 # Project.toml declares GUIbiont as a package (name+uuid), so Pkg needs its
 # module file present to resolve/precompile the environment. Create the trivial
 # module now (the real src/ is copied below and is identical) so the dependency

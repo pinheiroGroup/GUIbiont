@@ -1,5 +1,7 @@
 # Julia files
-Manifest.toml
+# Manifest.toml is tracked on purpose: GUIbiont is a deployed application,
+# not a library, so the exact dependency resolution is part of what makes
+# the published results reproducible.
 *.jl.cov
 *.jl.*.cov
 *.jl.mem
