@@ -13,7 +13,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        julia-version: ["1.11"]
+        # Must match the Julia the committed Manifest was resolved on.
+        # A 1.12 Manifest cannot instantiate on 1.11: LibGit2_jll and
+        # MbedTLS_jll moved between those versions.
+        julia-version: ["1.12"]
 
     steps:
       - uses: actions/checkout@v4
@@ -49,7 +52,7 @@ jobs:
 
       - uses: julia-actions/setup-julia@v2
         with:
-          version: "1.11"
+          version: "1.12"
 
       - uses: julia-actions/cache@v2
 
