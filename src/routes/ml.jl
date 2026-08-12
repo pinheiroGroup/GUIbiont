@@ -780,6 +780,31 @@ end
     else
         curves_for = curves
     end
+    # Curves the non-growing criteria would exclude from WCSS at any k>=2 —
+    # a fixed property of the data and the criteria, not of k, since Kinbiont
+    # excludes the same physical curves from the WCSS sum at every k>=2 as
+    # long as prescreen_constant/trend_test stay enabled (see the
+    # `opts.n_clusters > 1` gate in Kinbiont's `_cluster`). Computed once,
+    # outside the k loop, using the same detector Kinbiont applies internally,
+    # rather than counting curves assigned to the sentinel cluster label
+    # (which over-counts once that label also holds ordinary k-means members
+    # when no curve is actually flagged, e.g. LB).
+    non_growing_idx = if !derive_non_growing_blanks &&
+                          (Bool(body.prescreen_constant) || Bool(body.trend_test_flat))
+        Kinbiont.detect_non_growing_indices(
+            curves_for, times;
+            prescreen_constant = Bool(body.prescreen_constant),
+            trend_test         = Bool(body.trend_test_flat),
+            prescreen_tol      = Float64(body.prescreen_tol_const),
+            prescreen_q_low    = prescreen_qlo,
+            prescreen_q_high   = prescreen_qhi,
+            trend_p_threshold  = Float64(body.trend_p_thr),
+        )
+    else
+        Int[]
+    end
+    n_nongrowing_total = length(non_growing_idx)
+
     sweep_results = []
     for k in 1:min(k_max, n_series)
         prescreen_for_k = !derive_non_growing_blanks && k > 1 &&
@@ -812,11 +837,10 @@ end
         ids   = gd_result.clusters
         cluster_cost = something(gd_result.wcss, 0.0)
         cost_metric = "wcss"
-        # Curves assigned to the non-growing sentinel (excluded from WCSS above
-        # opts.n_clusters>1) at this k. Used by the frontend to tell whether
-        # WCSS(1), which never reserves a sentinel, is actually comparable to
-        # WCSS(k) here — see clustering.js:_detectElbow.
-        n_nongrowing = prescreen_for_k ? count(==(k), ids) : 0
+        # Curves excluded from WCSS at this k (0 at k=1, which never excludes
+        # anything). Used by the frontend to tell whether WCSS(1) is actually
+        # comparable to WCSS(k) here — see clustering.js:_detectElbow.
+        n_nongrowing = k > 1 ? n_nongrowing_total : 0
 
         # At k=1 every quality index is undefined (silhouette, Dunn, Davies-Bouldin,
         # Calinski-Harabasz and Xie-Beni all need ≥ 2 clusters). Skip the call so
