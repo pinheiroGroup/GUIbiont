@@ -8,9 +8,18 @@ FROM julia:1.12-bookworm
 
 # GR/Plots is a dependency; force its headless backend so precompilation never
 # needs an X display, even though we don't render server-side.
+# OPENBLAS_NUM_THREADS=1: OpenBLAS's own thread pool is independent of Julia's
+# --threads and, left unpinned, changes floating-point summation order between
+# runs inside Kinbiont's k-means (Clustering.jl calls BLAS for the Lloyd-step
+# distance updates). With multiple ambiguous local optima at a given k, that
+# reordering silently changes which optimum k-means converges to — two
+# requests with the identical seed, data and parameters can return different
+# WCSS/cluster assignments. Pinning to 1 thread makes clustering runs
+# bit-reproducible.
 ENV GKSwstype=nul \
     JULIA_DEPOT_PATH=/opt/julia \
-    JULIA_NUM_THREADS=auto
+    JULIA_NUM_THREADS=auto \
+    OPENBLAS_NUM_THREADS=1
 
 WORKDIR /app
 
