@@ -1082,12 +1082,8 @@ end
 end
 
 @testset "/api/batch-fit-loglin and companion (batch-fit + compute_loglin) agree on the well" begin
-    # Both code paths invoke the same Kinbiont.fitting_one_well_Log_Lin, so
-    # for the SAME well + SAME log-lin parameters they should report nearly
-    # identical μ_max. (Differences are bounded by the parametric path's
-    # od_for_fit floor (0.01) vs the standalone path's floor (1e-4); for
-    # the test well the data is far enough above both floors that the
-    # exponential windows agree exactly.)
+    # Both code paths use the same 1e-4 log-linear preprocessing floor and the
+    # same Kinbiont estimator, so identical inputs must give identical output.
     _, body_standalone = batch_fit_loglin_and_wait(
                             Dict("experiment" => SINGLE_CH_EXP,
                                  "wells"      => [SINGLE_CH_WELL],
@@ -1109,9 +1105,25 @@ end
     gr_a = Float64(first(body_standalone[:results])[:gr_loglin])
     gr_b = Float64(first(body_companion[:results])[:gr_loglin])
     @test isfinite(gr_a) && isfinite(gr_b)
-    # 5% tolerance accommodates the floor difference if it kicks in for
-    # near-blank tails of this particular curve.
-    @test abs(gr_a - gr_b) / max(gr_a, 1e-6) < 0.05
+    @test gr_a == gr_b
+end
+
+@testset "POST /api/blank-analysis uses clustering constant pre-screen defaults" begin
+    status, body = post_json(
+        "/api/blank-analysis",
+        Dict("experiment" => MULTI_CH_EXP, "well" => "A1"),
+    )
+    @test status == 200
+    @test body[:has_blank_wells] == false
+    @test string(body[:detection_method]) == "clustering_constant_prescreen"
+    @test Float64(body[:prescreen_tol_const]) == 0.5
+    @test Float64(body[:prescreen_q_low]) == 0.05
+    @test Float64(body[:prescreen_q_high]) == 0.95
+    @test Float64(body[:prescreen_range_thr]) == 0.01
+
+    gd = CSV.read(joinpath(CLEAN_DATA_PATH, MULTI_CH_EXP, "data_channel_1.csv"),
+                  DataFrame, header=1, silencewarnings=true)
+    @test String.(body[:auto_detected_wells]) == _detect_blank_wells(gd)
 end
 
 # ---------------------------------------------------------------------------
@@ -1178,4 +1190,82 @@ end
     _, mixed = post_json("/api/fit-loglin",
                          merge(base, Dict("override_blank_wells" => ["A5", "NOPE_1"])))
     @test Set(String.(mixed[:blank_wells])) == Set(["A5"])
+end
+
+@testset "accepted blank overrides cannot also be fitted as samples" begin
+    st_single, single = post_json(
+        "/api/fit-loglin",
+        Dict("experiment" => SINGLE_CH_EXP, "well" => "A5",
+             "blank_subtraction" => true, "blank_method" => "shift",
+             "override_blank_wells" => ["A5", "A6"]),
+    )
+    @test st_single == 400
+    @test occursin("blank well", lowercase(string(single[:error])))
+
+    st_batch, batch = batch_fit_loglin_and_wait(
+        Dict("experiment" => SINGLE_CH_EXP,
+             "wells" => ["A3", "A5", "A6"],
+             "blank_subtraction" => true,
+             "blank_method" => "shift",
+             "override_blank_wells" => ["A5", "A6"],
+             "skip_flat_threshold" => 0.0),
+    )
+    @test st_batch == 200
+    @test Int(batch[:summary][:total]) == 1
+    @test Set(String.(batch[:blank_wells])) == Set(["A5", "A6"])
+    @test Set(String.(batch[:excluded_blank_wells])) == Set(["A5", "A6"])
+    @test batch[:blank_applied] == true
+    @test length(batch[:results]) == 1
+    @test string(first(batch[:results])[:well]) == "A3"
+    @test Set(String.(first(batch[:results])[:blank_wells])) == Set(["A5", "A6"])
+    @test first(batch[:results])[:blank_applied] == true
+
+    st_param, param = batch_fit_and_wait(
+        Dict("experiment" => SINGLE_CH_EXP,
+             "wells" => ["A3", "A5", "A6"],
+             "model_name" => "logistic",
+             "optimizer" => "LN_BOBYQA",
+             "maxiters" => 2000,
+             "blank_subtraction" => true,
+             "blank_method" => "shift",
+             "override_blank_wells" => ["A5", "A6"],
+             "skip_flat_threshold" => 0.0),
+    )
+    @test st_param == 200
+    @test Int(param[:summary][:total]) == 1
+    @test Set(String.(param[:blank_wells])) == Set(["A5", "A6"])
+    @test Set(String.(param[:excluded_blank_wells])) == Set(["A5", "A6"])
+    @test length(param[:results]) == 1
+    @test string(first(param[:results])[:well]) == "A3"
+end
+
+@testset "single and batch log-linear routes are numerically identical" begin
+    request = Dict(
+        "experiment" => SINGLE_CH_EXP,
+        "well" => "A3",
+        "blank_subtraction" => true,
+        "blank_method" => "shift",
+        "override_blank_wells" => ["A5", "A6"],
+        "type_of_smoothing" => "rolling_avg",
+        "pt_avg" => 5,
+        "pt_smoothing_derivative" => 5,
+        "pt_min_size_of_win" => 5,
+        "type_of_win" => "maximum",
+        "threshold_of_exp" => 0.9,
+    )
+    st_single, single = post_json("/api/fit-loglin", request)
+    st_batch, batch = batch_fit_loglin_and_wait(
+        merge(request, Dict("wells" => ["A3"], "skip_flat_threshold" => 0.0)),
+    )
+    @test st_single == 200
+    @test st_batch == 200
+    batched = first(batch[:results])
+    for field in (:gr_loglin, :gr_loglin_se, :gr_max_sliding,
+                  :t_exp_start_loglin, :t_exp_end_loglin,
+                  :doubling_time_loglin, :R_squared_loglin,
+                  :lag_loglin, :N_max_emp)
+        @test Float64(single[field]) == Float64(batched[field])
+    end
+    @test single[:blank_applied] == batched[:blank_applied] == true
+    @test Set(String.(single[:blank_wells])) == Set(String.(batched[:blank_wells]))
 end

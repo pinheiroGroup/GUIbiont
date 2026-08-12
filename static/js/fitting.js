@@ -1,4 +1,4 @@
-import { state, API_BASE } from './state.js';
+import { state, API_BASE, acceptedBlankWellsFor } from './state.js';
 import { buildMultiChannelLayout, channelToYAxis } from './plot.js';
 import { computeReplicateAverage, trapezoidalAUC } from './replicates.js';
 import { buildOptimizerPayload } from './optimizers.js';
@@ -284,6 +284,7 @@ async function onFittingExperimentChange() {
     }
     state._lastBlankAnalysis = null;
     state._acceptedBlankWells = [];
+    state._acceptedBlankExperiment = null;
     document.getElementById('blank-analysis-card').style.display = 'none';
     
     try {
@@ -373,6 +374,7 @@ async function useAutoDetectedBlanks(wells) {
         const data = await resp.json();
         state._lastBlankAnalysis  = data;
         state._acceptedBlankWells = wells.slice();
+        state._acceptedBlankExperiment = experiment;
         renderBlankAnalysisCard(data);
     } catch (e) {
         console.error('useAutoDetectedBlanks failed:', e);
@@ -490,7 +492,7 @@ async function fitGrowthCurve() {
             well,
             blank_subtraction: document.getElementById('fit-blank-subtraction').checked,
             blank_method: document.getElementById('fit-blank-method').value,
-            override_blank_wells: state._acceptedBlankWells || [],
+            override_blank_wells: acceptedBlankWellsFor(experiment),
             model_name: document.getElementById('fitting-model').value || 'aHPM',
             ...buildOptimizerPayload('fit'),
             ...buildFitOptionsPayload(),
@@ -552,15 +554,19 @@ function displayFittingResults(fitData) {
             <span class="parameter-name">Blank Value:</span>
             <span class="parameter-value">${typeof fitData.blank_value === 'number' && isFinite(fitData.blank_value) ? fitData.blank_value.toFixed(4) : String(fitData.blank_value)}</span>
         </div>
-        ${fitData.blank_subtraction && fitData.blank_wells && fitData.blank_wells.length > 0 ? `
+        ${fitData.blank_applied && fitData.blank_wells && fitData.blank_wells.length > 0 ? `
         <div class="parameter-row">
             <span class="parameter-name">Blank Wells:</span>
             <span class="parameter-value">${fitData.blank_wells.join(', ')}</span>
         </div>` : ''}
-        ${fitData.blank_subtraction ? `
+        ${fitData.blank_applied ? `
         <div class="parameter-row">
             <span class="parameter-name">Blank Subtraction:</span>
             <span class="parameter-value" style="color: #4caf50;">${fitData.blank_method === 'pointbypoint' ? 'Point-by-point' : fitData.blank_method === 'clip' ? 'Clip to floor' : 'Shift minimum'}</span>
+        </div>` : fitData.blank_subtraction ? `
+        <div class="parameter-row">
+            <span class="parameter-name">Blank Subtraction:</span>
+            <span class="parameter-value" style="color:#dc3545;">Not applied (no usable blank wells)</span>
         </div>` : ''}
         <div class="parameter-row">
             <span class="parameter-name">Stationary Phase Start:</span>
@@ -681,7 +687,7 @@ function updateFitPlot(fitData) {
 
 function plotFittedCurve(fitData) {
     const plotDiv = document.getElementById('plot-fitting');
-    const blankSub = fitData.blank_subtraction && fitData.experimental_od_subtracted;
+    const blankSub = fitData.blank_applied && fitData.experimental_od_subtracted;
 
     // Raw experimental data — always shown
     const experimentalTrace = {
@@ -852,7 +858,7 @@ function renderLogLinCompanion(fitData) {
         div.style.display = 'none';
         return;
     }
-    const blankSub = fitData.blank_subtraction && fitData.experimental_od_subtracted;
+    const blankSub = fitData.blank_applied && fitData.experimental_od_subtracted;
     const traces = [
         {
             x: fitData.experimental_time,
@@ -954,7 +960,7 @@ async function fitLogLinCurve() {
             well,
             blank_subtraction: document.getElementById('fit-blank-subtraction').checked,
             blank_method: document.getElementById('fit-blank-method').value,
-            override_blank_wells: state._acceptedBlankWells || [],
+            override_blank_wells: acceptedBlankWellsFor(experiment),
             ...buildLogLinPayload(),
         };
         const response = await fetch(`${API_BASE}/api/fit-loglin`, {
@@ -1030,10 +1036,19 @@ function displayLogLinResults(fitData) {
             <span class="parameter-name">Blank value:</span>
             <span class="parameter-value">${_fmt(fitData.blank_value, 4)}</span>
         </div>
-        ${fitData.blank_subtraction ? `
+        ${fitData.blank_applied && fitData.blank_wells && fitData.blank_wells.length > 0 ? `
+        <div class="parameter-row">
+            <span class="parameter-name">Blank wells:</span>
+            <span class="parameter-value">${fitData.blank_wells.join(', ')}</span>
+        </div>` : ''}
+        ${fitData.blank_applied ? `
         <div class="parameter-row">
             <span class="parameter-name">Blank subtraction:</span>
             <span class="parameter-value" style="color:#4caf50;">${fitData.blank_method === 'pointbypoint' ? 'Point-by-point' : fitData.blank_method === 'clip' ? 'Clip to floor' : 'Shift minimum'}</span>
+        </div>` : fitData.blank_subtraction ? `
+        <div class="parameter-row">
+            <span class="parameter-name">Blank subtraction:</span>
+            <span class="parameter-value" style="color:#dc3545;">Not applied (no usable blank wells)</span>
         </div>` : ''}
         <div class="parameter-row">
             <span class="parameter-name">Exponential window:</span>
@@ -1079,7 +1094,7 @@ function displayLogLinResults(fitData) {
 
 function plotLogLinCurve(fitData) {
     const plotDiv = document.getElementById('plot-fitting');
-    const blankSub = fitData.blank_subtraction && fitData.experimental_od_subtracted;
+    const blankSub = fitData.blank_applied && fitData.experimental_od_subtracted;
 
     // Raw experimental data
     const traces = [{

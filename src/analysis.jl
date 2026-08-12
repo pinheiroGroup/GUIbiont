@@ -919,6 +919,7 @@ function fit_well_loglin(
     start_exp_win_thr::Float64 = 0.05,
     thr_lowess::Float64 = 0.05,
     gaussian_h_mult::Float64 = 2.0,
+    include_diagnostics::Bool = false,
 )
     # Min points before Kinbiont so we surface a clean error.
     min_pts = pt_smoothing_derivative + pt_min_size_of_win + 2
@@ -952,18 +953,44 @@ function fit_well_loglin(
         gaussian_h_mult         = gaussian_h_mult,
     )
     params = raw[2]
+    fit_matrix = raw[3]
+    smoothed = raw[4]
+    ci_band = raw[5]
+    fit_times = ismissing(fit_matrix) ? Float64[] : Vector{Float64}(fit_matrix[:, 1])
+    log_fit_vals = ismissing(fit_matrix) ? Float64[] : Vector{Float64}(fit_matrix[:, 2])
+    fit_od_vals = isempty(log_fit_vals) ? Float64[] : exp.(log_fit_vals)
+    ci_vals = ismissing(ci_band) ? Float64[] : Vector{Float64}(ci_band)
+    param_names = [
+        "label_exp", "well", "t_start_exp", "t_end_exp", "t_max_gr",
+        "gr_max", "slope", "slope_se", "doubling_time",
+        "doubling_time_minus_se", "doubling_time_plus_se",
+        "intercept", "intercept_se", "R_squared",
+    ]
 
     result = Dict{String, Any}(
         "experiment"        => experiment,
         "well"              => label,
-        "method"            => "Log-lin",
+        "method"            => raw[1],
         "experimental_time" => time_numeric,
         "experimental_od"   => od_raw,
         "blank_value"       => blank_value,
         "blank_subtraction" => subtract_blank,
+        "blank_applied"     => prepared.blank_applied,
         "blank_method"      => blank_method,
         "blank_wells"       => blank_well_names,
     )
+    if include_diagnostics
+        merge!(result, Dict{String, Any}(
+            "smoothed_time"       => Vector{Float64}(smoothed[1, :]),
+            "smoothed_od"         => Vector{Float64}(smoothed[2, :]),
+            "fit_time"            => fit_times,
+            "fit_od"              => fit_od_vals,
+            "fit_log_od"          => log_fit_vals,
+            "confidence_band_log" => ci_vals,
+            "param_names"         => param_names,
+            "parameters"          => params,
+        ))
+    end
 
     if length(params) >= 14 && params[7] !== missing
         result["gr_loglin"]             = Float64(params[7])

@@ -1,4 +1,4 @@
-import { state, API_BASE } from './state.js';
+import { state, API_BASE, acceptedBlankWellsFor } from './state.js';
 import { buildOptimizerPayload } from './optimizers.js?v=20260722-5';
 
 // Models pre-checked in "compare" mode by default
@@ -187,8 +187,11 @@ async function onBatchExperimentChange() {
         const info = await r.json();
         if (!info.wells) return;
 
-        // Only non-blank wells
-        const wells = info.wells.filter(w => w.condition !== 'b' && w.condition !== 'X');
+        // Only sample wells. Accepted auto-detected blanks are scoped to their
+        // source experiment and must not be fitted again as samples.
+        const acceptedBlanks = new Set(acceptedBlankWellsFor(experiment));
+        const wells = info.wells.filter(w =>
+            w.condition !== 'b' && w.condition !== 'X' && !acceptedBlanks.has(w.well));
         wells.forEach(w => {
             const label = document.createElement('label');
             label.className = 'batch-well-label';
@@ -313,7 +316,7 @@ async function runBatchFit() {
                 wells,
                 blank_subtraction: document.getElementById('batch-fit-blank-subtraction').checked,
                 blank_method:      document.getElementById('batch-fit-blank-method').value,
-                override_blank_wells: state._acceptedBlankWells || [],
+                override_blank_wells: acceptedBlankWellsFor(experiment),
                 skip_flat_threshold: skipFlat,
                 ...ll,
             };
@@ -342,7 +345,7 @@ async function runBatchFit() {
                 ...modelPayload,
                 blank_subtraction: document.getElementById('batch-fit-blank-subtraction').checked,
                 blank_method: document.getElementById('batch-fit-blank-method').value,
-                override_blank_wells: state._acceptedBlankWells || [],
+                override_blank_wells: acceptedBlankWellsFor(experiment),
                 ...buildOptimizerPayload('batch-fit'),
                 maxiters,
                 abstol,
@@ -444,6 +447,10 @@ function displayBatchResults(data) {
         ? 'log-linear μ_max'
         : (model === 'multi' ? `AICc from: ${(model_names || []).join(', ')}` : model);
 
+    const blankWells = Array.isArray(data.blank_wells) ? data.blank_wells : [];
+    const excludedBlanks = Array.isArray(data.excluded_blank_wells)
+        ? data.excluded_blank_wells : [];
+
     // Summary bar
     const skippedCount = summary.skipped || 0;
     const summaryHtml = `
@@ -453,6 +460,10 @@ function displayBatchResults(data) {
             <span class="batch-stat-ok">✓ ${summary.success} fitted</span>
             ${summary.failed > 0 ? `<span class="batch-stat-err">✗ ${summary.failed} failed</span>` : ''}
             ${skippedCount > 0 ? `<span style="color:#6c757d;">⊘ ${skippedCount} skipped (flat)</span>` : ''}
+            ${data.blank_applied && blankWells.length > 0
+                ? `<span><strong>Blank wells used:</strong> ${blankWells.join(', ')}</span>` : ''}
+            ${data.blank_subtraction && !data.blank_applied
+                ? `<span class="batch-stat-err">Blank subtraction not applied (no usable blanks)</span>` : ''}
             <button class="btn" style="margin-left:auto;" onclick="downloadBatchCSV()">📥 Download CSV</button>
             <button class="btn" onclick="downloadBatchFittedCurvesCSV()">📈 Download fitted curves</button>
         </div>
@@ -540,6 +551,9 @@ function displayBatchResults(data) {
 
     resultsDiv.innerHTML = `
         ${summaryHtml}
+        ${excludedBlanks.length > 0
+            ? `<div style="margin:6px 0;color:#6c757d;">Excluded from fitting because used as blanks: ${excludedBlanks.join(', ')}</div>`
+            : ''}
         <div class="batch-table-wrap">
             <table class="batch-results-table">
                 <thead><tr>${headerHtml}</tr></thead>
@@ -579,7 +593,7 @@ function downloadBatchCSV() {
                    't_exp_start_loglin', 't_exp_end_loglin',
                    'doubling_time_loglin', 'R_squared_loglin',
                    'lag_loglin', 'N_max_emp',
-                   'loglin_converged'];
+                   'loglin_converged', 'blank_applied', 'blank_wells'];
         rows = results.map(r => [
             experiment, r.well, 'log_lin',
             r.gr_loglin            ?? '',
@@ -592,6 +606,8 @@ function downloadBatchCSV() {
             r.lag_loglin           ?? '',
             r.N_max_emp            ?? '',
             r.loglin_converged ? 'true' : 'false',
+            r.blank_applied ? 'true' : 'false',
+            Array.isArray(r.blank_wells) ? r.blank_wells.join(';') : '',
         ]);
         filenameSuffix = 'batch_fit_loglin';
     } else {
@@ -615,7 +631,8 @@ function downloadBatchCSV() {
 
         headers = ['experiment', 'well', 'model', ...allParamNames,
                    ...loglinHeaders,
-                   'stationary_phase_start', 'aic', 'loss_rmse', 'loss_re', 'optimizer_used'];
+                   'stationary_phase_start', 'aic', 'loss_rmse', 'loss_re', 'optimizer_used',
+                   'blank_applied', 'blank_wells'];
 
         rows = results.map(r => {
             const paramVals = allParamNames.map(name => {
@@ -643,6 +660,8 @@ function downloadBatchCSV() {
                 r.loss_rmse != null ? r.loss_rmse : (r.loss != null ? r.loss : ''),
                 r.loss_re != null ? r.loss_re : '',
                 r.optimizer_used || '',
+                r.blank_applied ? 'true' : 'false',
+                Array.isArray(r.blank_wells) ? r.blank_wells.join(';') : '',
             ];
         });
         filenameSuffix = 'batch_fit';

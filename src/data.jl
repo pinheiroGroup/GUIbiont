@@ -123,6 +123,14 @@ function compute_blank_timeseries(growth_data::DataFrame, annotations::DataFrame
     return _mean_across_blanks(columns, n)
 end
 
+# Keep only unique, real well columns from a client-supplied blank override.
+# The time column is never a valid blank signal.
+function usable_blank_wells(growth_data::DataFrame,
+                            requested::Vector{String})::Vector{String}
+    valid = Set(string.(names(growth_data)[2:end]))
+    return sort(unique(String[w for w in requested if w in valid]))
+end
+
 # Resolve which wells act as blanks for a fitting request. An explicit override
 # (auto-detected candidates the user accepted in the Fit Curve tab) wins over the
 # annotation file's "b" wells; an empty override falls back to the annotations.
@@ -133,9 +141,16 @@ end
 function resolve_blank_wells(growth_data::DataFrame, annotations::DataFrame,
                              override::Vector{String})::Vector{String}
     isempty(override) && return get_blank_well_names(annotations)
-    col_names = string.(names(growth_data))
-    usable = String[w for w in override if w in col_names]
+    usable = usable_blank_wells(growth_data, override)
     return isempty(usable) ? get_blank_well_names(annotations) : usable
+end
+
+# Wells unavailable for fitting include annotation-level blanks/exclusions and
+# accepted blank overrides. The latter used to be subtracted in batch fitting
+# and then fitted again as if they were samples.
+function fitting_excluded_wells(annotations::DataFrame,
+                                blank_wells::Vector{String})::Set{String}
+    return union(get_blank_wells(annotations), Set(blank_wells))
 end
 
 # Overloads that take an explicit list of blank well names instead of an annotation DataFrame.

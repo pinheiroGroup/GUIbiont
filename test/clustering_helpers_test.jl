@@ -6,6 +6,28 @@
 
 using Statistics
 
+@testset "_detect_blank_wells uses Kinbiont's default constant pre-screen" begin
+    df = DataFrame(
+        Time = collect(0.0:5.0),
+        low_range = [0.020, 0.022, 0.024, 0.026, 0.028, 0.030],
+        relative_constant = [0.100, 0.105, 0.110, 0.115, 0.120, 0.125],
+        growing = [0.010, 0.020, 0.060, 0.180, 0.450, 0.900],
+    )
+    detected = _detect_blank_wells(df)
+    @test detected == ["low_range", "relative_constant"]
+
+    curves = Matrix{Float64}(permutedims(Matrix(df[:, 2:end])))
+    expected_idx = Kinbiont.detect_non_growing_indices(
+        curves, Float64.(df.Time);
+        prescreen_constant=true,
+        trend_test=false,
+        prescreen_tol=0.5,
+        prescreen_q_low=0.05,
+        prescreen_q_high=0.95,
+    )
+    @test detected == sort(string.(names(df)[2:end][expected_idx]))
+end
+
 @testset "_centroid_with_sd — basic" begin
     curves = [1.0 2.0 3.0;
               3.0 4.0 5.0;

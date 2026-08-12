@@ -33,10 +33,17 @@ export const state = {
     // Sent as override_blank_wells so the fit uses them instead of the
     // annotation file's "b" wells. Cleared when the experiment changes.
     _acceptedBlankWells:   [],
+    _acceptedBlankExperiment: null,
     legendFontSize:        parseInt(localStorage.getItem('legendFontSize')     || '14'),
     axisTitleFontSize:     parseInt(localStorage.getItem('axisTitleFontSize')  || '14'),
     axisTickFontSize:      parseInt(localStorage.getItem('axisTickFontSize')   || '12'),
 };
+
+export function acceptedBlankWellsFor(experiment) {
+    return state._acceptedBlankExperiment === experiment
+        ? [...state._acceptedBlankWells]
+        : [];
+}
 
 export const API_BASE = '';
 

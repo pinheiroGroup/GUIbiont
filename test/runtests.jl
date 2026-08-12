@@ -21,8 +21,9 @@ const CLEAN_DATA_PATH = get(ENV, "CLEAN_DATA_PATH",
 include(joinpath(@__DIR__, "..", "src", "data.jl"))
 include(joinpath(@__DIR__, "..", "src", "experiment_store.jl"))
 
-# Load clustering helpers (needs Statistics only — no Kinbiont/HTTP)
-using Distributions: Normal, cdf
+# Load clustering helpers; blank detection delegates to Kinbiont's public
+# constant-curve pre-screen so it cannot drift from the clustering workflow.
+import Kinbiont
 import Clustering
 include(joinpath(@__DIR__, "..", "src", "clustering.jl"))
 

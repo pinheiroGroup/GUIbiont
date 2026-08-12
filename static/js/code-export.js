@@ -37,6 +37,55 @@ function juliaKeywordLines(entries) {
         .join('\n');
 }
 
+function acceptedBlankWells(req) {
+    const requested = Array.isArray(req.override_blank_wells) ? req.override_blank_wells : [];
+    return [...new Set(requested.map(String).filter(Boolean))].sort();
+}
+
+// Reproduce GUIbiont's explicit blank-well override from the original source
+// data. Unknown/stale labels are ignored, exactly as they are by the API; when
+// none remain, the loader's annotation-derived blank summary is retained.
+function blankExportContext(req, blankSub, blankMethod) {
+    const wells = acceptedBlankWells(req);
+    const useOverride = !!blankSub && wells.length > 0;
+    const value = useOverride ? 'override_blank_value' : 'source.blank_value';
+    const timeseries = useOverride ? 'override_blank_timeseries' : 'source.blank_timeseries';
+    const setup = useOverride ? `
+# Recompute the accepted blank-well override exactly as GUIbiont does.
+const BLANK_WELLS = ${juliaStringArray(wells)}
+blank_indices = Int[]
+for blank_well in BLANK_WELLS
+    idx = findfirst(==(blank_well), source.data.labels)
+    idx === nothing || push!(blank_indices, idx)
+end
+override_blank_value = source.blank_value
+override_blank_timeseries = source.blank_timeseries
+if !isempty(blank_indices)
+    blank_curves = [vec(source.data.curves[idx, :]) for idx in blank_indices]
+    blank_values = filter(isfinite, reduce(vcat, blank_curves))
+    override_blank_value = isempty(blank_values) ? 0.0 : mean(blank_values)
+    override_blank_timeseries = [
+        begin
+            at_time = filter(isfinite, [curve[j] for curve in blank_curves])
+            isempty(at_time) ? NaN : mean(at_time)
+        end for j in eachindex(source.data.times)
+    ]
+    valid_blank_timeseries = filter(isfinite, override_blank_timeseries)
+    blank_fallback = isempty(valid_blank_timeseries) ? 0.0 : mean(valid_blank_timeseries)
+    replace!(override_blank_timeseries, NaN => blank_fallback)
+end
+` : '';
+    const keywords = blankSub
+        ? [
+            ['blank_subtraction', 'true'],
+            ['blank_method', juliaString(blankMethod)],
+            ['blank_value', value],
+            ['blank_timeseries', blankMethod === 'pointbypoint' ? timeseries : null],
+        ]
+        : [];
+    return { wells, setup, keywords };
+}
+
 // ---------------------------------------------------------------------------
 // Dynamic Log-Lin settings used by Fit and Batch Fit exports
 // ---------------------------------------------------------------------------
@@ -263,14 +312,8 @@ export function generateFitCode(fitData, withComments) {
                 optimizer === 'GN_ISRES' ? '42' : null],
         ];
     const smoothingKeywords = parametricSmoothingKeywordPairs(req);
-    const blankKeywords = blankSub
-        ? [
-            ['blank_subtraction', 'true'],
-            ['blank_method', juliaString(blankMethod)],
-            ['blank_value', 'source.blank_value'],
-            ['blank_timeseries', blankMethod === 'pointbypoint' ? 'source.blank_timeseries' : null],
-        ]
-        : [];
+    const blankContext = blankExportContext(req, blankSub, blankMethod);
+    const blankKeywords = blankContext.keywords;
     const fitKeywords = juliaKeywordLines([
         ...modelKeywords,
         ...optimizerKeywords,
@@ -347,12 +390,14 @@ data = GrowthData(reshape(vec(source.data.curves[idx, :]), 1, :),
 # ================================================================
 
 using Kinbiont
+using Statistics
 
 const CLEAN_DATA_PATH = "path/to/Clean_data"
 const EXPERIMENT = ${juliaString(experiment)}
 ${targetConstant}
 
 ${dataBlock}
+${isReplicate ? '' : blankContext.setup}
 
 # With one selected label, this follows GUIbiont's smart initialisation,
 # preprocessing and complete single/best-of-N optimizer workflow.
@@ -394,14 +439,8 @@ export function generateFitLogLinKinbiontCode(fitData, withComments) {
         lowessThreshold: req.thr_lowess ?? 0.05,
         gaussianHMult: req.gaussian_h_mult ?? 2.0,
     };
-    const blankKeywords = blankSub
-        ? [
-            ['blank_subtraction', 'true'],
-            ['blank_method', juliaString(blankMethod)],
-            ['blank_value', 'source.blank_value'],
-            ['blank_timeseries', blankMethod === 'pointbypoint' ? 'source.blank_timeseries' : null],
-        ]
-        : [];
+    const blankContext = blankExportContext(req, blankSub, blankMethod);
+    const blankKeywords = blankContext.keywords;
     const loglinKeywords = juliaKeywordLines([
         ...blankKeywords,
         ...companionLogLinKeywordPairs(settings),
@@ -413,12 +452,14 @@ export function generateFitLogLinKinbiontCode(fitData, withComments) {
 # ================================================================
 
 using Kinbiont
+using Statistics
 
 const CLEAN_DATA_PATH = "path/to/Clean_data"
 const EXPERIMENT = ${juliaString(experiment)}
 const WELL = ${juliaString(well)}
 
 source = load_experiment_data(CLEAN_DATA_PATH, EXPERIMENT)
+${blankContext.setup}
 idx = findfirst(==(WELL), source.data.labels)
 idx === nothing && error("Well $(WELL) not found in $(EXPERIMENT)")
 data = GrowthData(reshape(vec(source.data.curves[idx, :]), 1, :),
@@ -443,7 +484,8 @@ println("R-squared:         ", result["R_squared_loglin"])
 export function generateBatchCode(batchData, withComments) {
     const req = batchData._request || {};
     const experiment = req.experiment || 'experiment';
-    const wells = req.wells || [];
+    const acceptedBlanks = acceptedBlankWells(req);
+    const wells = (req.wells || []).filter(well => !acceptedBlanks.includes(String(well)));
     const rawModels = req.model_names && req.model_names.length > 0
         ? req.model_names
         : [req.model_name || 'aHPM'];
@@ -478,14 +520,8 @@ export function generateBatchCode(batchData, withComments) {
                 singleOptimizer === 'GN_ISRES' ? '42' : null],
         ];
     const smoothingKeywords = parametricSmoothingKeywordPairs(req);
-    const blankKeywords = blankSub
-        ? [
-            ['blank_subtraction', 'true'],
-            ['blank_method', juliaString(blankMethod)],
-            ['blank_value', 'source.blank_value'],
-            ['blank_timeseries', blankMethod === 'pointbypoint' ? 'source.blank_timeseries' : null],
-        ]
-        : [];
+    const blankContext = blankExportContext(req, blankSub, blankMethod);
+    const blankKeywords = blankContext.keywords;
     const batchKeywords = juliaKeywordLines([
         ...modelKeywords,
         ...optimizerKeywords,
@@ -529,6 +565,7 @@ println("Log-Lin fitted: ", length(loglin_batch.results),
 # ================================================================
 
 using Kinbiont
+using Statistics
 
 const CLEAN_DATA_PATH = "path/to/Clean_data"
 const EXPERIMENT = ${juliaString(experiment)}
@@ -536,6 +573,7 @@ const OUT_PREFIX = ${juliaString(outPrefix)}
 const WELLS = ${juliaStringArray(wells)}
 
 source = load_experiment_data(CLEAN_DATA_PATH, EXPERIMENT)
+${blankContext.setup}
 data = source.data
 batch = kinbiont_batch_fit(
     data;
@@ -557,7 +595,8 @@ ${loglinBlock}
 export function generateBatchLogLinKinbiontCode(batchData, withComments) {
     const req = batchData._request || {};
     const experiment = req.experiment || 'experiment';
-    const wells = req.wells || [];
+    const acceptedBlanks = acceptedBlankWells(req);
+    const wells = (req.wells || []).filter(well => !acceptedBlanks.includes(String(well)));
     const ptAvg = req.pt_avg ?? 7;
     const ptDeriv = req.pt_smoothing_derivative ?? 7;
     const ptMinWin = req.pt_min_size_of_win ?? 7;
@@ -578,14 +617,8 @@ export function generateBatchLogLinKinbiontCode(batchData, withComments) {
         : smoothing === 'gaussian'
         ? [['type_of_smoothing', juliaString(smoothing)], ['gaussian_h_mult', juliaFloat(gaussianHMult, 2.0)]]
         : [['type_of_smoothing', juliaString(smoothing)]];
-    const blankKeywords = blankSub
-        ? [
-            ['blank_subtraction', 'true'],
-            ['blank_method', juliaString(blankMethod)],
-            ['blank_value', 'source.blank_value'],
-            ['blank_timeseries', blankMethod === 'pointbypoint' ? 'source.blank_timeseries' : null],
-        ]
-        : [];
+    const blankContext = blankExportContext(req, blankSub, blankMethod);
+    const blankKeywords = blankContext.keywords;
     const loglinKeywords = juliaKeywordLines([
         ...blankKeywords,
         ...smoothingKeywords,
@@ -607,6 +640,7 @@ export function generateBatchLogLinKinbiontCode(batchData, withComments) {
 # ================================================================
 
 using Kinbiont
+using Statistics
 
 const CLEAN_DATA_PATH = "path/to/Clean_data"
 const EXPERIMENT = ${juliaString(experiment)}
@@ -614,6 +648,7 @@ const OUT_PREFIX = ${juliaString(outPrefix)}
 const WELLS = ${juliaStringArray(wells)}
 
 source = load_experiment_data(CLEAN_DATA_PATH, EXPERIMENT)
+${blankContext.setup}
 data = source.data
 batch = kinbiont_batch_loglin(
     data;

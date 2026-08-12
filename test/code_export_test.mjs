@@ -52,6 +52,19 @@ includes(
 );
 excludes(fitLoglinGaussian, 'pt_avg=', 'thr_lowess=', 'kinbiont_batch_fit(');
 
+const fitLoglinOverride = generateFitLogLinKinbiontCode({ _request: {
+    experiment: 'exp', well: 'A1', type_of_smoothing: 'rolling_avg',
+    blank_subtraction: true, blank_method: 'pointbypoint',
+    override_blank_wells: ['A5', 'A6', 'A5'],
+} }, true);
+includes(
+    fitLoglinOverride,
+    'const BLANK_WELLS = String["A5", "A6"]',
+    'override_blank_value = isempty(blank_values) ? 0.0 : mean(blank_values)',
+    'blank_value=override_blank_value',
+    'blank_timeseries=override_blank_timeseries',
+);
+
 const fitFull = generateFitCode({ _request: {
     experiment: 'exp', well: 'A1', model_names: ['aHPM', 'logistic'],
     deterministic_optimizers: ['LN_COBYLA'],
@@ -80,6 +93,18 @@ excludes(
     fitFull,
     '\n    optimizer=', 'compute_loglin=', 'pt_avg=', 'companionLogLinSettings',
 );
+
+const fitOverride = generateFitCode({ _request: {
+    experiment: 'exp', well: 'A1', model_name: 'logistic',
+    blank_subtraction: true, blank_method: 'shift',
+    override_blank_wells: ['A5', 'A6'],
+} }, true);
+includes(
+    fitOverride,
+    'const BLANK_WELLS = String["A5", "A6"]',
+    'blank_value=override_blank_value',
+);
+excludes(fitOverride, 'blank_timeseries=override_blank_timeseries');
 
 const fitCompanionNone = generateFitCode({ _request: {
     experiment: 'exp', well: 'A1', model_name: 'logistic',
@@ -145,6 +170,19 @@ includes(
     'model_name="logistic"', 'optimizer="LN_COBYLA"', 'skip_flat_threshold=0.0',
     'source = load_experiment_data(', 'paths = save_batch_results(',
 );
+
+const batchOverride = generateBatchCode({ _request: {
+    experiment: 'exp', wells: ['A1', 'A5', 'A6'], model_name: 'logistic',
+    blank_subtraction: true, blank_method: 'pointbypoint',
+    override_blank_wells: ['A5', 'A6'],
+} }, true);
+includes(
+    batchOverride,
+    'const WELLS = String["A1"]',
+    'const BLANK_WELLS = String["A5", "A6"]',
+    'blank_value=override_blank_value',
+    'blank_timeseries=override_blank_timeseries',
+);
 excludes(
     batchMinimal,
     'model_names=', 'deterministic_optimizers=', 'stochastic_optimizers=', 'stochastic_runs=',
@@ -207,6 +245,19 @@ includes(
     batchLoglinRolling,
     'type_of_smoothing="rolling_avg"', 'pt_avg=9',
     'source = load_experiment_data(', 'paths = save_batch_loglin_results(',
+);
+
+const batchLoglinOverride = generateBatchLogLinKinbiontCode({ _request: {
+    experiment: 'exp', wells: ['A1', 'A5', 'A6'], type_of_smoothing: 'rolling_avg',
+    blank_subtraction: true, blank_method: 'pointbypoint',
+    override_blank_wells: ['A5', 'A6'],
+} }, true);
+includes(
+    batchLoglinOverride,
+    'const WELLS = String["A1"]',
+    'const BLANK_WELLS = String["A5", "A6"]',
+    'blank_value=override_blank_value',
+    'blank_timeseries=override_blank_timeseries',
 );
 excludes(
     batchLoglinRolling,

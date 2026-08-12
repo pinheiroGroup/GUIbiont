@@ -77,9 +77,9 @@ end
     try
         growth_data      = CSV.read(data_file, DataFrame, header=1, silencewarnings=true)
         annotations      = read_annotation_file(annotation_file)
-        excluded_wells   = get_blank_wells(annotations)   # "b" + "X"
         column_names_str = string.(names(growth_data))
         blank_well_names = resolve_blank_wells(growth_data, annotations, override_blank_wells)
+        excluded_wells   = fitting_excluded_wells(annotations, blank_well_names)
 
         if !(well in column_names_str)
             return json(Dict("error" => "Well '$well' not found"); status=404)
@@ -239,31 +239,42 @@ end
     try
         growth_data = CSV.read(data_file, DataFrame, header=1, silencewarnings=true)
 
-        # Allow caller to supply blank wells directly (e.g. from auto-detection)
+        annotations = isfile(annotation_file) ?
+            read_annotation_file(annotation_file) : DataFrame()
+
+        # Allow caller to supply blank wells directly (e.g. from auto-detection),
+        # but never trust names that are not actual well columns.
         override = get(request_data, :override_blank_wells, nothing)
         blank_well_names = if override !== nothing && length(override) > 0
-            String.(override)
-        elseif isfile(annotation_file)
-            annotations = read_annotation_file(annotation_file)
+            usable = usable_blank_wells(growth_data, String.(override))
+            isempty(usable) && ncol(annotations) >= 2 ?
+                get_blank_well_names(annotations) : usable
+        elseif ncol(annotations) >= 2
             get_blank_well_names(annotations)
         else
             String[]
         end
 
         if isempty(blank_well_names)
-            range_thr  = Float64(get(request_data, :blank_range_thr, 0.005))
-            od_pct     = Float64(get(request_data, :blank_od_percentile, 0.10))
-            auto_wells = isfile(data_file) ? _detect_blank_wells(growth_data;
-                flat_range_thr = range_thr, od_percentile = od_pct) : String[]
+            auto_wells = _detect_blank_wells(growth_data;
+                prescreen_tol=0.5,
+                prescreen_q_low=0.05,
+                prescreen_q_high=0.95,
+            )
             return Dict(
                 "has_blank_wells"      => false,
                 "blank_wells"          => String[],
                 "blank_value"          => 0.0,
                 "recommendation"       => "none",
                 "auto_detected_wells"  => auto_wells,
+                "detection_method"     => "clustering_constant_prescreen",
+                "prescreen_tol_const"  => 0.5,
+                "prescreen_q_low"      => 0.05,
+                "prescreen_q_high"     => 0.95,
+                "prescreen_range_thr"  => 0.01,
                 "message"              => isempty(auto_wells)
                     ? "No blank wells found in annotation and none could be detected automatically."
-                    : "No blank wells annotated. Auto-detected $(length(auto_wells)) candidate blank well(s) based on flat curve and low OD: $(join(auto_wells, ", ")).",
+                    : "No blank wells annotated. Auto-detected $(length(auto_wells)) candidate blank well(s) with the clustering constant-curve pre-screen (tau=0.5, q05/q95, quantile range threshold 0.01): $(join(auto_wells, ", ")).",
             )
         end
 
@@ -399,16 +410,17 @@ end
 
         growth_data      = CSV.read(data_file, DataFrame, header=1, silencewarnings=true)
         annotations      = read_annotation_file(annotation_file)
-        excluded_wells   = get_blank_wells(annotations)
         column_names_str = string.(names(growth_data))
         blank_well_names = resolve_blank_wells(growth_data, annotations, override_blank_wells)
+        excluded_wells   = fitting_excluded_wells(annotations, blank_well_names)
         time_numeric     = parse_time_column(growth_data)
         blank_value      = compute_blank_value(growth_data, blank_well_names)
         blank_ts         = subtract_blank && blank_method == "pointbypoint" ?
             compute_blank_timeseries(growth_data, blank_well_names) : Float64[]
 
-        wells_to_fit = requested_wells !== nothing ? requested_wells :
-            filter(w -> w in column_names_str && !(w in excluded_wells), column_names_str[2:end])
+        candidate_wells = requested_wells !== nothing ? requested_wells : column_names_str[2:end]
+        excluded_blank_wells = sort(unique(filter(w -> w in excluded_wells, candidate_wells)))
+        wells_to_fit = filter(w -> !(w in excluded_wells), candidate_wells)
 
         job_id = string(time_ns(), base=16)
         job = Dict{String, Any}(
@@ -428,6 +440,9 @@ end
             "blank_method"      => blank_method,
             "blank_value"       => blank_value,
             "blank_timeseries"  => blank_ts,
+            "blank_wells"       => blank_well_names,
+            "blank_applied"     => subtract_blank && blank_value > 0.0,
+            "excluded_blank_wells" => excluded_blank_wells,
             "total"        => length(wells_to_fit),
             "completed"    => 0,
             "current_well" => "",
@@ -582,6 +597,9 @@ end
             resp["blank_method"]      = get(job, "blank_method", "")
             resp["blank_value"]       = get(job, "blank_value", 0.0)
             resp["blank_timeseries"]  = get(job, "blank_timeseries", Float64[])
+            resp["blank_wells"]       = get(job, "blank_wells", String[])
+            resp["blank_applied"]     = get(job, "blank_applied", false)
+            resp["excluded_blank_wells"] = get(job, "excluded_blank_wells", String[])
             resp["results"]     = job["results"]
             resp["skipped"]     = get(job, "skipped", Any[])
             resp["summary"]     = job["summary"]
@@ -628,16 +646,17 @@ end
 
         growth_data      = CSV.read(data_file, DataFrame, header=1, silencewarnings=true)
         annotations      = read_annotation_file(annotation_file)
-        excluded_wells   = get_blank_wells(annotations)
         column_names_str = string.(names(growth_data))
         blank_well_names = resolve_blank_wells(growth_data, annotations, override_blank_wells)
+        excluded_wells   = fitting_excluded_wells(annotations, blank_well_names)
         time_numeric     = parse_time_column(growth_data)
         blank_value      = compute_blank_value(growth_data, blank_well_names)
         blank_ts         = subtract_blank && blank_method == "pointbypoint" ?
             compute_blank_timeseries(growth_data, blank_well_names) : Float64[]
 
-        wells_to_fit = requested_wells !== nothing ? requested_wells :
-            filter(w -> w in column_names_str && !(w in excluded_wells), column_names_str[2:end])
+        candidate_wells = requested_wells !== nothing ? requested_wells : column_names_str[2:end]
+        excluded_blank_wells = sort(unique(filter(w -> w in excluded_wells, candidate_wells)))
+        wells_to_fit = filter(w -> !(w in excluded_wells), candidate_wells)
 
         job_id = string(time_ns(), base=16)
         job = Dict{String, Any}(
@@ -660,6 +679,9 @@ end
             "blank_method"      => blank_method,
             "blank_value"       => blank_value,
             "blank_timeseries"  => blank_ts,
+            "blank_wells"       => blank_well_names,
+            "blank_applied"     => subtract_blank && blank_value > 0.0,
+            "excluded_blank_wells" => excluded_blank_wells,
             "total"        => length(wells_to_fit),
             "completed"    => 0,
             "current_well" => "",
@@ -920,9 +942,9 @@ end
     try
         growth_data      = CSV.read(data_file, DataFrame, header=1, silencewarnings=true)
         annotations      = read_annotation_file(annotation_file)
-        excluded_wells   = get_blank_wells(annotations)
         column_names_str = string.(names(growth_data))
         blank_well_names = resolve_blank_wells(growth_data, annotations, override_blank_wells)
+        excluded_wells   = fitting_excluded_wells(annotations, blank_well_names)
 
         if !(well in column_names_str)
             return json(Dict("error" => "Well '$well' not found"); status=404)
@@ -946,88 +968,23 @@ end
         od = od_raw[valid]
 
         blank_ts_valid = isempty(blank_timeseries) ? Float64[] : blank_timeseries[valid]
-        prepared = _prepare_fit_curve(
-            t, od, well;
-            blank_value,
-            subtract_blank,
-            blank_method,
+        return fit_well_loglin(
+            t, od, blank_value, well, experiment;
+            subtract_blank=subtract_blank,
+            blank_method=blank_method,
             blank_timeseries=blank_ts_valid,
-            unblanked_floor=1e-4,
+            blank_well_names=blank_well_names,
+            type_of_smoothing=smoothing,
+            pt_avg=pt_avg,
+            pt_smoothing_derivative=pt_deriv,
+            pt_min_size_of_win=pt_min_win,
+            type_of_win=win_type,
+            threshold_of_exp=thr_exp,
+            start_exp_win_thr=start_thr,
+            thr_lowess=thr_lowess,
+            gaussian_h_mult=gaussian_h_mult,
+            include_diagnostics=true,
         )
-        od_for_fit = prepared.od_for_fit
-        od_subtracted_display = prepared.od_subtracted_display
-
-        data_mat = Matrix(transpose(hcat(t, od_for_fit)))
-
-        raw = Kinbiont.fitting_one_well_Log_Lin(
-            data_mat,
-            well,
-            experiment;
-            type_of_smoothing       = smoothing,
-            pt_avg                  = pt_avg,
-            pt_smoothing_derivative = pt_deriv,
-            pt_min_size_of_win      = pt_min_win,
-            type_of_win             = win_type,
-            threshold_of_exp        = thr_exp,
-            start_exp_win_thr       = start_thr,
-            thr_lowess              = thr_lowess,
-            gaussian_h_mult         = gaussian_h_mult,
-        )
-
-        # raw = (method, params, fit_matrix, smoothed_data, confidence_band)
-        # params layout from Fit_one_well_functions.jl:
-        #   [label_exp, name_well, t_start_exp, t_end_exp, t_max_gr, gr_max,
-        #    slope, sigma_b, dt, dt_minus, dt_plus, intercept, sigma_a, rho]
-        params       = raw[2]
-        fit_matrix   = raw[3]
-        smoothed     = raw[4]
-        ci_band      = raw[5]
-        lag_loglin   = length(params) >= 15 && params[15] !== missing ?
-            Float64(params[15]) : NaN
-        n_max_emp    = _loglin_stationary_nmax(raw, pt_deriv)
-
-        # Guard against the "no exp window found" path where matrix is `missing`.
-        fit_times    = ismissing(fit_matrix) ? Float64[] :
-                       Vector{Float64}(fit_matrix[:, 1])
-        log_fit_vals = ismissing(fit_matrix) ? Float64[] :
-                       Vector{Float64}(fit_matrix[:, 2])
-        fit_od_vals  = isempty(log_fit_vals) ? Float64[] : exp.(log_fit_vals)
-        ci_vals      = ismissing(ci_band) ? Float64[] : Vector{Float64}(ci_band)
-
-        param_names = [
-            "label_exp", "well", "t_start_exp", "t_end_exp", "t_max_gr",
-            "gr_max", "slope", "slope_se", "doubling_time",
-            "doubling_time_minus_se", "doubling_time_plus_se",
-            "intercept", "intercept_se", "R_squared",
-        ]
-
-        result = Dict{String, Any}(
-            "experiment"            => experiment,
-            "well"                  => well,
-            "method"                => raw[1],
-            "experimental_time"     => t,
-            "experimental_od"       => od,
-            "smoothed_time"         => Vector{Float64}(smoothed[1, :]),
-            "smoothed_od"           => Vector{Float64}(smoothed[2, :]),
-            "fit_time"              => fit_times,
-            "fit_od"                => fit_od_vals,
-            "fit_log_od"            => log_fit_vals,
-            "confidence_band_log"   => ci_vals,
-            "param_names"           => param_names,
-            "parameters"            => params,
-            "lag_loglin"            => lag_loglin,
-            "N_max_emp"             => n_max_emp,
-            "blank_value"           => blank_value,
-            "blank_subtraction"     => subtract_blank,
-            "blank_method"          => blank_method,
-            "blank_wells"           => blank_well_names,
-        )
-
-        if od_subtracted_display !== nothing
-            result["experimental_od_subtracted"] = od_subtracted_display
-        end
-
-        return sanitize_for_json(result)
     catch e
         return json(Dict("error" => "Log-linear fitting failed: $e"); status=500)
     end

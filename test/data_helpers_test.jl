@@ -227,6 +227,8 @@ end
 
     # Names absent from the data file are dropped rather than trusted.
     @test resolve_blank_wells(gd, ann, ["A5", "NOPE_1", "ZZ99"]) == ["A5"]
+    @test usable_blank_wells(gd, ["A6", "A5", "A5", "Time", "NOPE_1"]) ==
+          ["A5", "A6"]
     # Nothing usable in the override -> fall back rather than leave the fit blankless.
     @test resolve_blank_wells(gd, ann, ["NOPE_1"]) == annotated
 
@@ -235,4 +237,8 @@ end
     @test compute_blank_value(gd, override) != compute_blank_value(gd, annotated)
     @test length(compute_blank_timeseries(gd, override)) ==
           length(compute_blank_timeseries(gd, annotated))
+
+    excluded = fitting_excluded_wells(ann, override)
+    @test all(w -> w in excluded, override)
+    @test all(w -> w in excluded, get_blank_wells(ann))
 end
