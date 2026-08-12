@@ -1697,10 +1697,20 @@ async function runClusterSweep() {
 }
 
 // Return the k at which the second derivative of clustering cost is maximised.
-function _detectElbow(ks, costs) {
+// k=1 never reserves a non-growing sentinel, so its WCSS only excludes what
+// every k>=2 candidate also excludes when the pre-screen actually assigns no
+// curves to the sentinel at any k (e.g. LB, which has none) — in that case
+// WCSS(1) stays comparable and k=1 is a valid neighbor. When some k>=2 DOES
+// carve out a non-growing sentinel (e.g. M63), WCSS(1) includes curves that
+// WCSS(k) excludes, so k=1 cannot serve as a neighbor: candidates start at
+// k=3, the first triplet drawn entirely from k>=2.
+function _detectElbow(ks, costs, sweep) {
     if (costs.length < 3) return ks[0];
-    let maxD2 = -Infinity, elbowIdx = 1;
-    for (let i = 1; i < costs.length - 1; i++) {
+    const anyNonGrowingExcluded = (sweep || []).some(r => (r.n_nongrowing || 0) > 0);
+    let start = anyNonGrowingExcluded ? 2 : 1;
+    if (start >= costs.length - 1) start = 1;
+    let maxD2 = -Infinity, elbowIdx = start;
+    for (let i = start; i < costs.length - 1; i++) {
         const d2 = costs[i - 1] - 2 * costs[i] + costs[i + 1];
         if (d2 > maxD2) { maxD2 = d2; elbowIdx = i; }
     }
@@ -1746,7 +1756,7 @@ function renderSweepPanel(sweep) {
     const costLabel = 'WCSS';
 
     // --- Method-independent centroid-WCSS elbow plot ---
-    const elbowK = _detectElbow(ks, costs);
+    const elbowK = _detectElbow(ks, costs, sweep);
     const elbowY = costs[ks.indexOf(elbowK)];
     _setSweepTitle('cost', `${costLabel} (elbow: k=${elbowK}) \u2193`);
     Plotly.newPlot(document.getElementById('cluster-sweep-plot-wcss'), [

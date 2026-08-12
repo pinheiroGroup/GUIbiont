@@ -812,6 +812,11 @@ end
         ids   = gd_result.clusters
         cluster_cost = something(gd_result.wcss, 0.0)
         cost_metric = "wcss"
+        # Curves assigned to the non-growing sentinel (excluded from WCSS above
+        # opts.n_clusters>1) at this k. Used by the frontend to tell whether
+        # WCSS(1), which never reserves a sentinel, is actually comparable to
+        # WCSS(k) here — see clustering.js:_detectElbow.
+        n_nongrowing = prescreen_for_k ? count(==(k), ids) : 0
 
         # At k=1 every quality index is undefined (silhouette, Dunn, Davies-Bouldin,
         # Calinski-Harabasz and Xie-Beni all need ≥ 2 clusters). Skip the call so
@@ -837,6 +842,7 @@ end
             "cost"              => cluster_cost,
             "cost_metric"       => cost_metric,
             "wcss"              => cluster_cost, # backwards-compatible key
+            "n_nongrowing"      => n_nongrowing,
             "silhouette_mean"   => q["silhouette_mean"],
             "dunn"              => q["dunn"],
             "davies_bouldin"    => q["davies_bouldin"],
