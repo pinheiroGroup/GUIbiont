@@ -1216,7 +1216,7 @@ version = "0.73.26+0"
 deps = ["CSV", "Clustering", "DataFrames", "DecisionTree", "Distributions", "HTTP", "JSON3", "Kinbiont", "OptimizationBBO", "OptimizationNLopt", "Oxygen", "Plots", "Statistics", "StatsBase", "StructTypes", "Tables", "XLSX", "ZipFile"]
 path = "."
 uuid = "042eaf79-12e5-4d26-8ff7-ef0f1c4deb6f"
-version = "1.1.0"
+version = "1.1.1"
 
 [[deps.Gamma]]
 git-tree-sha1 = "86f86b6168a016ed88e4ae4e64577b98c3b59e8e"
