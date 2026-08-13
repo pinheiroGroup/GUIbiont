@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="GUIbiont">
+  <rect width="64" height="64" rx="14" fill="#07091a"/>
+  <path d="M8,52 C18,51 25,45 31,32 C35,23 40,17 46,16 C50,16 54,16 57,16"
+        fill="none" stroke="#00d4b8" stroke-width="6" stroke-linecap="round"/>
+  <path d="M8,55 C22,55 40,55 57,55"
+        fill="none" stroke="#818cf8" stroke-width="3.5" stroke-linecap="round" opacity=".55"/>
+</svg>

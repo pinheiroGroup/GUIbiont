@@ -3,8 +3,98 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>GUIbiont: reproducible microbial growth phenotyping</title>
+  <title>GUIbiont: no-code microbial growth phenotyping in the browser</title>
   <meta name="description" content="GUIbiont is a no-code browser interface to Kinbiont.jl for quality control, curve fitting, trajectory clustering and metadata-linked analysis of plate-reader growth data. Interactive sessions export as executable Julia scripts." />
+  <link rel="canonical" href="https://pinheirogroup.github.io/GUIbiont/" />
+  <meta name="author" content="Edgar Z. Alvarenga, Edoardo Oltolini, Fernanda Pinheiro" />
+  <meta name="keywords" content="microbial growth curves, growth phenotyping, plate reader analysis, no-code bioinformatics, curve fitting, growth rate, lag time, trajectory clustering, Kinbiont.jl, Julia, 96-well plate, optical density, high-throughput screening" />
+  <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1" />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#fdfdfc" />
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#07091a" />
+
+  <!-- ── Icons ─────────────────────────────────────────────────── -->
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+
+  <!-- ── Open Graph (Facebook, LinkedIn, Slack, Mastodon, …) ───── -->
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="GUIbiont" />
+  <meta property="og:title" content="GUIbiont: no-code microbial growth phenotyping in the browser" />
+  <meta property="og:description" content="No-code quality control, curve fitting, trajectory clustering and metadata-linked analysis of plate-reader growth data. Interactive sessions export as executable Julia scripts. Built on Kinbiont.jl." />
+  <meta property="og:url" content="https://pinheirogroup.github.io/GUIbiont/" />
+  <meta property="og:image" content="https://pinheirogroup.github.io/GUIbiont/og-image.png" />
+  <meta property="og:image:type" content="image/png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="GUIbiont — schematic growth curves for early-transition, late-transition and non-growing clusters above a 96-well plate layout." />
+  <meta property="og:locale" content="en_US" />
+
+  <!-- ── X / Twitter ───────────────────────────────────────────── -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="GUIbiont: no-code microbial growth phenotyping in the browser" />
+  <meta name="twitter:description" content="No-code quality control, curve fitting, trajectory clustering and metadata-linked analysis of plate-reader growth data. Sessions export as executable Julia scripts." />
+  <meta name="twitter:image" content="https://pinheirogroup.github.io/GUIbiont/og-image.png" />
+  <meta name="twitter:image:alt" content="GUIbiont — schematic growth curves for early-transition, late-transition and non-growing clusters above a 96-well plate layout." />
+
+  <!-- ── Structured data ───────────────────────────────────────── -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "SoftwareApplication",
+        "@id": "https://pinheirogroup.github.io/GUIbiont/#software",
+        "name": "GUIbiont",
+        "url": "https://pinheirogroup.github.io/GUIbiont/",
+        "description": "A no-code browser application for microbial growth phenotyping: quality control, curve fitting, trajectory clustering and metadata-linked analysis, built on Kinbiont.jl. Interactive sessions export as executable Julia scripts.",
+        "applicationCategory": "Scientific software",
+        "applicationSubCategory": "Bioinformatics",
+        "operatingSystem": "Linux, macOS, Windows",
+        "softwareVersion": "1.1.0",
+        "softwareRequirements": "Julia 1.6 or newer",
+        "programmingLanguage": "Julia",
+        "license": "https://opensource.org/licenses/MIT",
+        "codeRepository": "https://github.com/pinheiroGroup/GUIbiont",
+        "identifier": "https://doi.org/10.5281/zenodo.21921432",
+        "isBasedOn": "https://github.com/pinheiroGroup/Kinbiont.jl",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "EUR" },
+        "keywords": "microbial growth, growth curves, no-code, clustering, Julia, plate reader",
+        "author": [
+          {
+            "@type": "Person",
+            "name": "Edgar Z. Alvarenga",
+            "identifier": "https://orcid.org/0009-0002-7506-2540",
+            "affiliation": { "@type": "Organization", "name": "Fuzuê Tech, Kraków, Poland" }
+          },
+          {
+            "@type": "Person",
+            "name": "Edoardo Oltolini",
+            "identifier": "https://orcid.org/0009-0002-1086-8279",
+            "affiliation": { "@type": "Organization", "name": "Human Technopole, Milan, Italy" }
+          },
+          {
+            "@type": "Person",
+            "name": "Fernanda Pinheiro",
+            "identifier": "https://orcid.org/0000-0002-0132-0562",
+            "affiliation": { "@type": "Organization", "name": "Human Technopole, Milan, Italy" }
+          }
+        ],
+        "funder": { "@type": "Organization", "name": "Human Technopole" }
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://pinheirogroup.github.io/GUIbiont/#website",
+        "url": "https://pinheirogroup.github.io/GUIbiont/",
+        "name": "GUIbiont",
+        "description": "No-code microbial growth phenotyping in the browser.",
+        "inLanguage": "en",
+        "about": { "@id": "https://pinheirogroup.github.io/GUIbiont/#software" }
+      }
+    ]
+  }
+  </script>
+
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -972,7 +1062,7 @@
     <div class="cite-grid">
       <div class="cite-card">
         <div class="cite-what">Manuscript</div>
-        <p>Zanella Alvarenga E., Oltolini E., Pinheiro F. <em>GUIbiont: reproducible microbial growth phenotyping in the browser.</em> Preprint. <!-- TODO: add bioRxiv DOI once posted --></p>
+        <p>Alvarenga E.Z., Oltolini E., Pinheiro F. <em>No-code microbial growth phenotyping with GUIbiont.</em> Preprint. <!-- TODO: add bioRxiv DOI once posted --></p>
       </div>
       <div class="cite-card">
         <div class="cite-what">Software</div>
