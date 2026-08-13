@@ -1216,7 +1216,7 @@ version = "0.73.26+0"
 deps = ["CSV", "Clustering", "DataFrames", "DecisionTree", "Distributions", "HTTP", "JSON3", "Kinbiont", "OptimizationBBO", "OptimizationNLopt", "Oxygen", "Plots", "Statistics", "StatsBase", "StructTypes", "Tables", "XLSX", "ZipFile"]
 path = "."
 uuid = "042eaf79-12e5-4d26-8ff7-ef0f1c4deb6f"
-version = "1.0.0"
+version = "1.1.0"
 
 [[deps.Gamma]]
 git-tree-sha1 = "86f86b6168a016ed88e4ae4e64577b98c3b59e8e"
@@ -1511,9 +1511,9 @@ weakdeps = ["EnzymeCore", "LinearAlgebra", "SparseArrays"]
 
 [[deps.Kinbiont]]
 deps = ["AbstractTrees", "CSV", "Catalyst", "ChangePointDetection", "Clustering", "Combinatorics", "DataFrames", "DecisionTree", "DelimitedFiles", "DiffEqParamEstim", "DifferentialEquations", "Distributions", "Documenter", "DynamicQuantities", "Interpolations", "Lowess", "LsqFit", "MLJ", "MLJDecisionTreeInterface", "Missings", "NaNMath", "NonlinearSolve", "Optim", "Optimization", "OptimizationBBO", "OptimizationMultistartOptimization", "OptimizationNLopt", "OrdinaryDiffEq", "Peaks", "Random", "SciMLBase", "SpecialFunctions", "Statistics", "StatsBase", "SymbolicRegression", "SymbolicUtils", "Tables", "XLSX", "Zygote"]
-git-tree-sha1 = "d14c25aa74cfb342f03f9702b5c28d3624ac5a31"
+git-tree-sha1 = "057841fa56817fa978506c42544bb81f43769f19"
 uuid = "3b7c519f-be5e-4159-a208-6486ce96bb37"
-version = "1.5.0"
+version = "1.5.1"
 
     [deps.Kinbiont.extensions]
     KinbiontDataDrivenExt = ["DataDrivenDiffEq", "DataDrivenSparse", "ModelingToolkit"]
