@@ -22,7 +22,7 @@ authors:
     orcid: https://orcid.org/0000-0002-0132-0562
 repository-code: https://github.com/pinheiroGroup/GUIbiont
 license: MIT
-version: 1.1.0
+version: 1.1.1
 date-released: '2026-08-13'
 keywords:
   - microbial growth
