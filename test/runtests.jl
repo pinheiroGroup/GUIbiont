@@ -252,8 +252,28 @@ const SINGLE_CH_WELL = "A3"
 const MULTI_CH_EXP   = "LG298"
 const MULTI_CH_WELLS = Dict(1 => "A1", 2 => "C1", 3 => "E1")
 
+# The API tests exercise two real plate-reader experiments that live in the
+# server's Clean_data/ directory. That directory is user data and is not part
+# of the repository, so a fresh clone does not have them. Check for them up
+# front and skip cleanly rather than reporting dozens of failures.
+function api_fixtures_available()
+    try
+        status, body = get_json("/api/experiments")
+        status == 200 || return false
+        names = Set(string.(body))
+        return SINGLE_CH_EXP in names && MULTI_CH_EXP in names
+    catch
+        return false
+    end
+end
+
 if !server_available()
     @info "Server not reachable at $BASE_URL — skipping API tests. Start the server to run them."
+elseif !api_fixtures_available()
+    @info """Skipping API tests — the server at $BASE_URL does not provide the \
+             experiments they require ($SINGLE_CH_EXP, $MULTI_CH_EXP). These are \
+             plate-reader datasets kept in the server's Clean_data/ directory, \
+             which is not tracked in this repository."""
 else
 
 @testset "web_server.jl API" begin
