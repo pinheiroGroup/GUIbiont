@@ -221,10 +221,10 @@ end # isdir(RAW_LG281)
 # web_server.jl API endpoints
 #
 # Requires a running server. Set SERVER_URL env variable to override the
-# default (http://localhost:9090).
+# default (http://localhost:8080).
 # ---------------------------------------------------------------------------
 
-const BASE_URL = get(ENV, "SERVER_URL", "http://localhost:9090")
+const BASE_URL = get(ENV, "SERVER_URL", "http://localhost:8080")
 
 function server_available()
     try
