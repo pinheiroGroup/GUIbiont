@@ -269,12 +269,17 @@ end
 
 if !server_available()
     @info "Server not reachable at $BASE_URL — skipping API tests. Start the server to run them."
-elseif !api_fixtures_available()
-    @info """Skipping API tests — the server at $BASE_URL does not provide the \
-             experiments they require ($SINGLE_CH_EXP, $MULTI_CH_EXP). These are \
-             plate-reader datasets kept in the server's Clean_data/ directory, \
-             which is not tracked in this repository."""
+    @testset "web_server.jl API (skipped)" begin
+        @test_skip true
+    end
 else
+    const HAS_API_FIXTURES = api_fixtures_available()
+    if !HAS_API_FIXTURES
+        @info """Fixture-backed API tests are skipped — the server at $BASE_URL does not provide the \
+                 experiments they require ($SINGLE_CH_EXP, $MULTI_CH_EXP). These are \
+                 plate-reader datasets kept in the server's Clean_data/ directory, \
+                 which is not tracked in this repository."""
+    end
 
 @testset "web_server.jl API" begin
 
@@ -282,11 +287,14 @@ else
         status, body = get_json("/api/experiments")
         @test status == 200
         @test body isa AbstractVector
-        @test !isempty(body)
-        @test SINGLE_CH_EXP in body
-        @test MULTI_CH_EXP  in body
+        if HAS_API_FIXTURES
+            @test !isempty(body)
+            @test SINGLE_CH_EXP in body
+            @test MULTI_CH_EXP in body
+        end
     end
 
+    if HAS_API_FIXTURES
     @testset "POST /api/multi-experiment-info — single channel" begin
         status, body = post_json("/api/multi-experiment-info",
                                  Dict("experiments" => [SINGLE_CH_EXP]))
@@ -369,6 +377,12 @@ else
         @test haskey(body, :has_blank_wells) || haskey(body, :error)
     end
 
+    else
+        @testset "experiment-backed API tests (skipped: fixture experiments unavailable)" begin
+            @test_skip true
+        end
+    end
+
     @testset "GET /api/models" begin
         status, body = get_json("/api/models")
         @test status == 200
@@ -394,6 +408,7 @@ else
         @test type_map["NL_Gompertz"] == "NL"
     end
 
+    if HAS_API_FIXTURES
     @testset "POST /api/fit-curve — default model (aHPM)" begin
         status, body = post_json("/api/fit-curve",
                                  Dict("experiment" => SINGLE_CH_EXP, "well" => SINGLE_CH_WELL))
@@ -593,6 +608,12 @@ else
         @test haskey(body, :error)
     end
 
+    else
+        @testset "fixture-backed API tests (skipped: fixture experiments unavailable)" begin
+            @test_skip true
+        end
+    end
+
     @testset "GET / serves HTML" begin
         r = HTTP.get("$BASE_URL/"; status_exception=false)
         @test r.status == 200
@@ -636,6 +657,12 @@ else
 
 end # @testset "web_server.jl API"
 
-include("api_routes_test.jl")
+if HAS_API_FIXTURES
+    include("api_routes_test.jl")
+else
+    @testset "additional API route tests (skipped: fixture experiments unavailable)" begin
+        @test_skip true
+    end
+end
 
 end # if server_available()
