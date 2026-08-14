@@ -391,7 +391,7 @@ end
             stub_rows = [(w, "unknown", "unknown", "", "", "", "1") for w in wells]
             CSV.write(joinpath(output_path, "annotation_clean.csv"),
                       Tables.table(reduce(vcat, [collect(r)' for r in stub_rows]; init=Matrix{Any}(undef, 0, 7))),
-                      writeheader=false)
+                      header=false)
         end
 
         created_files = isdir(output_path) ? readdir(output_path) : String[]

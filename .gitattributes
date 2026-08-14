@@ -1,0 +1,3 @@
+test/*.py text eol=lf
+test/fixtures/raw/LG281/*.csv text eol=lf
+test/fixtures/clean/LG281/*.csv text eol=lf

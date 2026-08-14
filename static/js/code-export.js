@@ -384,7 +384,7 @@ data = GrowthData(reshape(vec(source.data.curves[idx, :]), 1, :),
     const code = `\
 # ================================================================
 # Growth curve fitting — exported from GUIbiont
-# KinBiont.jl docs: https://github.com/pinheiroGroup/Kinbiont.jl
+# Kinbiont.jl docs: https://github.com/pinheiroGroup/Kinbiont.jl
 # Reruns the workflow from local source files; no GUI input curve or
 # GUI result is embedded, and result comparison is intentionally external.
 # ================================================================
@@ -560,7 +560,7 @@ println("Log-Lin fitted: ", length(loglin_batch.results),
     const code = `\
 # ================================================================
 # Batch growth curve fitting - exported from GUIbiont
-# KinBiont.jl docs: https://github.com/pinheiroGroup/Kinbiont.jl
+# Kinbiont.jl docs: https://github.com/pinheiroGroup/Kinbiont.jl
 # Reruns the workflow from local source files; no GUI result is embedded.
 # ================================================================
 
@@ -635,7 +635,7 @@ export function generateBatchLogLinKinbiontCode(batchData, withComments) {
     const code = `\
 # ================================================================
 # Batch log-linear growth-rate fit - exported from GUIbiont
-# KinBiont.jl docs: https://github.com/pinheiroGroup/Kinbiont.jl
+# Kinbiont.jl docs: https://github.com/pinheiroGroup/Kinbiont.jl
 # Reruns the workflow from local source files; no GUI result is embedded.
 # ================================================================
 
@@ -869,7 +869,7 @@ cluster_ids = reassign_non_growing(
     const code = `\
 # ================================================================
 # Growth curve clustering — exported from GUIbiont
-# KinBiont.jl docs: https://github.com/pinheiroGroup/Kinbiont.jl
+# Kinbiont.jl docs: https://github.com/pinheiroGroup/Kinbiont.jl
 # Install:  using Pkg; Pkg.add("Kinbiont")
 # ================================================================
 

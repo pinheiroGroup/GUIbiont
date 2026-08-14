@@ -1,6 +1,6 @@
-# Growth curve fitting using the KinBiont.jl API
+# Growth curve fitting using the Kinbiont.jl API
 # ---------------------------------------------------------------------------
-# Shared growth curve fitting using the KinBiont.jl new API
+# Shared growth curve fitting using the Kinbiont.jl new API
 # ---------------------------------------------------------------------------
 using OptimizationBBO: BBO_adaptive_de_rand_1_bin_radiuslimited
 using OptimizationNLopt: NLopt

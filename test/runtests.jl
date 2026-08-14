@@ -33,15 +33,11 @@ include("clustering_helpers_test.jl")
 include("analysis_helpers_test.jl")
 
 # ---------------------------------------------------------------------------
-# Paths to fixtures — prefer committed test/fixtures, fall back to local data
+# Paths to committed, anonymized parser fixtures
 # ---------------------------------------------------------------------------
 
-const RAW_LG281 = let p = joinpath(@__DIR__, "fixtures", "raw", "LG281")
-    isdir(p) ? p : joinpath(@__DIR__, "..", "raw_data", "LG281")
-end
-const GOLDEN_LG281 = let p = joinpath(@__DIR__, "fixtures", "clean", "LG281")
-    isdir(p) ? p : joinpath(@__DIR__, "..", "Clean_data", "LG281")
-end
+const RAW_LG281 = joinpath(@__DIR__, "fixtures", "raw", "LG281")
+const GOLDEN_LG281 = joinpath(@__DIR__, "fixtures", "clean", "LG281")
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -72,22 +68,14 @@ end
         @test detect_csv_separator(semi_file)  == ';'
     end
 
-    if isdir(RAW_LG281)
-        # Real LG281 data file uses semicolons
-        @test detect_csv_separator(joinpath(RAW_LG281, "data.csv"))  == ';'
-        @test detect_csv_separator(joinpath(RAW_LG281, "plate.csv")) == ';'
-    else
-        @info "Skipping LG281 real-data checks for detect_csv_separator — fixture not found at $RAW_LG281"
-    end
+    @test detect_csv_separator(joinpath(RAW_LG281, "data.csv"))  == ';'
+    @test detect_csv_separator(joinpath(RAW_LG281, "plate.csv")) == ';'
 end
 
 # ---------------------------------------------------------------------------
 # cleaning_data_synergy — run against LG281 and compare to golden output
 # ---------------------------------------------------------------------------
 
-if !isdir(RAW_LG281) || !isdir(GOLDEN_LG281)
-    @info "Skipping cleaning_data_synergy tests — LG281 fixture not found (raw: $RAW_LG281, golden: $GOLDEN_LG281)"
-else
 @testset "cleaning_data_synergy" begin
     mktempdir() do out_dir
         out_path = out_dir * "/"
@@ -148,15 +136,11 @@ else
         end
     end
 end
-end # isdir(RAW_LG281)
 
 # ---------------------------------------------------------------------------
 # read_labguru_annotation — run against LG281 and compare to golden output
 # ---------------------------------------------------------------------------
 
-if !isdir(RAW_LG281) || !isdir(GOLDEN_LG281)
-    @info "Skipping read_labguru_annotation tests — LG281 fixture not found"
-else
 @testset "read_labguru_annotation" begin
     mktempdir() do out_dir
         out_path = out_dir * "/"
@@ -167,10 +151,10 @@ else
         end
 
         @testset "produces per-channel per-media annotation files" begin
-            @test isfile(joinpath(out_dir, "annotation_channel_1_media_M9+glucose.csv"))
-            @test isfile(joinpath(out_dir, "annotation_channel_2_media_M9+glucose.csv"))
+            @test isfile(joinpath(out_dir, "annotation_channel_1_media_TEST_MEDIUM.csv"))
+            @test isfile(joinpath(out_dir, "annotation_channel_2_media_TEST_MEDIUM.csv"))
             # Channel 3 has no wells assigned in LG281 plate layout
-            @test !isfile(joinpath(out_dir, "annotation_channel_3_media_M9+glucose.csv"))
+            @test !isfile(joinpath(out_dir, "annotation_channel_3_media_TEST_MEDIUM.csv"))
         end
 
         @testset "annotation_clean.csv structure" begin
@@ -187,7 +171,7 @@ else
         end
 
         for ch in 1:2
-            fname = "annotation_channel_$(ch)_media_M9+glucose.csv"
+            fname = "annotation_channel_$(ch)_media_TEST_MEDIUM.csv"
             @testset "$(fname) content matches golden" begin
                 golden = read_csv_strings(joinpath(GOLDEN_LG281, fname))
                 result = read_csv_strings(joinpath(out_dir,       fname))
@@ -206,7 +190,7 @@ else
         end
 
         @testset "per-channel annotation marks non-channel wells as X" begin
-            result = read_csv_strings(joinpath(out_dir, "annotation_channel_1_media_M9+glucose.csv"))
+            result = read_csv_strings(joinpath(out_dir, "annotation_channel_1_media_TEST_MEDIUM.csv"))
             # Column 2 should be either a condition string or "b" (blank) — never missing
             @test all(!ismissing, result[!, 2])
             # Blank wells (column 8 in each row group: A8, B8, ...) should be "b"
@@ -215,7 +199,6 @@ else
         end
     end
 end
-end # isdir(RAW_LG281)
 
 # ---------------------------------------------------------------------------
 # web_server.jl API endpoints

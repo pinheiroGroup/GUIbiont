@@ -1,6 +1,6 @@
 # GUIbiont
 
-A web platform for large-scale microbial growth curve analysis, built on KinBiont.jl.
+A web platform for large-scale microbial growth curve analysis, built on Kinbiont.jl.
 
 ## Features
 
@@ -66,7 +66,7 @@ it lives outside the app, it is never touched by updates.
 
 ## Developer Setup (run from source with Julia)
 
-1. **Install Julia** (version 1.6 or higher)
+1. **Install Julia** (version 1.12 or higher)
 
 2. **Navigate to this directory**:
    ```bash
@@ -109,7 +109,32 @@ it lives outside the app, it is never touched by updates.
 - **First-time setup**: Initial dependency installation may take 5-15 minutes
 - **Internet required**: Packages are downloaded from Julia registry
 - **Disk space**: Full dependency tree requires ~500MB-1GB
-- **Julia version**: Requires Julia 1.6 or higher
+- **Julia version**: Requires Julia 1.12 or higher
+
+### Running the Tests
+
+Unit tests need no running server:
+
+```bash
+julia --project=. -e "using Pkg; Pkg.test()"
+```
+
+The integration/API tests are additionally exercised only when a GUIbiont
+server is reachable — they are skipped automatically otherwise. To run them,
+start the server first and then run the suite:
+
+```bash
+# terminal 1
+julia --project=. --threads=auto web_server.jl
+
+# terminal 2
+julia --project=. -e "using Pkg; Pkg.test()"
+```
+
+The suite reads the server address from the `SERVER_URL` environment variable,
+which defaults to `http://localhost:8080` (the server's own default port). Set
+it if you started the server elsewhere, e.g.
+`SERVER_URL=http://localhost:3000`.
 
 ## Project Structure
 
@@ -119,7 +144,7 @@ GUIbiont/
 ├── web_server.jl              # Backend Julia server
 ├── launch_web_app.jl          # Application launcher
 ├── function_for_fitting.jl    # Growth curve fitting functions
-├── function_clean_synergy.jl  # Data cleaning functions
+├── src/cleaning/synergy.jl      # Data cleaning functions
 ├── Project.toml               # Julia dependencies
 ├── README.md                  # This file
 ├── Clean_data/                # Processed experiment data (created on first use)
@@ -157,7 +182,7 @@ Clean_data/
 Environment variables can be used to customize paths:
 
 - `CLEAN_DATA_PATH`: Path to cleaned data directory (default: `./Clean_data/`)
-- `RAW_DATA_PATH`: Path to raw data directory (default: `./raw_data/`)  
+- `RAW_DATA_PATH`: Path to raw data directory (default: `./raw_data/`)
 - `PORT`: Server port (default: `8080`)
 
 Example:
@@ -174,7 +199,7 @@ The application uses the following Julia packages (automatically installed):
 
 ### Core Packages
 - **HTTP.jl** - Web server functionality
-- **JSON3.jl** - JSON data handling  
+- **JSON3.jl** - JSON data handling
 - **CSV.jl** - Reading/writing CSV files
 - **DataFrames.jl** - Data manipulation
 - **Kinbiont.jl** - Growth curve analysis (core package)
@@ -227,18 +252,18 @@ export PORT=3000
 julia --project=. --threads=auto web_server.jl
 ```
 
-**Missing data files**  
+**Missing data files**
 Ensure raw data follows the expected structure (see Data Organization section).
 
-**Package installation issues**  
+**Package installation issues**
 ```bash
 # Try manual installation
 julia --project=. -e "import Pkg; Pkg.instantiate()"
 
 # Clear and reinstall if corrupted
-julia --project=. -e "import Pkg; Pkg.resolve(); Pkg.instantiate()"
+julia --project=. -e "import Pkg; Pkg.instantiate()"
 
-# Check Julia version (requires 1.6+)
+# Check Julia version (requires 1.12+)
 julia --version
 ```
 
@@ -248,7 +273,7 @@ julia --version
 julia --heap-size-hint=4G --project=. -e "import Pkg; Pkg.instantiate()"
 ```
 
-**Internet/proxy issues**  
+**Internet/proxy issues**
 If behind a corporate firewall, you may need to configure Julia's package manager:
 ```julia
 # In Julia REPL
@@ -265,4 +290,4 @@ julia --project=. -e "import Pkg; Pkg.instantiate()"
 
 ## Related Projects
 
-GUIbiont is built on [KinBiont.jl](https://github.com/pinheiroGroup/Kinbiont.jl), a Julia library for microbial growth curve analysis.
+GUIbiont is built on [Kinbiont.jl](https://github.com/pinheiroGroup/Kinbiont.jl), a Julia library for microbial growth curve analysis.

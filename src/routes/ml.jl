@@ -48,7 +48,7 @@ function _cluster_annotation_bytes(
     end
 
     io = IOBuffer()
-    CSV.write(io, annotation; writeheader=false)
+    CSV.write(io, annotation; header=false)
     return take!(io)
 end
 
@@ -286,7 +286,7 @@ end
         curves   = curves_interp
 
     elseif has_irregular
-        # Strip NaN tails, then use KinBiont IrregularGrowthData to resample
+        # Strip NaN tails, then use Kinbiont IrregularGrowthData to resample
         # each curve onto a normalized [0, 1] union grid.
         clean_times  = Vector{Vector{Float64}}()
         clean_curves = Vector{Vector{Float64}}()
@@ -377,7 +377,7 @@ end
     end
 
     # ------------------------------------------------------------------
-    # Smoothing via KinBiont preprocess
+    # Smoothing via Kinbiont preprocess
     # ------------------------------------------------------------------
     if smooth_method != :none
         gd_smooth   = GrowthData(curves, times, labels_all)
@@ -427,7 +427,7 @@ end
         isempty(non_growing_indices)
 
     # ------------------------------------------------------------------
-    # Clustering — delegate entirely to KinBiont preprocess
+    # Clustering — delegate entirely to Kinbiont preprocess
     # ------------------------------------------------------------------
     k_eff = min(k_input, n_series)
     cluster_opts = FitOptions(

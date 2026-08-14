@@ -27,13 +27,12 @@ jobs:
 
       - uses: julia-actions/cache@v2
 
-      - name: Install dependencies
+      - name: Instantiate committed Manifest
         run: |
           julia --project=. -e "
             import Pkg
-            Pkg.add(url=\"https://github.com/pinheiroGroup/Kinbiont.jl\")
-            Pkg.resolve()
             Pkg.instantiate()
+            Pkg.status(; mode=Pkg.PKGMODE_MANIFEST)
           "
 
       - name: Run unit tests (no server required)
@@ -56,18 +55,17 @@ jobs:
 
       - uses: julia-actions/cache@v2
 
-      - name: Install dependencies
+      - name: Instantiate committed Manifest
         run: |
           julia --project=. -e "
             import Pkg
-            Pkg.add(url=\"https://github.com/pinheiroGroup/Kinbiont.jl\")
-            Pkg.resolve()
             Pkg.instantiate()
+            Pkg.status(; mode=Pkg.PKGMODE_MANIFEST)
           "
 
       - name: Start server in background
         env:
-          PORT: 9090
+          PORT: 8080
           CLEAN_DATA_PATH: ${{ github.workspace }}/test/fixtures/clean/
           RAW_DATA_PATH: ${{ github.workspace }}/raw_data/
         run: |
@@ -77,7 +75,7 @@ jobs:
       - name: Wait for server to be ready
         run: |
           for i in $(seq 1 60); do
-            if curl -sf http://localhost:9090/ > /dev/null 2>&1; then
+            if curl -sf http://localhost:8080/ > /dev/null 2>&1; then
               echo "Server ready after ${i}s"
               exit 0
             fi
@@ -90,7 +88,7 @@ jobs:
 
       - name: Run integration tests
         env:
-          SERVER_URL: http://localhost:9090
+          SERVER_URL: http://localhost:8080
         run: julia --project=. test/runtests.jl
 
       - name: Show server log on failure

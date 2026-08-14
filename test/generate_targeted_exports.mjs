@@ -1,10 +1,17 @@
 import fs from 'node:fs';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
 globalThis.localStorage = {getItem: () => null, setItem: () => {}};
 globalThis.document = {getElementById: () => null, createElement: () => ({})};
 const {generateFitCode, generateClusterCode, generateBatchCode} =
   await import('../static/js/code-export.js');
 
-const root = process.env.PARITY_OUT || 'C:/Users/edo01/Desktop/GUIPaper';
+// Where the generated .jl files land. Override with PARITY_OUT; by default
+// write to a sibling folder of the repo so nothing lands inside the checkout.
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const root = process.env.PARITY_OUT ||
+  path.join(scriptDir, '..', '..', 'GUIbiont-parity-out');
+fs.mkdirSync(root, {recursive: true});
 const fitRequest = {
   experiment: 'LG166', well: 'A3', model_name: 'logistic', smooth: false,
   blank_subtraction: false, model_names: ['logistic'], optimizer: 'LN_COBYLA',

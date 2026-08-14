@@ -85,7 +85,7 @@ function read_labguru_annotation(path_to_annotation::String,
     end
 
     CSV.write(joinpath(path_to_save, "annotation_clean.csv"),
-              Tables.table(Matrix(full_annotation)), writeheader=false)
+              Tables.table(Matrix(full_annotation)), header=false)
 
     list_of_media    = filter(!ismissing, unique(full_annotation[:, names_of_columns .== "Media"]))
     list_of_channels = unique(Iterators.flatten(
@@ -131,7 +131,7 @@ function read_labguru_annotation(path_to_annotation::String,
             CSV.write(
                 joinpath(path_to_save, "annotation_channel_$(temp_channel)_media_$(temp_media).csv"),
                 Tables.table(Matrix(reduced_notation)),
-                writeheader=false,
+                header=false,
             )
         end
     end

@@ -4,14 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is GUIbiont, a Julia web platform for large-scale microbial growth curve analysis built on KinBiont.jl. The application processes microplate reader data, visualizes growth curves, and fits mathematical models to microbial growth data.
+This is GUIbiont, a Julia web platform for large-scale microbial growth curve analysis built on Kinbiont.jl. The application processes microplate reader data, visualizes growth curves, and fits mathematical models to microbial growth data.
 
 ## Architecture
 
 **Frontend**: Single-page HTML application (`web_interface.html`) with Plotly.js for interactive visualization
 **Backend**: Julia HTTP server (`web_server.jl`) with CORS support for API endpoints
-**Core Functions**: 
-- `function_clean_synergy.jl` - Data cleaning for Synergy microplate reader files
+**Core Functions**:
+- `src/cleaning/synergy.jl` - Data cleaning for Synergy microplate reader files
 - `function_for_fitting.jl` - Growth curve fitting using Kinbiont.jl package
 **Main Entry Point**: `launch_web_app.jl` - Handles dependency installation and server startup
 
@@ -71,7 +71,7 @@ julia launch_web_app.jl
 
 The server provides REST endpoints for:
 - `/experiments` - List available cleaned experiments
-- `/experiment-info/{name}` - Get experiment metadata and well information  
+- `/experiment-info/{name}` - Get experiment metadata and well information
 - `/plot-data` - Get time series data for plotting selected wells
 - `/fit-curve` - Perform growth model fitting for individual wells
 - `/clean-data` - Process raw Synergy microplate reader files
@@ -79,7 +79,7 @@ The server provides REST endpoints for:
 ## Important Notes
 
 - First-time setup requires 5-15 minutes for Julia package compilation
-- Requires Julia 1.6+ (specified in Project.toml)
+- Requires Julia 1.12+ (specified in Project.toml)
 - Application expects specific CSV format from BioTek Synergy microplate readers
 - Model fitting uses the Kinbiont.jl ecosystem for bacterial growth analysis
 - Frontend uses Plotly.js for interactive visualization, no build step required

@@ -41,7 +41,7 @@ function clean(::SynergyCSV, src_path::String, out_dir::String)
     for (i, start_row) in enumerate(channel_starts)
         end_row = i < length(channel_starts) ? channel_starts[i + 1] - 1 : nrow(temp_data)
         block   = _extract_synergy_channel_block(temp_data, start_row, end_row)
-        CSV.write(joinpath(out_dir, "data_channel_$(i).csv"), block, writeheader=false)
+        CSV.write(joinpath(out_dir, "data_channel_$(i).csv"), block, header=false)
     end
 end
 
