@@ -30,3 +30,24 @@ keywords:
   - no-code
   - clustering
   - Julia
+preferred-citation:
+  type: article
+  title: No-code microbial growth phenotyping with GUIbiont
+  authors:
+    - family-names: Zanella Alvarenga
+      given-names: Edgar
+      affiliation: Fuzuê Tech, Kraków, Poland
+      orcid: https://orcid.org/0009-0002-7506-2540
+    - family-names: Oltolini
+      given-names: Edoardo
+      affiliation: Human Technopole, Milan, Italy
+      orcid: https://orcid.org/0009-0002-1086-8279
+    - family-names: Pinheiro
+      given-names: Fernanda
+      affiliation: Human Technopole, Milan, Italy
+      orcid: https://orcid.org/0000-0002-0132-0562
+  journal: bioRxiv
+  year: 2026
+  month: 8
+  doi: 10.64898/2026.08.17.745250
+  url: https://www.biorxiv.org/content/10.64898/2026.08.17.745250v1

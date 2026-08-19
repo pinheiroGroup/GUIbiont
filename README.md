@@ -2,6 +2,8 @@
 
 A web platform for large-scale microbial growth curve analysis, built on Kinbiont.jl.
 
+📄 **Preprint:** [No-code microbial growth phenotyping with GUIbiont](https://www.biorxiv.org/content/10.64898/2026.08.17.745250v1) — bioRxiv, [10.64898/2026.08.17.745250](https://doi.org/10.64898/2026.08.17.745250)
+
 ## Features
 
 - **Data Cleaning**: Process raw Synergy microplate reader data
@@ -287,6 +289,33 @@ Pkg.Registry.add(RegistrySpec(url="https://github.com/JuliaRegistries/General.gi
 rm Manifest.toml
 julia --project=. -e "import Pkg; Pkg.instantiate()"
 ```
+
+## Citation
+
+If GUIbiont contributes to work you publish, please cite the manuscript and the software release:
+
+**Manuscript**
+
+> Alvarenga E.Z., Oltolini E., Pinheiro F. *No-code microbial growth phenotyping with GUIbiont.*
+> bioRxiv (2026). doi: [10.64898/2026.08.17.745250](https://doi.org/10.64898/2026.08.17.745250)
+
+```bibtex
+@article{alvarenga2026guibiont,
+  title   = {No-code microbial growth phenotyping with GUIbiont},
+  author  = {Zanella Alvarenga, Edgar and Oltolini, Edoardo and Pinheiro, Fernanda},
+  journal = {bioRxiv},
+  year    = {2026},
+  doi     = {10.64898/2026.08.17.745250},
+  url     = {https://www.biorxiv.org/content/10.64898/2026.08.17.745250v1}
+}
+```
+
+**Software**
+
+> GUIbiont v1.1.1, archived at [10.5281/zenodo.21930894](https://doi.org/10.5281/zenodo.21930894).
+
+Machine-readable metadata for both is in [`CITATION.cff`](CITATION.cff). Please also cite
+[Kinbiont.jl](https://github.com/pinheiroGroup/Kinbiont.jl) for the underlying methods.
 
 ## Related Projects
 

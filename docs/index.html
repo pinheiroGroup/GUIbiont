@@ -58,6 +58,8 @@
         "codeRepository": "https://github.com/pinheiroGroup/GUIbiont",
         "identifier": "https://doi.org/10.5281/zenodo.21930894",
         "isBasedOn": "https://github.com/pinheiroGroup/Kinbiont.jl",
+        "citation": { "@id": "https://doi.org/10.64898/2026.08.17.745250" },
+        "subjectOf": { "@id": "https://doi.org/10.64898/2026.08.17.745250" },
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "EUR" },
         "keywords": "microbial growth, growth curves, no-code, clustering, Julia, plate reader",
         "author": [
@@ -81,6 +83,24 @@
           }
         ],
         "funder": { "@type": "Organization", "name": "Human Technopole" }
+      },
+      {
+        "@type": "ScholarlyArticle",
+        "@id": "https://doi.org/10.64898/2026.08.17.745250",
+        "headline": "No-code microbial growth phenotyping with GUIbiont",
+        "name": "No-code microbial growth phenotyping with GUIbiont",
+        "url": "https://www.biorxiv.org/content/10.64898/2026.08.17.745250v1",
+        "identifier": "https://doi.org/10.64898/2026.08.17.745250",
+        "datePublished": "2026-08-18",
+        "inLanguage": "en",
+        "abstract": "Microbial growth screens generate thousands of curves, but cross-experiment comparison and mapping growth phenotypes to genotypes or environments routinely require custom code. GUIbiont is a no-code browser application for quality control, curve fitting, clustering and metadata-linked analysis with machine learning techniques. Interactive sessions export as Julia scripts, allowing users to reproduce or extend browser analyses. Validated across 3,885 E. coli deletion strains and 13,608 defined-media curves, GUIbiont recovered known auxotrophic and nutrient-dependent phenotypes.",
+        "author": [
+          { "@type": "Person", "name": "Edgar Z. Alvarenga", "identifier": "https://orcid.org/0009-0002-7506-2540" },
+          { "@type": "Person", "name": "Edoardo Oltolini", "identifier": "https://orcid.org/0009-0002-1086-8279" },
+          { "@type": "Person", "name": "Fernanda Pinheiro", "identifier": "https://orcid.org/0000-0002-0132-0562" }
+        ],
+        "publisher": { "@type": "Organization", "name": "bioRxiv", "url": "https://www.biorxiv.org/" },
+        "about": { "@id": "https://pinheirogroup.github.io/GUIbiont/#software" }
       },
       {
         "@type": "WebSite",
@@ -267,14 +287,36 @@
       padding: clamp(72px, 11vw, 120px) 0 clamp(56px, 8vw, 92px);
       text-align: center;
     }
+    .hero-badges {
+      display: flex; align-items: center; justify-content: center;
+      gap: 10px; flex-wrap: wrap; margin-bottom: 28px;
+    }
     .hero-badge {
       display: inline-flex; align-items: center; gap: 8px;
       font-size: .8rem; color: var(--muted);
       border: 1px solid var(--border); border-radius: 999px;
-      padding: 5px 14px; margin-bottom: 28px;
+      padding: 5px 14px;
       background: var(--card);
     }
     .hero-badge strong { color: var(--accent); font-weight: 600; }
+    .hero-badge-link {
+      color: var(--accent); font-weight: 500;
+      border-color: var(--accent-ln); background: var(--accent-sf);
+      padding-left: 5px; transition: background .15s, border-color .15s;
+    }
+    .hero-badge-link:hover { background: var(--accent-ln); border-color: var(--accent); }
+    .hero-badge-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .hero-badge-tag {
+      font-size: .62rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+      background: var(--accent); color: var(--on-accent);
+      border-radius: 999px; padding: 3px 9px;
+    }
+    .hero-badge-link .arrow { transition: transform .15s; }
+    .hero-badge-link:hover .arrow { transform: translateX(3px); }
+    @media (prefers-reduced-motion: reduce) {
+      .hero-badge-link .arrow { transition: none; }
+      .hero-badge-link:hover .arrow { transform: none; }
+    }
     .hero h1 {
       font-size: clamp(2.1rem, 5vw, 3.4rem);
       font-weight: 700; line-height: 1.12;
@@ -571,6 +613,7 @@
         <a href="#features">Modules</a>
         <a href="#models">Models</a>
         <a href="#case-studies">Case studies</a>
+        <a href="https://www.biorxiv.org/content/10.64898/2026.08.17.745250v1" target="_blank" rel="noopener">Preprint</a>
         <a href="#citation">Citation</a>
       </div>
       <div class="nav-cta">
@@ -586,8 +629,17 @@
 <!-- ── HERO ───────────────────────────────────────────────────── -->
 <section class="hero">
   <div class="container">
-    <div class="hero-badge">
-      A browser interface to <strong>Kinbiont.jl</strong>
+    <div class="hero-badges">
+      <a class="hero-badge hero-badge-link"
+         href="https://www.biorxiv.org/content/10.64898/2026.08.17.745250v1"
+         target="_blank" rel="noopener">
+        <span class="hero-badge-tag">Preprint</span>
+        Read the paper on bioRxiv
+        <span class="arrow" aria-hidden="true">→</span>
+      </a>
+      <div class="hero-badge">
+        A browser interface to <strong>Kinbiont.jl</strong>
+      </div>
     </div>
     <h1>Reproducible microbial growth phenotyping, in the browser</h1>
     <p>GUIbiont is a no-code application for quality control, curve fitting, trajectory clustering and metadata-linked analysis of plate-reader data. Interactive sessions export as Julia scripts, so browser analyses can be reproduced or extended outside the interface.</p>
@@ -1062,7 +1114,7 @@
     <div class="cite-grid">
       <div class="cite-card">
         <div class="cite-what">Manuscript</div>
-        <p>Alvarenga E.Z., Oltolini E., Pinheiro F. <em>No-code microbial growth phenotyping with GUIbiont.</em> Preprint.</p>
+        <p>Alvarenga E.Z., Oltolini E., Pinheiro F. <em>No-code microbial growth phenotyping with GUIbiont.</em> bioRxiv (2026). <a href="https://doi.org/10.64898/2026.08.17.745250" target="_blank" rel="noopener">10.64898/2026.08.17.745250</a></p>
       </div>
       <div class="cite-card">
         <div class="cite-what">Software</div>
@@ -1087,6 +1139,7 @@
       <div class="footer-logo">GUI<span>biont</span></div>
       <div class="footer-links">
         <a href="https://github.com/pinheiroGroup/GUIbiont" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://www.biorxiv.org/content/10.64898/2026.08.17.745250v1" target="_blank" rel="noopener">Preprint</a>
         <a href="https://github.com/pinheiroGroup/GUIbiont#readme" target="_blank" rel="noopener">Documentation</a>
         <a href="https://github.com/pinheiroGroup/GUIbiont/issues" target="_blank" rel="noopener">Issues</a>
         <a href="#citation">Citation</a>

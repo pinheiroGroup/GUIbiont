@@ -26,5 +26,13 @@
     "no-code",
     "clustering",
     "Julia"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "10.64898/2026.08.17.745250",
+      "relation": "isSupplementTo",
+      "scheme": "doi",
+      "resource_type": "publication-preprint"
+    }
   ]
 }
